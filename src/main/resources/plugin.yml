@@ -1,0 +1,30 @@
+name: ExtendedHorizons
+version: ${version}
+main: me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin
+api-version: '1.21'
+description: ${description}
+author: Mapacheee
+website: https://github.com/mapacheee/extendedhorizons
+
+depend: []
+softdepend: [PlaceholderAPI, LuckPerms]
+
+permissions:
+  extendedhorizons.distance.16:
+    description: Allow view distance up to 16 chunks
+    default: true
+  extendedhorizons.distance.32:
+    description: Allow view distance up to 32 chunks
+    default: op
+  extendedhorizons.distance.64:
+    description: Allow view distance up to 64 chunks
+    default: false
+  extendedhorizons.distance.unlimited:
+    description: Allow unlimited view distance
+    default: false
+  extendedhorizons.admin:
+    description: Access to admin commands
+    default: op
+  extendedhorizons.bypass.limits:
+    description: Bypass network and performance limits
+    default: false

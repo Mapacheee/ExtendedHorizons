@@ -1,0 +1,103 @@
+# ExtendedHorizons Messages
+# Supports HEX colors using &#RRGGBB format
+
+prefix: "&#3498DB[&#E74C3CExtended&#F39C12Horizons&#3498DB] &#FFFFFF"
+
+# General messages
+general:
+  no-permission: "&#E74C3CYou don't have permission to use this command!"
+  player-not-found: "&#E74C3CPlayer '&#FFFFFF{player}&#E74C3C' not found!"
+  config-reloaded: "&#2ECC71Configuration reloaded successfully!"
+  plugin-info: "&#3498DB{plugin} v{version} by {author}"
+  unknown-command: "&#E74C3CUnknown command! Use &#FFFFFF/eh help &#E74C3Cfor available commands."
+
+# View distance messages
+view-distance:
+  current-distance: "&#3498DBYour current view distance: &#F39C12{distance} &#3498DBchunks"
+  distance-changed: "&#2ECC71View distance changed to &#FFFFFF{distance} &#2ECC71chunks"
+  distance-set-other: "&#2ECC71Set &#FFFFFF{player}&#2ECC71's view distance to &#FFFFFF{distance} &#2ECC71chunks"
+  distance-reset: "&#2ECC71View distance reset to default (&#FFFFFF{distance} &#2ECC71chunks)"
+  max-distance-exceeded: "&#E74C3CMaximum view distance is &#FFFFFF{max} &#E74C3Cchunks!"
+  min-distance-not-met: "&#E74C3CMinimum view distance is &#FFFFFF{min} &#E74C3Cchunks!"
+  permission-required: "&#E74C3CYou need permission &#FFFFFF{permission} &#E74C3Cfor that view distance!"
+  fake-chunks-enabled: "&#F39C12Fake chunks enabled for distances above &#FFFFFF{distance} &#F39C12chunks"
+  fake-chunks-disabled: "&#E67E22Fake chunks disabled"
+
+# Performance messages
+performance:
+  low-tps-warning: "&#E74C3CServer TPS is low (&#FFFFFF{tps}&#E74C3C), reducing view distances..."
+  performance-restored: "&#2ECC71Server performance restored, view distances normalized"
+  network-limit-reached: "&#F39C12Network limit reached, slowing chunk sending for &#FFFFFF{player}"
+  chunk-generation-limit: "&#F39C12Chunk generation limit reached, queuing requests..."
+  adaptive-mode-enabled: "&#3498DBAdaptive performance mode enabled"
+  adaptive-mode-disabled: "&#95A5A6Adaptive performance mode disabled"
+
+# Statistics messages
+stats:
+  header: "&#3498DB========== ExtendedHorizons Statistics =========="
+  players-online: "&#FFFFFF• &#3498DBPlayers online: &#F39C12{online}&#FFFFFF/&#F39C12{max}"
+  average-distance: "&#FFFFFF• &#3498DBAverage view distance: &#F39C12{distance} &#3498DBchunks"
+  chunks-sent: "&#FFFFFF• &#3498DBChunks sent this session: &#F39C12{chunks}"
+  fake-chunks-sent: "&#FFFFFF• &#3498DBFake chunks sent: &#F39C12{fake_chunks}"
+  network-usage: "&#FFFFFF• &#3498DBNetwork usage: &#F39C12{usage}&#FFFFFF/&#F39C12{limit}"
+  cache-size: "&#FFFFFF• &#3498DBCache size: &#F39C12{size} &#3498DBMB"
+  server-tps: "&#FFFFFF• &#3498DBServer TPS: &#F39C12{tps}"
+  worker-threads: "&#FFFFFF• &#3498DBWorker threads: &#F39C12{threads}"
+  footer: "&#3498DB================================================"
+
+# Debug messages
+debug:
+  enabled: "&#2ECC71Debug mode enabled"
+  disabled: "&#95A5A6Debug mode disabled"
+  chunk-info: "&#3498DBChunk &#FFFFFF{x}&#3498DB, &#FFFFFF{z} &#3498DB- Type: &#F39C12{type}&#3498DB, Size: &#F39C12{size} &#3498DBbytes"
+  player-info: "&#3498DBPlayer &#FFFFFF{player} &#3498DB- Distance: &#F39C12{distance}&#3498DB, Network: &#F39C12{network}&#3498DB B/s"
+  performance-info: "&#3498DBTPS: &#F39C12{tps}&#3498DB, Chunks/tick: &#F39C12{chunks}&#3498DB, Queue: &#F39C12{queue}"
+
+# Error messages
+errors:
+  database-error: "&#E74C3CDatabase error occurred! Check console for details."
+  network-error: "&#E74C3CNetwork error for player &#FFFFFF{player}&#E74C3C!"
+  chunk-generation-failed: "&#E74C3CFailed to generate chunk at &#FFFFFF{x}&#E74C3C, &#FFFFFF{z}"
+  permission-check-failed: "&#E74C3CFailed to check permissions for &#FFFFFF{player}"
+  config-error: "&#E74C3CConfiguration error! Using default values."
+  packetevents-error: "&#E74C3CPacketEvents error occurred!"
+
+# Command help messages
+help:
+  header: "&#3498DB============ ExtendedHorizons Help ============"
+  info: "&#FFFFFF/eh info &#3498DB- Show plugin and player information"
+  distance: "&#FFFFFF/eh distance [player] [distance] &#3498DB- View/set view distance"
+  reset: "&#FFFFFF/eh reset [player] &#3498DB- Reset view distance to default"
+  reload: "&#FFFFFF/eh reload &#3498DB- Reload configuration files"
+  stats: "&#FFFFFF/eh stats &#3498DB- Show server statistics"
+  debug: "&#FFFFFF/eh debug &#3498DB- Toggle debug mode"
+  world: "&#FFFFFF/eh world <world> [distance] &#3498DB- Set world view distance"
+  footer: "&#3498DB=============================================="
+
+# World-specific messages
+world:
+  distance-set: "&#2ECC71Set view distance for world &#FFFFFF{world} &#2ECC71to &#FFFFFF{distance} &#2ECC71chunks"
+  not-found: "&#E74C3CWorld &#FFFFFF{world} &#E74C3Cnot found!"
+  disabled: "&#E74C3CExtendedHorizons is disabled in world &#FFFFFF{world}"
+  performance-mode-changed: "&#3498DBPerformance mode for &#FFFFFF{world} &#3498DBchanged to &#F39C12{mode}"
+
+# Integration messages
+integrations:
+  placeholderapi-enabled: "&#2ECC71PlaceholderAPI integration enabled"
+  placeholderapi-disabled: "&#95A5A6PlaceholderAPI not found"
+  luckperms-enabled: "&#2ECC71LuckPerms integration enabled"
+  luckperms-disabled: "&#95A5A6LuckPerms not found"
+
+# Startup/shutdown messages
+startup:
+  loading: "&#3498DBLoading ExtendedHorizons..."
+  loaded: "&#2ECC71ExtendedHorizons loaded successfully!"
+  enabled: "&#2ECC71ExtendedHorizons enabled successfully!"
+  server-detected: "&#3498DBDetected server type: &#F39C12{type}"
+  packetevents-initialized: "&#2ECC71PacketEvents initialized successfully"
+
+shutdown:
+  disabling: "&#F39C12Disabling ExtendedHorizons..."
+  disabled: "&#95A5A6ExtendedHorizons disabled successfully"
+  saving-data: "&#3498DBSaving player data..."
+  data-saved: "&#2ECC71Player data saved successfully"

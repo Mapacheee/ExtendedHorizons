@@ -1,0 +1,106 @@
+# ExtendedHorizons Configuration
+# Advanced view distance extension plugin
+
+general:
+  enabled: true
+  language: "en"
+  debug: false
+  detect-folia: true
+
+# View distance settings
+view-distance:
+  # Maximum view distance allowed globally (chunks)
+  max-distance: 64
+  # Minimum view distance (chunks)
+  min-distance: 2
+  # Default view distance for new players (chunks)
+  default-distance: 16
+  # View map mode (SQUARE, CIRCLE)
+  shape: "CIRCLE"
+  # Enable fake chunks for extreme distances
+  enable-fake-chunks: true
+  # Distance at which fake chunks start being used
+  fake-chunks-start-distance: 33
+
+# Performance optimization settings
+performance:
+  # Maximum chunks to send per tick per player
+  max-chunks-per-tick: 5
+  # Maximum chunks to generate per tick globally
+  max-generation-per-tick: 10
+  # Enable adaptive performance based on TPS
+  adaptive-performance: true
+  # Minimum TPS before reducing view distances
+  min-tps-threshold: 18.0
+  # Enable multithreading for chunk processing
+  enable-multithreading: true
+  # Number of worker threads (0 = auto-detect)
+  worker-threads: 0
+
+# Network optimization settings
+network:
+  # Maximum bytes per second per player (0 = unlimited)
+  max-bytes-per-second-per-player: 1048576  # 1MB/s
+  # Maximum bytes per second globally (0 = unlimited)
+  max-bytes-per-second-global: 10485760     # 10MB/s
+  # Enable adaptive network speed based on player connection
+  adaptive-speed: true
+  # Compression level for chunk data (1-9, higher = more compression)
+  compression-level: 6
+  # Enable packet bundling for better performance
+  enable-packet-bundling: true
+
+# Fake chunks configuration
+fake-chunks:
+  # Enable terrain simulation
+  simulate-terrain: true
+  # Enable biome information
+  simulate-biomes: true
+  # Enable basic structures (mountains, water bodies)
+  simulate-structures: true
+  # Cache size for generated fake chunks (MB)
+  cache-size: 64
+  # Enable height-based chunk simulation
+  height-based: true
+
+# Per-world settings
+worlds:
+  # Default settings for all worlds
+  default:
+    enabled: true
+    max-distance: 64
+    fake-chunks-enabled: true
+    performance-mode: "BALANCED"  # PERFORMANCE, BALANCED, QUALITY
+
+  # World-specific overrides
+  world_nether:
+    max-distance: 32
+    fake-chunks-enabled: false
+
+  world_the_end:
+    max-distance: 48
+    performance-mode: "PERFORMANCE"
+
+# Database settings
+database:
+  type: "H2"  # Currently only H2 is supported
+  file-name: "extendedhorizons.db"
+  connection-pool-size: 5
+  enable-cache: true
+  auto-save-interval: 300  # seconds
+
+# Integration settings
+integrations:
+  placeholderapi:
+    enabled: true
+  luckperms:
+    enabled: true
+    check-interval: 60  # seconds
+    use-group-permissions: true
+
+# Monitoring and metrics
+monitoring:
+  enable-metrics: true
+  log-performance-warnings: true
+  chunk-load-timeout: 5000  # milliseconds
+  network-timeout: 3000     # milliseconds
