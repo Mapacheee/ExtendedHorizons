@@ -132,7 +132,6 @@ public class LuckPermsIntegrationService {
             }
 
             if (hasUnlimited) {
-                // Use specific config method instead of getConfig().viewDistance().maxDistance()
                 return configService.getMaxViewDistance();
             }
 
@@ -147,7 +146,6 @@ public class LuckPermsIntegrationService {
     private int getDefaultMaxDistance(Player player) {
         // Fallback to Bukkit permissions
         if (player.hasPermission("extendedhorizons.distance.unlimited")) {
-            // Use specific config method instead of getConfig().viewDistance().maxDistance()
             return configService.getMaxViewDistance();
         }
 
@@ -157,7 +155,6 @@ public class LuckPermsIntegrationService {
             }
         }
 
-        // Use specific config method instead of getConfig().viewDistance().defaultDistance()
         return configService.getDefaultViewDistance();
     }
 
@@ -244,7 +241,6 @@ public class LuckPermsIntegrationService {
         return new PermissionStatistics(
             luckPermsAvailable,
             cachedPermissions.size(),
-            // Use specific config method instead of getConfig().integrations().luckperms().useGroupPermissions()
             configService.isLuckPermsGroupPermissionsEnabled()
         );
     }
