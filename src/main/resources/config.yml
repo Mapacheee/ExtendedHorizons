@@ -1,4 +1,11 @@
-# ExtendedHorizons Configuration (minimal, in-use keys only)
+###############################################################
+#                                                             #
+#             ExtendedHorizons Configuration                  #
+#                                                             #
+#   Star the project: github.com/Mapacheee/ExtendedHorizons   #
+#    Join our Discord:  https://discord.gg/yA3vD2S8Zj         #
+#                                                             #
+###############################################################
 
 # Plugin toggles
 general:
@@ -12,7 +19,7 @@ view-distance:
   min-distance: 2        # Global minimum
   default-distance: 16   # Default for new players
   enable-fake-chunks: true           # Allow sending client-only (fake) chunks
-  fake-chunks-start-distance: 33     # Start using fake chunks above this distance
+  fake-chunks-start-distance: 10     # Start using fake chunks above this distance
 
 # Throughput / pacing
 performance:
