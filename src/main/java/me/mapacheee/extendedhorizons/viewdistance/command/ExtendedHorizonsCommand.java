@@ -7,7 +7,6 @@ import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.shared.util.MessageUtil;
 import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
-import me.mapacheee.extendedhorizons.optimization.service.PerformanceMonitorService;
 import me.mapacheee.extendedhorizons.optimization.service.CacheService;
 import me.mapacheee.extendedhorizons.integration.service.LuckPermsIntegrationService;
 import org.bukkit.Bukkit;
@@ -32,7 +31,6 @@ public class ExtendedHorizonsCommand {
     private final ConfigService configService;
     private final MessageUtil messageUtil;
     private final IViewDistanceService viewDistanceService;
-    private final PerformanceMonitorService performanceMonitor;
     private final CacheService cacheService;
     private final LuckPermsIntegrationService luckPermsService;
 
@@ -42,7 +40,6 @@ public class ExtendedHorizonsCommand {
             ConfigService configService,
             MessageUtil messageUtil,
             IViewDistanceService viewDistanceService,
-            PerformanceMonitorService performanceMonitor,
             CacheService cacheService,
             LuckPermsIntegrationService luckPermsService
     ) {
@@ -50,7 +47,6 @@ public class ExtendedHorizonsCommand {
         this.configService = configService;
         this.messageUtil = messageUtil;
         this.viewDistanceService = viewDistanceService;
-        this.performanceMonitor = performanceMonitor;
         this.cacheService = cacheService;
         this.luckPermsService = luckPermsService;
     }
@@ -101,8 +97,12 @@ public class ExtendedHorizonsCommand {
     @Permission("extendedhorizons.use")
     public void handleInfo(Source source) {
         Player player = (Player) source.source();
-        messageUtil.sendMessageWithPrefix(player, "&#3498DBPlugin: &#F39C12ExtendedHorizons &#3498DBv" +
-                ExtendedHorizonsPlugin.getInstance().getDescription().getVersion() + " &#3498DBby &#FFFFFFMapacheee");
+        String info = configService.getPluginInfoMessage();
+        messageUtil.sendMessageWithPrefix(player, info, java.util.Map.of(
+                "plugin", "ExtendedHorizons",
+                "version", ExtendedHorizonsPlugin.getInstance().getDescription().getVersion(),
+                "author", "Mapacheee"
+        ));
 
         PlayerView playerView = viewDistanceService.getPlayerView(player.getUniqueId());
         if (playerView != null) {
@@ -110,8 +110,8 @@ public class ExtendedHorizonsCommand {
 
             if (playerView.areFakeChunksEnabled()) {
                 int fakeStartDistance = configService.getFakeChunksStartDistance();
-                messageUtil.sendMessage(player, "&#2ECC71Fake chunks enabled starting at &#FFFFFF" +
-                    fakeStartDistance + " &#2ECC71chunks");
+                String fakeMsg = configService.getFakeChunksEnabledInfoMessage();
+                messageUtil.sendMessage(player, fakeMsg, java.util.Map.of("distance", String.valueOf(fakeStartDistance)));
             }
         }
     }
@@ -150,10 +150,14 @@ public class ExtendedHorizonsCommand {
         Player player = (Player) source.source();
         PlayerView playerView = viewDistanceService.getPlayerView(target.getUniqueId());
         if (playerView != null) {
-            messageUtil.sendMessage(player, "&#3498DB" + target.getName() + "'s view distance: &#F39C12" +
-                                  playerView.getCurrentDistance() + " &#3498DBchunks");
+            String msg = configService.getOtherCurrentDistanceMessage();
+            messageUtil.sendMessage(player, msg, java.util.Map.of(
+                    "player", target.getName(),
+                    "distance", String.valueOf(playerView.getCurrentDistance())
+            ));
         } else {
-            messageUtil.sendMessage(player, "&#E74C3CNo view data available for " + target.getName());
+            String msg = configService.getNoViewDataOtherMessage();
+            messageUtil.sendMessage(player, msg, java.util.Map.of("player", target.getName()));
         }
     }
 
@@ -199,7 +203,6 @@ public class ExtendedHorizonsCommand {
     @Permission("extendedhorizons.admin")
     public void handleStats(Source source) {
         Player player = (Player) source.source();
-        PerformanceMonitorService.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
         CacheService.CacheStatistics cacheStats = cacheService.getStatistics();
 
         messageUtil.sendStatsHeader(player);
@@ -215,7 +218,6 @@ public class ExtendedHorizonsCommand {
         messageUtil.sendStatsChunksSent(player, viewDistanceService.getTotalChunksSent());
         messageUtil.sendStatsFakeChunksSent(player, viewDistanceService.getTotalFakeChunksSent());
         messageUtil.sendStatsCacheSize(player, cacheStats.currentSizeMB());
-        messageUtil.sendStatsServerTps(player, metrics.tps());
         messageUtil.sendStatsFooter(player);
     }
 
@@ -232,8 +234,11 @@ public class ExtendedHorizonsCommand {
     public void handleWorldInfo(Source source, @Argument("world") World world) {
         Player player = (Player) source.source();
         int maxDistance = configService.getMaxViewDistanceForWorld(world.getName());
-        messageUtil.sendMessage(player,
-            "&#3498DBWorld &#FFFFFF" + world.getName() + " &#3498DBmax distance: &#F39C12" + maxDistance);
+        String msg = configService.getWorldMaxDistanceInfoMessage();
+        messageUtil.sendMessage(player, msg, java.util.Map.of(
+                "world", world.getName(),
+                "distance", String.valueOf(maxDistance)
+        ));
     }
 
     @Command("eh worldhelp")

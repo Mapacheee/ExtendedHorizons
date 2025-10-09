@@ -1,7 +1,6 @@
 package me.mapacheee.extendedhorizons.viewdistance.service;
 
 import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
@@ -22,7 +21,6 @@ import java.util.Collection;
  */
 
 @Service
-@Singleton
 public class ViewDistanceService implements IViewDistanceService {
 
     private final Logger logger;
@@ -153,8 +151,9 @@ public class ViewDistanceService implements IViewDistanceService {
         if (targetDistance != playerView.getCurrentDistance()) {
             playerView.setCurrentDistance(targetDistance);
 
-            boolean enableFakeChunks = configService.areFakeChunksEnabled() &&
-                                     targetDistance > configService.getFakeChunksStartDistance();
+            boolean enableFakeChunks = configService.areFakeChunksEnabled()
+                    && configService.areFakeChunksEnabledForWorld(player.getWorld().getName())
+                    && targetDistance > configService.getFakeChunksStartDistance();
             playerView.setFakeChunksEnabled(enableFakeChunks);
 
             try {

@@ -18,23 +18,15 @@ view-distance:
   current-distance: "&#3498DBYour current view distance: &#F39C12{distance} &#3498DBchunks"
   distance-changed: "&#2ECC71View distance changed to &#FFFFFF{distance} &#2ECC71chunks"
   distance-set-other: "&#2ECC71Set &#FFFFFF{player}'s &#2ECC71view distance to &#FFFFFF{distance} &#2ECC71chunks"
+  other-current-distance: "&#3498DB{player}'s view distance: &#F39C12{distance} &#3498DBchunks"
+  no-view-data: "&#E74C3CNo view data available!"
+  no-view-data-other: "&#E74C3CNo view data available for &#FFFFFF{player}"
   reset: "&#2ECC71View distance reset to default: &#FFFFFF{distance} &#2ECC71chunks"
   max-distance-exceeded: "&#E74C3CMaximum view distance is &#FFFFFF{max} &#E74C3Cchunks!"
   min-distance-error: "&#E74C3CMinimum view distance is &#FFFFFF{min} &#E74C3Cchunks!"
   invalid-distance: "&#E74C3CInvalid distance specified: &#FFFFFF{distance}"
-  no-view-data: "&#E74C3CNo view data available!"
-  permission-required: "&#E74C3CYou need permission &#FFFFFF{permission} &#E74C3Cfor that view distance!"
   fake-chunks-enabled: "&#F39C12Fake chunks enabled for distances above &#FFFFFF{distance} &#F39C12chunks"
   fake-chunks-disabled: "&#E67E22Fake chunks disabled"
-
-# Performance messages
-performance:
-  low-tps-warning: "&#E74C3CServer TPS is low (&#FFFFFF{tps}&#E74C3C). Performance monitoring is active."
-  performance-restored: "&#2ECC71Server performance restored!"
-  network-limit-reached: "&#F39C12Network limit reached, slowing chunk sending for &#FFFFFF{player}"
-  chunk-generation-limit: "&#F39C12Chunk generation limit reached, queuing requests..."
-  adaptive-mode-enabled: "&#3498DBAdaptive performance mode enabled"
-  adaptive-mode-disabled: "&#95A5A6Adaptive performance mode disabled"
 
 # Statistics messages
 stats:
@@ -55,6 +47,11 @@ debug:
   player-info: "&#3498DBPlayer &#FFFFFF{player} &#3498DB- Distance: &#F39C12{distance}&#3498DB, Network: &#F39C12{network}&#3498DB B/s"
   performance-info: "&#3498DBTPS: &#F39C12{tps}&#3498DB, Chunks/tick: &#F39C12{chunks}&#3498DB, Queue: &#F39C12{queue}"
 
+# Performance notifications
+performance:
+  low-tps-warning: "&#E74C3CServer TPS is low (&#FFFFFF{tps}&#E74C3C). Performance monitoring is active."
+  performance-restored: "&#2ECC71Server performance restored!"
+
 # Error messages
 errors:
   database-error: "&#E74C3CDatabase error occurred! Check console for details."
@@ -67,13 +64,13 @@ errors:
 help:
   header: "&#3498DB========= &#F39C12ExtendedHorizons Help &#3498DB========="
   info: "&#3498DB/eh info &#FFFFFF- Show plugin and player information"
-  distance: "&#3498DB/eh distance [value] &#FFFFFF- Get/set your view distance"
+  distance: "&#3498DB/eh check <player> &#FFFFFF- Check another player's view distance"
   reset: "&#3498DB/eh reset &#FFFFFF- Reset view distance to default"
   admin-header: "&#E74C3C=== Admin Commands ==="
   reload: "&#E74C3C/eh reload &#FFFFFF- Reload configuration"
   stats: "&#E74C3C/eh stats &#FFFFFF- Show plugin statistics"
   debug: "&#E74C3C/eh debug &#FFFFFF- Toggle debug mode"
-  world: "&#E74C3C/eh world <world> &#FFFFFF- World-specific settings"
+  world: "&#E74C3C/eh worldinfo <world> &#FFFFFF- World-specific settings"
   footer: "&#3498DB==========================================="
 
 # World-specific messages
@@ -84,6 +81,7 @@ world:
   distance-set: "&#2ECC71Set view distance for world &#FFFFFF{world} &#2ECC71to &#FFFFFF{distance} &#2ECC71chunks"
   disabled: "&#E74C3CExtendedHorizons is disabled in world &#FFFFFF{world}"
   performance-mode-changed: "&#3498DBPerformance mode for &#FFFFFF{world} &#3498DBchanged to &#F39C12{mode}"
+  max-distance-info: "&#3498DBWorld &#FFFFFF{world} &#3498DBmax distance: &#F39C12{distance}"
 
 # Integration messages
 integrations:
@@ -100,12 +98,12 @@ startup:
   server-detected: "&#3498DBDetected server type: &#F39C12{type}"
   packetevents-initialized: "&#2ECC71PacketEvents initialized successfully"
 
-# Welcome message (moved from config.yml structure)
+# Welcome message (text lives here; enable flag is in config.yml)
 messages:
   welcome-message:
     text: "&#2ECC71Welcome! Your view distance has been set to &#FFFFFF{distance} &#2ECC71chunks."
 
-# Additional messages that were referenced in code
+# Additional preserved keys
 additional:
   no-view-data: "&#E74C3CNo view data available!"
   distance-set-other: "&#2ECC71Set &#FFFFFF{player}'s &#2ECC71view distance to &#FFFFFF{distance} &#2ECC71chunks"

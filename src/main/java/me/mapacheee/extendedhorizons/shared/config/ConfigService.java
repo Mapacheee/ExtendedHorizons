@@ -40,13 +40,30 @@ public class ConfigService {
         return configFile.getBoolean("general.detect-folia", true);
     }
 
+    private String hyphenVariant(String worldName) {
+        return worldName.replace('_', '-');
+    }
+
+    private boolean isNether(String lower) {
+        return lower.endsWith("_nether") || lower.contains("nether");
+    }
+
+    private boolean isTheEnd(String lower) {
+        return lower.endsWith("_the_end") || lower.contains("the_end") || lower.contains("the-end");
+    }
+
     public boolean isWorldEnabled(String worldName) {
-        String path = switch (worldName.toLowerCase()) {
-            case "world_nether" -> "worlds.world-nether.enabled";
-            case "world_the_end" -> "worlds.world-the-end.enabled";
-            default -> "worlds.default.enabled";
-        };
-        return configFile.getBoolean(path, true);
+        String raw = worldName;
+        String hy = hyphenVariant(worldName);
+        String lower = worldName.toLowerCase();
+
+        boolean netherFallback = isNether(lower);
+        boolean endFallback = isTheEnd(lower);
+
+        return configFile.getBoolean("worlds." + raw + ".enabled",
+            configFile.getBoolean("worlds." + hy + ".enabled",
+                configFile.getBoolean(netherFallback ? "worlds.world-nether.enabled" : (endFallback ? "worlds.world-the-end.enabled" : "worlds.__none__"),
+                    configFile.getBoolean("worlds.default.enabled", true))));
     }
 
     public boolean isWelcomeMessageEnabled() {
@@ -54,21 +71,29 @@ public class ConfigService {
     }
 
     public int getMaxViewDistanceForWorld(String worldName) {
-        String path = switch (worldName.toLowerCase()) {
-            case "world_nether" -> "worlds.world-nether.max-distance";
-            case "world_the_end" -> "worlds.world-the-end.max-distance";
-            default -> "worlds.default.max-distance";
-        };
-        return configFile.getInt(path, 64);
+        String raw = worldName;
+        String hy = hyphenVariant(worldName);
+        String lower = worldName.toLowerCase();
+        boolean netherFallback = isNether(lower);
+        boolean endFallback = isTheEnd(lower);
+
+        return configFile.getInt("worlds." + raw + ".max-distance",
+            configFile.getInt("worlds." + hy + ".max-distance",
+                configFile.getInt(netherFallback ? "worlds.world-nether.max-distance" : (endFallback ? "worlds.world-the-end.max-distance" : "worlds.__none__.max-distance"),
+                    configFile.getInt("worlds.default.max-distance", 64))));
     }
 
     public boolean areFakeChunksEnabledForWorld(String worldName) {
-        String path = switch (worldName.toLowerCase()) {
-            case "world_nether" -> "worlds.world-nether.fake-chunks-enabled";
-            case "world_the_end" -> "worlds.world-the-end.fake-chunks-enabled";
-            default -> "worlds.default.fake-chunks-enabled";
-        };
-        return configFile.getBoolean(path, true);
+        String raw = worldName;
+        String hy = hyphenVariant(worldName);
+        String lower = worldName.toLowerCase();
+        boolean netherFallback = isNether(lower);
+        boolean endFallback = isTheEnd(lower);
+
+        return configFile.getBoolean("worlds." + raw + ".fake-chunks-enabled",
+            configFile.getBoolean("worlds." + hy + ".fake-chunks-enabled",
+                configFile.getBoolean(netherFallback ? "worlds.world-nether.fake-chunks-enabled" : (endFallback ? "worlds.world-the-end.fake-chunks-enabled" : "worlds.__none__.fake-chunks-enabled"),
+                    configFile.getBoolean("worlds.default.fake-chunks-enabled", true))));
     }
 
     // Configuration getters
@@ -309,7 +334,7 @@ public class ConfigService {
     }
 
     public String getStatsPlayersOnlineMessage() {
-        return messagesFile.getString("stats.players-online", "&#F39C12Players Online: &#FFFFFF{count}");
+        return messagesFile.getString("stats.players-online", "&#3498DBPlayers Online: &#FFFFFF{online}&#3498DB/&#FFFFFF{max}");
     }
 
     public String getStatsAverageDistanceMessage() {
@@ -317,11 +342,11 @@ public class ConfigService {
     }
 
     public String getStatsChunksSentMessage() {
-        return messagesFile.getString("stats.chunks-sent", "&#F39C12Total Chunks Sent: &#FFFFFF{count}");
+        return messagesFile.getString("stats.chunks-sent", "&#3498DBChunks Sent: &#FFFFFF{chunks}");
     }
 
     public String getStatsFakeChunksSentMessage() {
-        return messagesFile.getString("stats.fake-chunks-sent", "&#F39C12Fake Chunks Sent: &#FFFFFF{count}");
+        return messagesFile.getString("stats.fake-chunks-sent", "&#3498DBFake Chunks Sent: &#FFFFFF{chunks}");
     }
 
     public String getStatsCacheSizeMessage() {
@@ -336,33 +361,12 @@ public class ConfigService {
         return messagesFile.getString("stats.footer", "&#3498DB==========================================");
     }
 
-    // Reload methods
     public void reload() {
         try {
-            // Winter Framework YamlConfig se recarga automáticamente
-            // Solo registramos que se solicitó la recarga
             logger.info("Configuration and messages reloaded successfully");
         } catch (Exception e) {
             logger.error("Failed to reload configuration", e);
             throw new RuntimeException("Configuration reload failed", e);
-        }
-    }
-
-    public void reloadConfig() {
-        try {
-            logger.info("Configuration reloaded successfully");
-        } catch (Exception e) {
-            logger.error("Failed to reload configuration", e);
-            throw new RuntimeException("Configuration reload failed", e);
-        }
-    }
-
-    public void reloadMessages() {
-        try {
-            logger.info("Messages reloaded successfully");
-        } catch (Exception e) {
-            logger.error("Failed to reload messages", e);
-            throw new RuntimeException("Messages reload failed", e);
         }
     }
 
@@ -372,5 +376,25 @@ public class ConfigService {
 
     public boolean isValidViewDistanceForWorld(String worldName, int distance) {
         return distance >= getMinViewDistance() && distance <= getMaxViewDistanceForWorld(worldName);
+    }
+
+    public String getPluginInfoMessage() {
+        return messagesFile.getString("general.plugin-info", "&#3498DB{plugin} v{version} by {author}");
+    }
+
+    public String getFakeChunksEnabledInfoMessage() {
+        return messagesFile.getString("view-distance.fake-chunks-enabled", "&#F39C12Fake chunks enabled for distances above &#FFFFFF{distance} &#F39C12chunks");
+    }
+
+    public String getOtherCurrentDistanceMessage() {
+        return messagesFile.getString("view-distance.other-current-distance", "&#3498DB{player}'s view distance: &#F39C12{distance} &#3498DBchunks");
+    }
+
+    public String getNoViewDataOtherMessage() {
+        return messagesFile.getString("view-distance.no-view-data-other", "&#E74C3CNo view data available for {player}");
+    }
+
+    public String getWorldMaxDistanceInfoMessage() {
+        return messagesFile.getString("world.max-distance-info", "&#3498DBWorld &#FFFFFF{world} &#3498DBmax distance: &#F39C12{distance}");
     }
 }

@@ -1,115 +1,65 @@
-# ExtendedHorizons Configuration
-# Advanced view distance extension plugin
+# ExtendedHorizons Configuration (minimal, in-use keys only)
 
+# Plugin toggles
 general:
   enabled: true
-  language: "en"
   debug: false
   detect-folia: true
 
-# View distance settings
+# Global view distance limits and defaults
 view-distance:
-  # Maximum view distance allowed globally (chunks)
-  max-distance: 64
-  # Minimum view distance (chunks)
-  min-distance: 2
-  # Default view distance for new players (chunks)
-  default-distance: 16
-  # View map mode (SQUARE, CIRCLE)
-  shape: "CIRCLE"
-  # Enable fake chunks for extreme distances
-  enable-fake-chunks: true
-  # Distance at which fake chunks start being used
-  fake-chunks-start-distance: 33
+  max-distance: 64       # Global hard cap
+  min-distance: 2        # Global minimum
+  default-distance: 16   # Default for new players
+  enable-fake-chunks: true           # Allow sending client-only (fake) chunks
+  fake-chunks-start-distance: 33     # Start using fake chunks above this distance
 
-# Performance optimization settings
+# Throughput / pacing
 performance:
-  # Maximum chunks to send per tick per player
-  max-chunks-per-tick: 5
-  # Maximum chunks to generate per tick globally
-  max-generation-per-tick: 10
-  # Enable adaptive performance based on TPS
-  adaptive-performance: true
-  # Minimum TPS before reducing view distances
-  min-tps-threshold: 18.0
-  # Enable multithreading for chunk processing
-  enable-multithreading: true
-  # Number of worker threads (0 = auto-detect)
-  worker-threads: 0
+  max-chunks-per-tick: 5   # Per-tick cap used by sender
 
-# Network optimization settings
+# Network limits
 network:
-  # Maximum bytes per second per player (0 = unlimited)
-  max-bytes-per-second-per-player: 1048576  # 1MB/s
-  # Maximum bytes per second globally (0 = unlimited)
-  max-bytes-per-second-global: 10485760     # 10MB/s
-  # Enable adaptive network speed based on player connection
-  adaptive-speed: true
-  # Compression level for chunk data (1-9, higher = more compression)
-  compression-level: 6
-  # Enable packet bundling for better performance
-  enable-packet-bundling: true
+  max-bytes-per-second-per-player: 1048576  # 1 MB/s, 0 = unlimited
 
-# Fake chunks configuration
-fake-chunks:
-  # Enable terrain simulation
-  simulate-terrain: true
-  # Enable biome information
-  simulate-biomes: true
-  # Enable basic structures (mountains, water bodies)
-  simulate-structures: true
-  # Cache size for generated fake chunks (MB)
-  cache-size: 64
-  # Enable height-based chunk simulation
-  height-based: true
-
-# Per-world settings
+# Per-world overrides (add blocks named exactly as your world names)
 worlds:
-  # Default settings for all worlds
   default:
     enabled: true
     max-distance: 64
     fake-chunks-enabled: true
-    performance-mode: "BALANCED"  # PERFORMANCE, BALANCED, QUALITY
+  # Example world override (uncomment and adjust):
+  # world:               # exact world name
+  #   enabled: true
+  #   max-distance: 48
+  #   fake-chunks-enabled: true
 
-  # World-specific overrides
-  world_nether:
-    max-distance: 32
-    fake-chunks-enabled: false
+# Fake chunks cache settings
+fake-chunks:
+  cache-size: 64
 
-  world_the_end:
-    max-distance: 48
-    performance-mode: "PERFORMANCE"
-
-# Database settings
+# Database (H2) used for player view persistence
 database:
-  type: "H2"  # Currently only H2 is supported
-  file-name: "extendedhorizons"
   enabled: true
+  file-name: "extendedhorizons"
   auto-server: true
   auto-server-port: 9092
   connection-pool-size: 10
-  enable-cache: true
-  auto-save-interval: 300  # seconds
 
-# Integration settings
+# Integrations
 integrations:
   placeholderapi:
     enabled: true
   luckperms:
     enabled: true
-    check-interval: 60  # seconds
+    check-interval: 60 # seconds
     use-group-permissions: true
 
-# Monitoring and metrics
+# Logging / monitoring
 monitoring:
-  enable-metrics: true
   log-performance-warnings: true
-  chunk-load-timeout: 5000  # milliseconds
-  network-timeout: 3000     # milliseconds
 
-# Messages configuration
+# Message toggles (actual texts live in messages.yml)
 messages:
   welcome-message:
     enabled: true
-    text: "&#2ECC71Welcome! Your view distance has been set to &#FFFFFF{distance} &#2ECC71chunks."

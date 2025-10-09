@@ -5,7 +5,6 @@ package me.mapacheee.extendedhorizons.optimization.service;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import me.mapacheee.extendedhorizons.shared.config.Config;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.ChunkRegion;
 import org.bukkit.World;
@@ -118,7 +117,6 @@ public class CacheService {
             logger.debug("Cache cleanup removed {} old regions", removedCount);
         }
 
-        // Check if cache size is still too large
         if (getCurrentCacheSizeBytes() > maxCacheSizeBytes) {
             performEmergencyEviction(maxCacheSizeBytes);
         }
@@ -128,10 +126,9 @@ public class CacheService {
         logger.warn("Cache size ({} MB) exceeds limit ({} MB), performing emergency eviction",
                    getCurrentCacheSizeMB(), maxCacheSizeBytes / (1024 * 1024));
 
-        // Sort regions by last access time and remove oldest
         regionCache.entrySet().stream()
             .sorted((e1, e2) -> Long.compare(e1.getValue().getLastAccessTime(), e2.getValue().getLastAccessTime()))
-            .limit(regionCache.size() / 4) // Remove 25% of cache
+            .limit(regionCache.size() / 4)
             .forEach(entry -> {
                 regionCache.remove(entry.getKey());
                 entry.getValue().clearCache();

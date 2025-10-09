@@ -4,6 +4,7 @@ import com.github.retrooper.packetevents.PacketEvents;
 import com.thewinterframework.paper.PaperWinterPlugin;
 import com.thewinterframework.plugin.WinterBootPlugin;
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
+import me.mapacheee.extendedhorizons.integration.service.PlaceholderAPIProvider;
 import org.bukkit.Bukkit;
 import org.slf4j.Logger;
 
@@ -43,6 +44,15 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
             getSLF4JLogger().error("PacketEvents plugin not found or not initialized! Please install PacketEvents plugin.");
             getServer().getPluginManager().disablePlugin(this);
             return;
+        }
+
+        try {
+            PlaceholderAPIProvider provider = getService(PlaceholderAPIProvider.class);
+            if (provider != null) {
+                provider.tryRegister();
+            }
+        } catch (Throwable t) {
+            getSLF4JLogger().warn("Failed to register PlaceholderAPI expansion.", t);
         }
 
         detectServerType();

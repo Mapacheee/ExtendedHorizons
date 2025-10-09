@@ -116,13 +116,10 @@ public class SchedulerService {
 
     private void performanceCheck() {
         try {
-            // Update peak player count
             int currentPlayers = Bukkit.getOnlinePlayers().size();
             peakPlayers.updateAndGet(peak -> Math.max(peak, currentPlayers));
 
-            if (configService.isAdaptivePerformanceEnabled()) {
-                performAdaptiveAdjustments();
-            }
+            performAdaptiveAdjustments();
 
         } catch (Exception e) {
             logger.error("Error during performance check", e);
@@ -130,11 +127,8 @@ public class SchedulerService {
     }
 
     private void performAdaptiveAdjustments() {
-        PerformanceMonitorService.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
-
-        // If memory usage is high, clear cache
+        var metrics = performanceMonitor.getCurrentMetrics();
         if (metrics.memoryUsagePercent() > 85.0) {
-            logger.warn("High memory usage detected, clearing cache");
             cacheService.clearAllCache();
         }
     }
@@ -168,12 +162,8 @@ public class SchedulerService {
 
     private void collectHourlyStatistics() {
         try {
-            // Clear old statistics to prevent memory buildup
             viewDistanceService.resetStatistics();
-
-            // Reset peak player count
             peakPlayers.set(Bukkit.getOnlinePlayers().size());
-
             logger.debug("Hourly statistics collected and reset");
 
         } catch (Exception e) {
@@ -217,7 +207,6 @@ public class SchedulerService {
     public void shutdown() {
         running = false;
 
-        // Cancel all tasks
         tasks.forEach(task -> {
             if (!task.isCancelled()) {
                 task.cancel();
@@ -225,7 +214,6 @@ public class SchedulerService {
         });
         tasks.clear();
 
-        // Perform final save
         autoSavePlayerData();
         collectDailyStatistics();
 

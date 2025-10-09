@@ -6,7 +6,8 @@ description: ${description}
 author: Mapacheee
 website: https://github.com/mapacheee/extendedhorizons
 
-depend: [PlaceholderAPI, LuckPerms, packetevents]
+depend: [packetevents]
+softdepend: [LuckPerms, PlaceholderAPI]
 
 commands:
   extendedhorizons:
