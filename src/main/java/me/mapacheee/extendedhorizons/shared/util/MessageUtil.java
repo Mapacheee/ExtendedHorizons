@@ -189,6 +189,11 @@ public class MessageUtil {
         sendMessageWithPrefix(sender, message);
     }
 
+    public void sendWelcomeMessage(Player player, int distance) {
+        String message = configService.getWelcomeMessage();
+        sendMessageWithPrefix(player, message, Map.of("distance", String.valueOf(distance)));
+    }
+
     // Stats message methods
     public void sendStatsHeader(CommandSender sender) {
         String message = configService.getStatsHeaderMessage();

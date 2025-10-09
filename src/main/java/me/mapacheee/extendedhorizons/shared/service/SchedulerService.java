@@ -132,32 +132,10 @@ public class SchedulerService {
     private void performAdaptiveAdjustments() {
         PerformanceMonitorService.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
 
-        // If server is lagging, reduce view distances
-        if (metrics.isLagging() && !viewDistanceService.isGlobalPaused()) {
-            logger.warn("Server lagging detected, enabling global pause");
-            viewDistanceService.pauseAll();
-
-            // Schedule resume check in 30 seconds
-            Bukkit.getScheduler().runTaskLater(
-                Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
-                this::checkResumeConditions,
-                600L
-            );
-        }
-
         // If memory usage is high, clear cache
         if (metrics.memoryUsagePercent() > 85.0) {
             logger.warn("High memory usage detected, clearing cache");
             cacheService.clearAllCache();
-        }
-    }
-
-    private void checkResumeConditions() {
-        PerformanceMonitorService.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
-
-        if (!metrics.isLagging() && viewDistanceService.isGlobalPaused()) {
-            logger.info("Performance recovered, resuming view distance processing");
-            viewDistanceService.resumeAll();
         }
     }
 

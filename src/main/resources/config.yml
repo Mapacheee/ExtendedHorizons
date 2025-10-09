@@ -84,8 +84,11 @@ worlds:
 # Database settings
 database:
   type: "H2"  # Currently only H2 is supported
-  file-name: "extendedhorizons.db"
-  connection-pool-size: 5
+  file-name: "extendedhorizons"
+  enabled: true
+  auto-server: true
+  auto-server-port: 9092
+  connection-pool-size: 10
   enable-cache: true
   auto-save-interval: 300  # seconds
 
@@ -104,3 +107,9 @@ monitoring:
   log-performance-warnings: true
   chunk-load-timeout: 5000  # milliseconds
   network-timeout: 3000     # milliseconds
+
+# Messages configuration
+messages:
+  welcome-message:
+    enabled: true
+    text: "&#2ECC71Welcome! Your view distance has been set to &#FFFFFF{distance} &#2ECC71chunks."

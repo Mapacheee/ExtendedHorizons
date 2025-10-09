@@ -101,9 +101,7 @@ public class PlaceholderAPIProvider extends PlaceholderExpansion {
         return switch (params.toLowerCase()) {
             // Server statistics
             case "server_tps" -> String.format("%.1f", performanceMonitor.getCurrentTPS());
-            case "server_lagging" -> String.valueOf(performanceMonitor.isServerLagging());
             case "performance_score" -> String.format("%.2f", performanceMonitor.getPerformanceScore());
-            case "recommended_max_distance" -> String.valueOf(performanceMonitor.getRecommendedMaxViewDistance());
 
             // Memory and performance
             case "memory_used" -> String.valueOf(performanceMonitor.getCurrentMetrics().usedMemoryMB());
@@ -177,7 +175,6 @@ public class PlaceholderAPIProvider extends PlaceholderExpansion {
         PlayerView view = viewDistanceService.getPlayerView(player);
         if (view == null) return "0.0";
 
-        // Use specific config method instead of getConfig().network().maxBytesPerSecondPerPlayer()
         long maxBytes = configService.getMaxBytesPerSecondPerPlayer();
         if (maxBytes <= 0) return "0.0";
 

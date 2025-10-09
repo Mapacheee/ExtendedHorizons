@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.shared.config;
 
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
+import com.google.inject.Injector;
 import com.thewinterframework.module.annotation.ModuleComponent;
 import com.thewinterframework.plugin.module.PluginModule;
 import com.thewinterframework.plugin.WinterPlugin;
@@ -28,6 +29,12 @@ public class ServiceConfigurationModule implements PluginModule {
     @Override
     public boolean onEnable(WinterPlugin plugin) {
         plugin.getSLF4JLogger().info("ServiceConfigurationModule enabled");
+
+        Injector injector = plugin.getInjector();
+        ViewDistanceService viewDistanceService = (ViewDistanceService) injector.getInstance(IViewDistanceService.class);
+        IChunkSenderService chunkSenderService = injector.getInstance(IChunkSenderService.class);
+
+        viewDistanceService.setChunkSenderService(chunkSenderService);
         return true;
     }
 
@@ -47,6 +54,7 @@ public class ServiceConfigurationModule implements PluginModule {
             PerformanceMonitorService performanceMonitor
     ) {
         ViewDistanceService service = new ViewDistanceService(logger, configService, playerViewService, luckPermsService, performanceMonitor);
+        logger.info("ViewDistanceService created");
         return service;
     }
 
@@ -59,7 +67,9 @@ public class ServiceConfigurationModule implements PluginModule {
             me.mapacheee.extendedhorizons.optimization.service.CacheService cacheService,
             IPacketEventsService packetEventsService
     ) {
-        return new ChunkSenderService(logger, configService, playerViewService, cacheService, packetEventsService);
+        ChunkSenderService service = new ChunkSenderService(logger, configService, playerViewService, cacheService, packetEventsService);
+        logger.info("ChunkSenderService created");
+        return service;
     }
 
     @Provides
@@ -68,6 +78,8 @@ public class ServiceConfigurationModule implements PluginModule {
             Logger logger,
             WinterPlugin plugin
     ) {
-        return new PacketEventsService(logger, (me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin) plugin);
+        PacketEventsService service = new PacketEventsService(logger, (me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin) plugin);
+        logger.info("PacketEventsService created");
+        return service;
     }
 }

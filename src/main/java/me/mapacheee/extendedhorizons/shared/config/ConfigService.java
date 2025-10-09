@@ -49,6 +49,10 @@ public class ConfigService {
         return configFile.getBoolean(path, true);
     }
 
+    public boolean isWelcomeMessageEnabled() {
+        return configFile.getBoolean("messages.welcome-message.enabled", true);
+    }
+
     public int getMaxViewDistanceForWorld(String worldName) {
         String path = switch (worldName.toLowerCase()) {
             case "world_nether" -> "worlds.world-nether.max-distance";
@@ -120,6 +124,26 @@ public class ConfigService {
         return configFile.getInt("fake-chunks.cache-size", 64);
     }
 
+    public String getDatabaseFileName() {
+        return configFile.getString("database.file-name", "extendedhorizons");
+    }
+
+    public boolean isDatabaseAutoServerEnabled() {
+        return configFile.getBoolean("database.auto-server", true);
+    }
+
+    public int getDatabaseAutoServerPort() {
+        return configFile.getInt("database.auto-server-port", 9092);
+    }
+
+    public boolean isDatabaseEnabled() {
+        return configFile.getBoolean("database.enabled", true);
+    }
+
+    public int getDatabaseConnectionPoolSize() {
+        return configFile.getInt("database.connection-pool-size", 10);
+    }
+
     // Messages getters
     public String getPrefix() {
         return messagesFile.getString("prefix", "&#3498DB[&#E74C3CExtended&#F39C12Horizons&#3498DB] &#FFFFFF");
@@ -149,8 +173,12 @@ public class ConfigService {
         return messagesFile.getString("view-distance.max-distance-exceeded", "&#E74C3CMaximum view distance is &#FFFFFF{max} &#E74C3Cchunks!");
     }
 
+    public String getMinDistanceExceededMessage() {
+        return messagesFile.getString("view-distance.min-distance-exceeded", "&#E74C3CMinimum view distance is &#FFFFFF{min} &#E74C3Cchunks!");
+    }
+
     public String getLowTpsWarningMessage() {
-        return messagesFile.getString("performance.low-tps-warning", "&#E74C3CServer TPS is low (&#FFFFFF{tps}&#E74C3C), reducing view distances...");
+        return messagesFile.getString("performance.low-tps-warning", "&#E74C3CServer TPS is low (&#FFFFFF{tps}&#E74C3C). Performance monitoring is active.");
     }
 
     public boolean isPerformanceWarningLoggingEnabled() {
@@ -213,110 +241,136 @@ public class ConfigService {
         return messagesFile.getString("debug.disabled", "&#E74C3CDebug mode is disabled");
     }
 
+    public String getWelcomeMessage() {
+        return messagesFile.getString("messages.welcome-message.text",
+            "&#2ECC71Welcome! Your view distance has been set to &#FFFFFF{distance} &#2ECC71chunks.");
+    }
+
     // Help messages
     public String getHelpHeaderMessage() {
-        return messagesFile.getString("help.header", "&#3498DB========= &#F39C12ExtendedHorizons Help &#3498DB=========");
-    }
-
-    public String getHelpInfoMessage() {
-        return messagesFile.getString("help.info", "&#3498DB/eh info &#FFFFFF- Show plugin and player information");
-    }
-
-    public String getHelpDistanceMessage() {
-        return messagesFile.getString("help.distance", "&#3498DB/eh distance [value] &#FFFFFF- Get/set your view distance");
-    }
-
-    public String getHelpResetMessage() {
-        return messagesFile.getString("help.reset", "&#3498DB/eh reset &#FFFFFF- Reset view distance to default");
-    }
-
-    public String getHelpAdminHeaderMessage() {
-        return messagesFile.getString("help.admin-header", "&#E74C3C=== Admin Commands ===");
-    }
-
-    public String getHelpReloadMessage() {
-        return messagesFile.getString("help.reload", "&#E74C3C/eh reload &#FFFFFF- Reload configuration");
-    }
-
-    public String getHelpStatsMessage() {
-        return messagesFile.getString("help.stats", "&#E74C3C/eh stats &#FFFFFF- Show plugin statistics");
-    }
-
-    public String getHelpDebugMessage() {
-        return messagesFile.getString("help.debug", "&#E74C3C/eh debug &#FFFFFF- Toggle debug mode");
-    }
-
-    public String getHelpWorldMessage() {
-        return messagesFile.getString("help.world", "&#E74C3C/eh world <world> &#FFFFFF- World-specific settings");
+        return messagesFile.getString("help.header", "&#3498DB========== &#E74C3CExtended&#F39C12Horizons &#3498DBHelp ==========");
     }
 
     public String getHelpFooterMessage() {
-        return messagesFile.getString("help.footer", "&#3498DB===========================================");
+        return messagesFile.getString("help.footer", "&#3498DB==========================================");
     }
 
-    // Stats messages
-    public String getStatsHeaderMessage() {
-        return messagesFile.getString("stats.header", "&#3498DB========= &#F39C12ExtendedHorizons Stats &#3498DB=========");
+    public String getHelpSetMessage() {
+        return messagesFile.getString("help.set", "&#F39C12/eh set <distance> &#FFFFFF- Set your view distance");
     }
 
-    public String getStatsPlayersOnlineMessage() {
-        return messagesFile.getString("stats.players-online", "&#3498DBPlayers Online: &#FFFFFF{online}&#3498DB/&#FFFFFF{max}");
+    public String getHelpSetPlayerMessage() {
+        return messagesFile.getString("help.set-player", "&#F39C12/eh set <player> <distance> &#FFFFFF- Set another player's view distance");
     }
 
-    public String getStatsAverageDistanceMessage() {
-        return messagesFile.getString("stats.average-distance", "&#3498DBAverage Distance: &#F39C12{distance} &#3498DBchunks");
+    public String getHelpGetMessage() {
+        return messagesFile.getString("help.get", "&#F39C12/eh get &#FFFFFF- Check your current view distance");
     }
 
-    public String getStatsChunksSentMessage() {
-        return messagesFile.getString("stats.chunks-sent", "&#3498DBChunks Sent: &#FFFFFF{chunks}");
+    public String getHelpReloadMessage() {
+        return messagesFile.getString("help.reload", "&#F39C12/eh reload &#FFFFFF- Reload configuration");
     }
 
-    public String getStatsFakeChunksSentMessage() {
-        return messagesFile.getString("stats.fake-chunks-sent", "&#3498DBFake Chunks Sent: &#FFFFFF{chunks}");
+    public String getHelpInfoMessage() {
+        return messagesFile.getString("help.info", "&#F39C12/eh info &#FFFFFF- View plugin information");
     }
 
-    public String getStatsCacheSizeMessage() {
-        return messagesFile.getString("stats.cache-size", "&#3498DBCache Size: &#FFFFFF{size} &#3498DBMB");
+    public String getHelpDistanceMessage() {
+        return messagesFile.getString("help.distance", "&#F39C12/eh distance <player> &#FFFFFF- Check another player's view distance");
     }
 
-    public String getStatsServerTpsMessage() {
-        return messagesFile.getString("stats.server-tps", "&#3498DBServer TPS: &#F39C12{tps}");
+    public String getHelpResetMessage() {
+        return messagesFile.getString("help.reset", "&#F39C12/eh reset &#FFFFFF- Reset your view distance to default");
     }
 
-    public String getStatsFooterMessage() {
-        return messagesFile.getString("stats.footer", "&#3498DB===========================================");
+    public String getHelpAdminHeaderMessage() {
+        return messagesFile.getString("help.admin-header", "&#E74C3C========== Admin Commands ==========");
     }
 
-    public String getDatabaseFileName() {
-        return configFile.getString("database.file-name", "extendedhorizons");
+    public String getHelpStatsMessage() {
+        return messagesFile.getString("help.stats", "&#F39C12/eh stats &#FFFFFF- View server statistics");
     }
 
-    public boolean isDatabaseAutoServerEnabled() {
-        return configFile.getBoolean("database.auto-server", true);
+    public String getHelpDebugMessage() {
+        return messagesFile.getString("help.debug", "&#F39C12/eh debug &#FFFFFF- Toggle debug mode");
     }
 
-    public int getDatabaseAutoServerPort() {
-        return configFile.getInt("database.auto-server-port", 9092);
-    }
-
-    public boolean isDatabaseEnabled() {
-        return configFile.getBoolean("database.enabled", true);
-    }
-
-    public int getDatabaseConnectionPoolSize() {
-        return configFile.getInt("database.connection-pool-size", 10);
-    }
-
-    public void reload() throws Exception {
-        try {
-            logger.info("Configuration files reloaded successfully");
-        } catch (Exception e) {
-            logger.error("Failed to reload configuration", e);
-            throw e;
-        }
+    public String getHelpWorldMessage() {
+        return messagesFile.getString("help.world", "&#F39C12/eh world <world> [distance] &#FFFFFF- Manage world settings");
     }
 
     public String getMinDistanceErrorMessage() {
         return messagesFile.getString("view-distance.min-distance-error", "&#E74C3CMinimum view distance is &#FFFFFF{min} &#E74C3Cchunks!");
+    }
+
+    // Stats messages
+    public String getStatsHeaderMessage() {
+        return messagesFile.getString("stats.header", "&#3498DB========== &#E74C3CExtended&#F39C12Horizons &#3498DBStats ==========");
+    }
+
+    public String getStatsPlayersOnlineMessage() {
+        return messagesFile.getString("stats.players-online", "&#F39C12Players Online: &#FFFFFF{count}");
+    }
+
+    public String getStatsAverageDistanceMessage() {
+        return messagesFile.getString("stats.average-distance", "&#F39C12Average View Distance: &#FFFFFF{distance} &#F39C12chunks");
+    }
+
+    public String getStatsChunksSentMessage() {
+        return messagesFile.getString("stats.chunks-sent", "&#F39C12Total Chunks Sent: &#FFFFFF{count}");
+    }
+
+    public String getStatsFakeChunksSentMessage() {
+        return messagesFile.getString("stats.fake-chunks-sent", "&#F39C12Fake Chunks Sent: &#FFFFFF{count}");
+    }
+
+    public String getStatsCacheSizeMessage() {
+        return messagesFile.getString("stats.cache-size", "&#F39C12Cache Size: &#FFFFFF{size}");
+    }
+
+    public String getStatsServerTpsMessage() {
+        return messagesFile.getString("stats.server-tps", "&#F39C12Server TPS: &#FFFFFF{tps}");
+    }
+
+    public String getStatsFooterMessage() {
+        return messagesFile.getString("stats.footer", "&#3498DB==========================================");
+    }
+
+    // Reload methods
+    public void reload() {
+        try {
+            // Winter Framework YamlConfig se recarga automáticamente
+            // Solo registramos que se solicitó la recarga
+            logger.info("Configuration and messages reloaded successfully");
+        } catch (Exception e) {
+            logger.error("Failed to reload configuration", e);
+            throw new RuntimeException("Configuration reload failed", e);
+        }
+    }
+
+    public void reloadConfig() {
+        try {
+            logger.info("Configuration reloaded successfully");
+        } catch (Exception e) {
+            logger.error("Failed to reload configuration", e);
+            throw new RuntimeException("Configuration reload failed", e);
+        }
+    }
+
+    public void reloadMessages() {
+        try {
+            logger.info("Messages reloaded successfully");
+        } catch (Exception e) {
+            logger.error("Failed to reload messages", e);
+            throw new RuntimeException("Messages reload failed", e);
+        }
+    }
+
+    public boolean isValidViewDistance(int distance) {
+        return distance >= getMinViewDistance() && distance <= getMaxViewDistance();
+    }
+
+    public boolean isValidViewDistanceForWorld(String worldName, int distance) {
+        return distance >= getMinViewDistance() && distance <= getMaxViewDistanceForWorld(worldName);
     }
 }

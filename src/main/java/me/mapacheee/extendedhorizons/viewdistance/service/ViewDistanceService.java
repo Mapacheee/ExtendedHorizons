@@ -28,7 +28,6 @@ public class ViewDistanceService implements IViewDistanceService {
     private final Logger logger;
     private final ConfigService configService;
     private final PlayerViewService playerViewService;
-    private IChunkSenderService chunkSenderService;
     private final LuckPermsIntegrationService luckPermsService;
     private final PerformanceMonitorService performanceMonitor;
 
@@ -37,6 +36,8 @@ public class ViewDistanceService implements IViewDistanceService {
     private final AtomicInteger totalFakeChunksSent;
     private volatile boolean adaptiveMode;
     private volatile boolean globalPause;
+
+    private IChunkSenderService chunkSenderService;
 
     @Inject
     public ViewDistanceService(
@@ -49,19 +50,27 @@ public class ViewDistanceService implements IViewDistanceService {
         this.logger = logger;
         this.configService = configService;
         this.playerViewService = playerViewService;
-        this.chunkSenderService = null; // Will be injected later to avoid circular dependency
         this.luckPermsService = luckPermsService;
         this.performanceMonitor = performanceMonitor;
         this.playerViews = new ConcurrentHashMap<>();
         this.totalChunksSent = new AtomicInteger(0);
         this.totalFakeChunksSent = new AtomicInteger(0);
-        this.adaptiveMode = true;
+        this.adaptiveMode = false;
         this.globalPause = false;
     }
 
     @Inject
     public void setChunkSenderService(IChunkSenderService chunkSenderService) {
         this.chunkSenderService = chunkSenderService;
+        logger.info("ChunkSenderService injected successfully");
+    }
+
+    private IChunkSenderService getChunkSenderService() {
+        if (chunkSenderService == null) {
+            logger.warn("ChunkSenderService is not yet injected, skipping chunk operations");
+            return null;
+        }
+        return chunkSenderService;
     }
 
     public void initializePlayerView(Player player) {
@@ -71,9 +80,21 @@ public class ViewDistanceService implements IViewDistanceService {
         PlayerView playerView = new PlayerView(player);
         playerViews.put(player.getUniqueId(), playerView);
 
-        updatePlayerPermissions(player);
-        updatePlayerViewDistance(player);
+        int defaultDistance = Math.min(
+                configService.getDefaultViewDistance(),
+                getMaxAllowedDistance(player)
+        );
+        playerView.setTargetDistance(defaultDistance);
+        playerView.setCurrentDistance(defaultDistance);
 
+        try {
+            player.setViewDistance(defaultDistance);
+        } catch (Throwable ignored) {}
+        try {
+            player.setSendViewDistance(defaultDistance);
+        } catch (Throwable ignored) { }
+
+        updatePlayerPermissions(player);
         logger.info("Initialized view for player {} with distance {}",
                    player.getName(), playerView.getCurrentDistance());
     }
@@ -81,7 +102,7 @@ public class ViewDistanceService implements IViewDistanceService {
     public void removePlayerView(Player player) {
         PlayerView view = playerViews.remove(player.getUniqueId());
         if (view != null) {
-            chunkSenderService.unloadAllChunks(player);
+            getChunkSenderService().unloadAllChunks(player);
             logger.debug("Removed view for player {}", player.getName());
         }
     }
@@ -108,52 +129,52 @@ public class ViewDistanceService implements IViewDistanceService {
         }
 
         view.setTargetDistance(distance);
+        try {
+            player.setViewDistance(distance);
+        } catch (Throwable ignored) { }
+        try {
+            player.setSendViewDistance(distance);
+        } catch (Throwable ignored) { }
+
         updatePlayerViewDistance(player);
     }
 
     public void updatePlayerViewDistance(Player player) {
-        PlayerView view = getPlayerView(player);
-        if (view == null) return;
+        PlayerView playerView = playerViews.get(player.getUniqueId());
+        if (playerView == null) return;
 
         if (globalPause) {
-            view.setWaitingForChunks(true);
+            playerView.setWaitingForChunks(true);
             return;
         }
 
-        int targetDistance = calculateOptimalDistance(player, view);
+        int targetDistance = calculateOptimalDistance(player, playerView);
 
-        if (targetDistance != view.getCurrentDistance()) {
-            view.setCurrentDistance(targetDistance);
+        if (targetDistance != playerView.getCurrentDistance()) {
+            playerView.setCurrentDistance(targetDistance);
 
             boolean enableFakeChunks = configService.areFakeChunksEnabled() &&
                                      targetDistance > configService.getFakeChunksStartDistance();
-            view.setFakeChunksEnabled(enableFakeChunks);
+            playerView.setFakeChunksEnabled(enableFakeChunks);
 
-            chunkSenderService.sendChunks(player, view);
+            try {
+                player.setViewDistance(targetDistance);
+            } catch (Throwable ignored) { }
+            try {
+                player.setSendViewDistance(targetDistance);
+            } catch (Throwable ignored) { }
+
+            IChunkSenderService chunkSender = getChunkSenderService();
+            if (chunkSender != null) {
+                chunkSender.sendChunks(player, playerView);
+            } else {
+                logger.debug("Skipping chunk sending for {} - ChunkSenderService not ready", player.getName());
+            }
         }
     }
 
     private int calculateOptimalDistance(Player player, PlayerView view) {
-        int targetDistance = view.getTargetDistance();
-
-        if (!adaptiveMode) return targetDistance;
-
-        if (performanceMonitor.getCurrentTPS() < configService.getMinTpsThreshold()) {
-            return Math.max(8, targetDistance / 2);
-        }
-
-        if (view.isMovingTooFast()) {
-            return Math.max(view.getCurrentDistance() - 2, 8);
-        }
-
-        long networkUsage = view.getNetworkBytesUsed();
-        long maxBytesPerPlayer = configService.getMaxBytesPerSecondPerPlayer();
-
-        if (networkUsage > maxBytesPerPlayer) {
-            return Math.max(view.getCurrentDistance() - 1, 8);
-        }
-
-        return targetDistance;
+        return view.getTargetDistance();
     }
 
     private int getMaxAllowedDistance(Player player) {
@@ -197,10 +218,15 @@ public class ViewDistanceService implements IViewDistanceService {
 
         if (view.getCurrentWorld() != player.getWorld()) {
             view.setCurrentWorld(player.getWorld());
-            chunkSenderService.unloadAllChunks(player);
+            getChunkSenderService().unloadAllChunks(player);
             updatePlayerViewDistance(player);
         } else {
-            chunkSenderService.sendChunks(player, view);
+            IChunkSenderService chunkSender = getChunkSenderService();
+            if (chunkSender != null) {
+                chunkSender.sendChunks(player, view);
+            } else {
+                logger.debug("Skipping chunk sending for {} - ChunkSenderService not ready", player.getName());
+            }
         }
     }
 

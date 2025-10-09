@@ -8,7 +8,17 @@ website: https://github.com/mapacheee/extendedhorizons
 
 depend: [PlaceholderAPI, LuckPerms, packetevents]
 
+commands:
+  extendedhorizons:
+    description: Main ExtendedHorizons command
+    usage: /<command> [subcommand]
+    aliases: [eh, horizons, viewdistance, vd]
+    permission: extendedhorizons.use
+
 permissions:
+  extendedhorizons.use:
+    description: Basic permission to use ExtendedHorizons commands
+    default: true
   extendedhorizons.distance.16:
     description: Allow view distance up to 16 chunks
     default: true

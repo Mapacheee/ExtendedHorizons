@@ -12,24 +12,21 @@ import me.mapacheee.extendedhorizons.optimization.service.CacheService;
 import me.mapacheee.extendedhorizons.integration.service.LuckPermsIntegrationService;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.incendo.cloud.annotations.Argument;
+import org.incendo.cloud.annotations.Command;
+import org.incendo.cloud.annotations.Permission;
+import org.incendo.cloud.paper.util.sender.Source;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 
-/* Extended Horizons Command - Main command handler using Winter Framework's command system
+/* Extended Horizons Command - Main command handler using Winter Framework's command system with Incendo Cloud
  * Provides comprehensive admin and player commands for view distance management
  */
 
 @CommandComponent
-public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
+public class ExtendedHorizonsCommand {
 
     private final Logger logger;
     private final ConfigService configService;
@@ -58,78 +55,55 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
         this.luckPermsService = luckPermsService;
     }
 
-    @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player player)) {
-            messageUtil.sendMessage(sender, configService.getPlayerOnlyMessage());
-            return true;
-        }
-
-        if (args.length == 0) {
-            handleHelp(player);
-            return true;
-        }
-
-        String subCommand = args[0].toLowerCase();
-
-        switch (subCommand) {
-            case "help" -> handleHelp(player);
-            case "info" -> handleInfo(player);
-            case "distance" -> handleDistance(player, Arrays.copyOfRange(args, 1, args.length));
-            case "reset" -> handleReset(player, Arrays.copyOfRange(args, 1, args.length));
-            case "reload" -> handleReload(player);
-            case "stats" -> handleStats(player);
-            case "debug" -> handleDebug(player);
-            case "world" -> handleWorld(player, Arrays.copyOfRange(args, 1, args.length));
-            default -> messageUtil.sendUnknownCommand(player);
-        }
-        return true;
-    }
-
-    @Override
-    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) {
-            return filterStartingWith(args[0], Arrays.asList(
-                "help", "info", "distance", "reset", "reload", "stats", "debug", "world"
-            ));
-        }
-
-        if (args.length == 2) {
-            String subCommand = args[0].toLowerCase();
-            return switch (subCommand) {
-                case "distance", "reset" -> {
-                    if (sender.hasPermission("extendedhorizons.admin")) {
-                        yield getOnlinePlayerNames();
-                    }
-                    yield new ArrayList<>();
-                }
-                case "world" -> getWorldNames();
-                default -> new ArrayList<>();
-            };
-        }
-
-        return new ArrayList<>();
-    }
-
-    private void handleHelp(Player player) {
-        if (!player.hasPermission("extendedhorizons.use")) {
-            messageUtil.sendNoPermission(player);
-            return;
-        }
+    @Command("extendedhorizons")
+    @Permission("extendedhorizons.use")
+    public void handleMainFull(Source source) {
+        Player player = (Player) source.source();
         messageUtil.sendHelpMessage(player);
     }
 
-    private void handleInfo(Player player) {
-        if (!player.hasPermission("extendedhorizons.use")) {
-            messageUtil.sendNoPermission(player);
-            return;
-        }
+    @Command("eh")
+    @Permission("extendedhorizons.use")
+    public void handleMain(Source source) {
+        Player player = (Player) source.source();
+        messageUtil.sendHelpMessage(player);
+    }
 
-        // Plugin info
+    @Command("horizons")
+    @Permission("extendedhorizons.use")
+    public void handleHorizons(Source source) {
+        Player player = (Player) source.source();
+        messageUtil.sendHelpMessage(player);
+    }
+
+    @Command("viewdistance")
+    @Permission("extendedhorizons.use")
+    public void handleViewdistance(Source source) {
+        Player player = (Player) source.source();
+        messageUtil.sendHelpMessage(player);
+    }
+
+    @Command("vd")
+    @Permission("extendedhorizons.use")
+    public void handleVd(Source source) {
+        Player player = (Player) source.source();
+        messageUtil.sendHelpMessage(player);
+    }
+
+    @Command("eh help")
+    @Permission("extendedhorizons.use")
+    public void handleHelp(Source source) {
+        Player player = (Player) source.source();
+        messageUtil.sendHelpMessage(player);
+    }
+
+    @Command("eh info")
+    @Permission("extendedhorizons.use")
+    public void handleInfo(Source source) {
+        Player player = (Player) source.source();
         messageUtil.sendMessageWithPrefix(player, "&#3498DBPlugin: &#F39C12ExtendedHorizons &#3498DBv" +
                 ExtendedHorizonsPlugin.getInstance().getDescription().getVersion() + " &#3498DBby &#FFFFFFMapacheee");
 
-        // Player view info if available
         PlayerView playerView = viewDistanceService.getPlayerView(player.getUniqueId());
         if (playerView != null) {
             messageUtil.sendCurrentDistance(player, playerView.getCurrentDistance());
@@ -142,73 +116,131 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    private void handleDistance(Player sender, String[] args) {
-        if (!sender.hasPermission("extendedhorizons.use")) {
-            messageUtil.sendNoPermission(sender);
-            return;
+    @Command("eh view")
+    @Permission("extendedhorizons.use")
+    public void handleViewDistance(Source source) {
+        Player player = (Player) source.source();
+        PlayerView playerView = viewDistanceService.getPlayerView(player.getUniqueId());
+        if (playerView != null) {
+            messageUtil.sendCurrentDistance(player, playerView.getCurrentDistance());
+        } else {
+            messageUtil.sendNoViewData(player);
         }
+    }
 
-        // If no arguments, show current distance
-        if (args.length == 0) {
-            PlayerView playerView = viewDistanceService.getPlayerView(sender.getUniqueId());
-            if (playerView != null) {
-                messageUtil.sendCurrentDistance(sender, playerView.getCurrentDistance());
-            } else {
-                messageUtil.sendNoViewData(sender);
-            }
-            return;
+    @Command("eh setme <distance>")
+    @Permission("extendedhorizons.use")
+    public void handleSetMyDistance(Source source, @Argument("distance") int distance) {
+        Player player = (Player) source.source();
+        setPlayerDistance(player, player, distance);
+    }
+
+    @Command("eh reset")
+    @Permission("extendedhorizons.use")
+    public void handleReset(Source source) {
+        Player player = (Player) source.source();
+        int defaultDistance = configService.getDefaultViewDistance();
+        viewDistanceService.setViewDistance(player, defaultDistance);
+        messageUtil.sendViewDistanceReset(player, defaultDistance);
+    }
+
+    @Command("eh check <player>")
+    @Permission("extendedhorizons.admin")
+    public void handleCheckPlayer(Source source, @Argument("player") Player target) {
+        Player player = (Player) source.source();
+        PlayerView playerView = viewDistanceService.getPlayerView(target.getUniqueId());
+        if (playerView != null) {
+            messageUtil.sendMessage(player, "&#3498DB" + target.getName() + "'s view distance: &#F39C12" +
+                                  playerView.getCurrentDistance() + " &#3498DBchunks");
+        } else {
+            messageUtil.sendMessage(player, "&#E74C3CNo view data available for " + target.getName());
         }
+    }
 
-        // If only one argument, check if it's a number (distance for sender) or player name
-        if (args.length == 1) {
-            try {
-                int distance = Integer.parseInt(args[0]);
-                setPlayerDistance(sender, sender, distance);
-                return;
-            } catch (NumberFormatException e) {
-                // It's a player name, show their distance (admin only)
-                if (!sender.hasPermission("extendedhorizons.admin")) {
-                    messageUtil.sendNoPermission(sender);
-                    return;
-                }
+    @Command("eh setplayer <player> <distance>")
+    @Permission("extendedhorizons.admin")
+    public void handleSetPlayerDistance(Source source, @Argument("player") Player target, @Argument("distance") int distance) {
+        Player player = (Player) source.source();
+        setPlayerDistance(player, target, distance);
+    }
 
-                Player target = Bukkit.getPlayer(args[0]);
-                if (target == null) {
-                    messageUtil.sendPlayerNotFound(sender, args[0]);
-                    return;
-                }
+    @Command("eh resetplayer <player>")
+    @Permission("extendedhorizons.admin")
+    public void handleResetPlayer(Source source, @Argument("player") Player target) {
+        Player player = (Player) source.source();
+        int defaultDistance = configService.getDefaultViewDistance();
+        viewDistanceService.setViewDistance(target, defaultDistance);
+        messageUtil.sendViewDistanceReset(target, defaultDistance);
 
-                PlayerView playerView = viewDistanceService.getPlayerView(target.getUniqueId());
-                if (playerView != null) {
-                    messageUtil.sendMessage(sender, "&#3498DB" + target.getName() + "'s view distance: &#F39C12" +
-                                          playerView.getCurrentDistance() + " &#3498DBchunks");
-                } else {
-                    messageUtil.sendMessage(sender, "&#E74C3CNo view data available for " + target.getName());
-                }
-                return;
-            }
+        if (!player.equals(target)) {
+            messageUtil.sendDistanceSetOther(player, target.getName(), defaultDistance);
         }
+    }
 
-        // Two arguments: player and distance
-        if (args.length == 2) {
-            if (!sender.hasPermission("extendedhorizons.admin")) {
-                messageUtil.sendNoPermission(sender);
-                return;
-            }
+    @Command("eh reload")
+    @Permission("extendedhorizons.admin")
+    public void handleReload(Source source) {
+        Player player = (Player) source.source();
+        try {
+            configService.reload();
+            luckPermsService.invalidateAllCache();
+            cacheService.clearAllCache();
 
-            Player target = Bukkit.getPlayer(args[0]);
-            if (target == null) {
-                messageUtil.sendPlayerNotFound(sender, args[0]);
-                return;
-            }
+            messageUtil.sendConfigReloaded(player);
+            logger.info("Configuration reloaded by {}", player.getName());
 
-            try {
-                int distance = Integer.parseInt(args[1]);
-                setPlayerDistance(sender, target, distance);
-            } catch (NumberFormatException e) {
-                messageUtil.sendInvalidDistance(sender, args[1]);
-            }
+        } catch (Exception e) {
+            messageUtil.sendConfigError(player);
+            logger.error("Error reloading configuration", e);
         }
+    }
+
+    @Command("eh stats")
+    @Permission("extendedhorizons.admin")
+    public void handleStats(Source source) {
+        Player player = (Player) source.source();
+        PerformanceMonitorService.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
+        CacheService.CacheStatistics cacheStats = cacheService.getStatistics();
+
+        messageUtil.sendStatsHeader(player);
+        messageUtil.sendStatsPlayersOnline(player, Bukkit.getOnlinePlayers().size(), Bukkit.getMaxPlayers());
+
+        Collection<PlayerView> allViews = viewDistanceService.getAllPlayerViews();
+        double averageDistance = allViews.stream()
+            .mapToInt(PlayerView::getCurrentDistance)
+            .average()
+            .orElse(0.0);
+        messageUtil.sendStatsAverageDistance(player, averageDistance);
+
+        messageUtil.sendStatsChunksSent(player, viewDistanceService.getTotalChunksSent());
+        messageUtil.sendStatsFakeChunksSent(player, viewDistanceService.getTotalFakeChunksSent());
+        messageUtil.sendStatsCacheSize(player, cacheStats.currentSizeMB());
+        messageUtil.sendStatsServerTps(player, metrics.tps());
+        messageUtil.sendStatsFooter(player);
+    }
+
+    @Command("eh debug")
+    @Permission("extendedhorizons.admin")
+    public void handleDebug(Source source) {
+        Player player = (Player) source.source();
+        boolean debugEnabled = configService.isDebugEnabled();
+        messageUtil.sendDebugStatus(player, debugEnabled);
+    }
+
+    @Command("eh worldinfo <world>")
+    @Permission("extendedhorizons.admin")
+    public void handleWorldInfo(Source source, @Argument("world") World world) {
+        Player player = (Player) source.source();
+        int maxDistance = configService.getMaxViewDistanceForWorld(world.getName());
+        messageUtil.sendMessage(player,
+            "&#3498DBWorld &#FFFFFF" + world.getName() + " &#3498DBmax distance: &#F39C12" + maxDistance);
+    }
+
+    @Command("eh worldhelp")
+    @Permission("extendedhorizons.admin")
+    public void handleWorldHelp(Source source) {
+        Player player = (Player) source.source();
+        messageUtil.sendWorldUsage(player);
     }
 
     private void setPlayerDistance(Player sender, Player target, int distance) {
@@ -233,135 +265,5 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
             messageUtil.sendDistanceSetOther(sender, target.getName(), distance);
             messageUtil.sendDistanceChanged(target, distance);
         }
-    }
-
-    private void handleReset(Player sender, String[] args) {
-        if (!sender.hasPermission("extendedhorizons.use")) {
-            messageUtil.sendNoPermission(sender);
-            return;
-        }
-
-        Player target = sender;
-
-        if (args.length > 0) {
-            if (!sender.hasPermission("extendedhorizons.admin")) {
-                messageUtil.sendNoPermission(sender);
-                return;
-            }
-
-            target = Bukkit.getPlayer(args[0]);
-            if (target == null) {
-                messageUtil.sendPlayerNotFound(sender, args[0]);
-                return;
-            }
-        }
-
-        int defaultDistance = configService.getDefaultViewDistance();
-        viewDistanceService.setViewDistance(target, defaultDistance);
-
-        messageUtil.sendViewDistanceReset(target, defaultDistance);
-    }
-
-    private void handleReload(Player sender) {
-        if (!sender.hasPermission("extendedhorizons.admin")) {
-            messageUtil.sendNoPermission(sender);
-            return;
-        }
-
-        try {
-            configService.reload();
-            luckPermsService.invalidateAllCache();
-            cacheService.clearAllCache();
-
-            messageUtil.sendConfigReloaded(sender);
-            logger.info("Configuration reloaded by {}", sender.getName());
-
-        } catch (Exception e) {
-            messageUtil.sendConfigError(sender);
-            logger.error("Error reloading configuration", e);
-        }
-    }
-
-    private void handleStats(Player sender) {
-        if (!sender.hasPermission("extendedhorizons.admin")) {
-            messageUtil.sendNoPermission(sender);
-            return;
-        }
-
-        PerformanceMonitorService.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
-        CacheService.CacheStatistics cacheStats = cacheService.getStatistics();
-
-        messageUtil.sendStatsHeader(sender);
-        messageUtil.sendStatsPlayersOnline(sender, Bukkit.getOnlinePlayers().size(), Bukkit.getMaxPlayers());
-        Collection<PlayerView> allViews = viewDistanceService.getAllPlayerViews();
-        double averageDistance = allViews.stream()
-            .mapToInt(PlayerView::getCurrentDistance)
-            .average()
-            .orElse(0.0);
-        messageUtil.sendStatsAverageDistance(sender, averageDistance);
-
-        messageUtil.sendStatsChunksSent(sender, viewDistanceService.getTotalChunksSent());
-        messageUtil.sendStatsFakeChunksSent(sender, viewDistanceService.getTotalFakeChunksSent());
-        messageUtil.sendStatsCacheSize(sender, cacheStats.currentSizeMB());
-        messageUtil.sendStatsServerTps(sender, metrics.tps());
-        messageUtil.sendStatsFooter(sender);
-    }
-
-    private void handleDebug(Player sender) {
-        if (!sender.hasPermission("extendedhorizons.admin")) {
-            messageUtil.sendNoPermission(sender);
-            return;
-        }
-
-        boolean debugEnabled = configService.isDebugEnabled();
-        messageUtil.sendDebugStatus(sender, debugEnabled);
-    }
-
-    private void handleWorld(Player sender, String[] args) {
-        if (!sender.hasPermission("extendedhorizons.admin")) {
-            messageUtil.sendNoPermission(sender);
-            return;
-        }
-
-        if (args.length == 0) {
-            messageUtil.sendWorldUsage(sender);
-            return;
-        }
-
-        String worldName = args[0];
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) {
-            messageUtil.sendWorldNotFound(sender, worldName);
-            return;
-        }
-
-        if (args.length == 1) {
-            // Show current world settings
-            int maxDistance = configService.getMaxViewDistanceForWorld(worldName);
-            messageUtil.sendMessage(sender,
-                "&#3498DBWorld &#FFFFFF" + worldName + " &#3498DBmax distance: &#F39C12" + maxDistance);
-            return;
-        }
-
-        // This would require a way to update world-specific config
-        messageUtil.sendWorldConfigNotice(sender);
-    }
-
-    private List<String> filterStartingWith(String prefix, List<String> options) {
-        return options.stream()
-            .filter(option -> option.toLowerCase().startsWith(prefix.toLowerCase()))
-            .toList();
-    }
-
-    private List<String> getOnlinePlayerNames() {
-        return Bukkit.getOnlinePlayers().stream()
-            .map(Player::getName)
-            .toList();
-    }
-
-    private List<String> getWorldNames() {
-        return Bukkit.getWorlds().stream()
-            .map(World::getName)
-            .toList();
     }
 }

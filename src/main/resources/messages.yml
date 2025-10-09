@@ -17,7 +17,7 @@ general:
 view-distance:
   current-distance: "&#3498DBYour current view distance: &#F39C12{distance} &#3498DBchunks"
   distance-changed: "&#2ECC71View distance changed to &#FFFFFF{distance} &#2ECC71chunks"
-  distance-set-other: "&#2ECC71Set &#FFFFFF{player}&#2ECC71's view distance to &#FFFFFF{distance} &#2ECC71chunks"
+  distance-set-other: "&#2ECC71Set &#FFFFFF{player}'s &#2ECC71view distance to &#FFFFFF{distance} &#2ECC71chunks"
   reset: "&#2ECC71View distance reset to default: &#FFFFFF{distance} &#2ECC71chunks"
   max-distance-exceeded: "&#E74C3CMaximum view distance is &#FFFFFF{max} &#E74C3Cchunks!"
   min-distance-error: "&#E74C3CMinimum view distance is &#FFFFFF{min} &#E74C3Cchunks!"
@@ -29,7 +29,7 @@ view-distance:
 
 # Performance messages
 performance:
-  low-tps-warning: "&#E74C3CServer TPS is low (&#FFFFFF{tps}&#E74C3C), reducing view distances..."
+  low-tps-warning: "&#E74C3CServer TPS is low (&#FFFFFF{tps}&#E74C3C). Performance monitoring is active."
   performance-restored: "&#2ECC71Server performance restored!"
   network-limit-reached: "&#F39C12Network limit reached, slowing chunk sending for &#FFFFFF{player}"
   chunk-generation-limit: "&#F39C12Chunk generation limit reached, queuing requests..."
@@ -100,8 +100,13 @@ startup:
   server-detected: "&#3498DBDetected server type: &#F39C12{type}"
   packetevents-initialized: "&#2ECC71PacketEvents initialized successfully"
 
-shutdown:
-  disabling: "&#F39C12Disabling ExtendedHorizons..."
-  disabled: "&#95A5A6ExtendedHorizons disabled successfully"
-  saving-data: "&#3498DBSaving player data..."
-  data-saved: "&#2ECC71Player data saved successfully"
+# Welcome message (moved from config.yml structure)
+messages:
+  welcome-message:
+    text: "&#2ECC71Welcome! Your view distance has been set to &#FFFFFF{distance} &#2ECC71chunks."
+
+# Additional messages that were referenced in code
+additional:
+  no-view-data: "&#E74C3CNo view data available!"
+  distance-set-other: "&#2ECC71Set &#FFFFFF{player}'s &#2ECC71view distance to &#FFFFFF{distance} &#2ECC71chunks"
+  min-distance-error: "&#E74C3CMinimum view distance is &#FFFFFF{min} &#E74C3Cchunks!"

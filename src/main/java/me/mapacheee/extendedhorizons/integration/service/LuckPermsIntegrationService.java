@@ -65,13 +65,11 @@ public class LuckPermsIntegrationService {
 
         String cacheKey = player.getUniqueId().toString();
 
-        // Check cache first
         Integer cached = cachedPermissions.get(cacheKey);
         if (cached != null) {
             return cached;
         }
 
-        // Calculate permission-based distance
         int maxDistance = calculatePermissionDistance(player);
         cachedPermissions.put(cacheKey, maxDistance);
 
@@ -106,7 +104,6 @@ public class LuckPermsIntegrationService {
                 }
             }
 
-            // Check group permissions if enabled - use specific config method
             if (configService.isLuckPermsGroupPermissionsEnabled()) {
                 for (Group group : user.getInheritedGroups(user.getQueryOptions())) {
                     if (group != null) {
@@ -144,18 +141,9 @@ public class LuckPermsIntegrationService {
     }
 
     private int getDefaultMaxDistance(Player player) {
-        // Fallback to Bukkit permissions
-        if (player.hasPermission("extendedhorizons.distance.unlimited")) {
-            return configService.getMaxViewDistance();
-        }
-
-        for (int distance = 64; distance >= 8; distance -= 8) {
-            if (player.hasPermission("extendedhorizons.distance." + distance)) {
-                return distance;
-            }
-        }
-
-        return configService.getDefaultViewDistance();
+        int worldMax = configService.getMaxViewDistanceForWorld(player.getWorld().getName());
+        int globalMax = configService.getMaxViewDistance();
+        return Math.min(worldMax, globalMax);
     }
 
     public CompletableFuture<String> getPlayerPrimaryGroup(Player player) {
