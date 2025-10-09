@@ -8,19 +8,23 @@ import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.world.chunk.BaseChunk;
 import com.github.retrooper.packetevents.protocol.world.chunk.Column;
+import com.github.retrooper.packetevents.protocol.world.chunk.TileEntity;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_16.Chunk_v1_9;
+import com.github.retrooper.packetevents.protocol.world.chunk.palette.DataPalette;
+import com.github.retrooper.packetevents.protocol.world.chunk.palette.ListPalette;
+import com.github.retrooper.packetevents.protocol.world.chunk.palette.PaletteType;
 import com.github.retrooper.packetevents.protocol.world.chunk.storage.LegacyFlexibleStorage;
-import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
-import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerChunkData;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUnloadChunk;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
+import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.block.Biome;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 import org.slf4j.Logger;
 
 /* PacketEvents Service - Handles all PacketEvents integration for chunk management
@@ -28,18 +32,25 @@ import org.slf4j.Logger;
  */
 
 @Service
-public class PacketEventsService extends PacketListenerAbstract {
+public class PacketEventsService extends PacketListenerAbstract implements IPacketEventsService {
 
     private final Logger logger;
-    private final ViewDistanceService viewDistanceService;
+    private IViewDistanceService viewDistanceService;
+    private final Plugin plugin;
 
     @Inject
-    public PacketEventsService(Logger logger, ViewDistanceService viewDistanceService) {
+    public PacketEventsService(Logger logger, ExtendedHorizonsPlugin plugin) {
         super(PacketListenerPriority.HIGH);
         this.logger = logger;
-        this.viewDistanceService = viewDistanceService;
+        this.viewDistanceService = null;
+        this.plugin = plugin;
 
         registerListener();
+    }
+
+    @Inject
+    public void setViewDistanceService(IViewDistanceService viewDistanceService) {
+        this.viewDistanceService = viewDistanceService;
     }
 
     private void registerListener() {
@@ -53,6 +64,7 @@ public class PacketEventsService extends PacketListenerAbstract {
             event.getPacketType() == PacketType.Play.Client.PLAYER_POSITION_AND_ROTATION) {
 
             handlePlayerMovement(event);
+
         }
     }
 
@@ -64,41 +76,30 @@ public class PacketEventsService extends PacketListenerAbstract {
     }
 
     private void handlePlayerMovement(PacketReceiveEvent event) {
-        Player player = (Player) event.getPlayer();
-        if (player == null) return;
+        Player player = event.getPlayer();
 
-        // Update player movement in view distance service
-        Bukkit.getScheduler().runTask(
-            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
-            () -> viewDistanceService.handlePlayerMovement(player)
-        );
+        if (viewDistanceService != null) {
+            Bukkit.getScheduler().runTask(plugin, () -> viewDistanceService.updatePlayerView(player));
+        }
     }
 
     private void handleChunkDataPacket(PacketSendEvent event) {
-        Player player = (Player) event.getPlayer();
-        if (player == null) return;
+        Player player = event.getPlayer();
 
         // Monitor chunk data being sent for statistics
-        WrapperPlayServerChunkData chunkData = new WrapperPlayServerChunkData(event);
-
-        Bukkit.getScheduler().runTask(
-            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
-            () -> {
-                viewDistanceService.incrementChunksSent();
-
-                var playerView = viewDistanceService.getPlayerView(player);
+        if (viewDistanceService != null) {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                var playerView = viewDistanceService.getPlayerView(player.getUniqueId());
                 if (playerView != null) {
                     playerView.incrementChunksSent();
-                    // Estimate packet size for network monitoring
-                    playerView.addNetworkBytesUsed(estimatePacketSize(chunkData));
+                    playerView.addNetworkBytesUsed(estimatePacketSize());
                 }
-            }
-        );
+            });
+        }
     }
 
     public void sendRealChunk(Player player, Chunk chunk) {
         try {
-            // Create chunk data packet using PacketEvents
             WrapperPlayServerChunkData chunkPacket = createChunkDataPacket(chunk);
             PacketEvents.getAPI().getPlayerManager().sendPacket(player, chunkPacket);
 
@@ -107,13 +108,21 @@ public class PacketEventsService extends PacketListenerAbstract {
         }
     }
 
-    public void sendFakeChunk(Player player, int chunkX, int chunkZ, byte[] chunkData) {
+    public void sendFakeChunk(Player player, int chunkX, int chunkZ) {
         try {
             // Create fake chunk data packet
-            WrapperPlayServerChunkData fakeChunkPacket = createFakeChunkDataPacket(chunkX, chunkZ, chunkData);
+            WrapperPlayServerChunkData fakeChunkPacket = createFakeChunkDataPacket(chunkX, chunkZ);
             PacketEvents.getAPI().getPlayerManager().sendPacket(player, fakeChunkPacket);
 
-            viewDistanceService.incrementFakeChunksSent();
+            // Update fake chunk statistics through player view
+            if (viewDistanceService != null) {
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    var playerView = viewDistanceService.getPlayerView(player.getUniqueId());
+                    if (playerView != null) {
+                        playerView.incrementChunksSent(); // Using available method for fake chunks too
+                    }
+                });
+            }
 
         } catch (Exception e) {
             logger.error("Failed to send fake chunk to player {}", player.getName(), e);
@@ -130,15 +139,43 @@ public class PacketEventsService extends PacketListenerAbstract {
         }
     }
 
-    private WrapperPlayServerChunkData createChunkDataPacket(Chunk chunk) {
-        // Create a Column object from the Bukkit chunk for PacketEvents 2.9.5
+    @Override
+    public void sendChunkPacket(Player player, WrapperPlayServerChunkData chunkData) {
         try {
-            // Get the world and create column
-            int chunkX = chunk.getX();
-            int chunkZ = chunk.getZ();
+            PacketEvents.getAPI().getPlayerManager().sendPacket(player, chunkData);
+        } catch (Exception e) {
+            logger.error("Failed to send chunk packet to player {}", player.getName(), e);
+        }
+    }
 
-            // For PacketEvents 2.9.5, we need to create a Column object
-            // This is a simplified approach - in production you'd need proper chunk serialization
+    @Override
+    public void sendFakeChunkPacket(Player player, int chunkX, int chunkZ) {
+        sendFakeChunk(player, chunkX, chunkZ);
+    }
+
+    @Override
+    public void sendUnloadChunkPacket(Player player, int chunkX, int chunkZ) {
+        sendUnloadChunk(player, chunkX, chunkZ);
+    }
+
+    @Override
+    public WrapperPlayServerChunkData createChunkData(Chunk chunk) {
+        return createChunkDataPacket(chunk);
+    }
+
+    @Override
+    public WrapperPlayServerChunkData createFakeChunkData(int chunkX, int chunkZ) {
+        return createFakeChunkDataPacket(chunkX, chunkZ);
+    }
+
+    @Override
+    public void unregisterListener() {
+        PacketEvents.getAPI().getEventManager().unregisterListener(this);
+        logger.info("PacketEvents listener unregistered");
+    }
+
+    private WrapperPlayServerChunkData createChunkDataPacket(Chunk chunk) {
+        try {
             Column column = createColumnFromChunk(chunk);
 
             return new WrapperPlayServerChunkData(column);
@@ -148,10 +185,9 @@ public class PacketEventsService extends PacketListenerAbstract {
         }
     }
 
-    private WrapperPlayServerChunkData createFakeChunkDataPacket(int chunkX, int chunkZ, byte[] chunkData) {
+    private WrapperPlayServerChunkData createFakeChunkDataPacket(int chunkX, int chunkZ) {
         try {
-            // Create a fake Column object for the fake chunk
-            Column fakeColumn = createFakeColumn(chunkX, chunkZ, chunkData);
+            Column fakeColumn = createFakeColumn(chunkX, chunkZ);
 
             return new WrapperPlayServerChunkData(fakeColumn);
         } catch (Exception e) {
@@ -165,21 +201,13 @@ public class PacketEventsService extends PacketListenerAbstract {
             int chunkX = chunk.getX();
             int chunkZ = chunk.getZ();
 
-            // Create chunk sections (24 sections for Y range -64 to 320)
             BaseChunk[] chunks = new BaseChunk[24];
 
-            // Initialize each section
             for (int sectionY = 0; sectionY < 24; sectionY++) {
-                chunks[sectionY] = createChunkSection(chunk, sectionY - 4); // -4 porque empieza en Y=-64
+                chunks[sectionY] = createChunkSection(chunk, sectionY - 4);
             }
 
-            // Create heightmaps
-            int[] heightmap = generateHeightmapFromChunk(chunk);
-
-            // Create biome data (4x4x24 = 384 values)
-            int[] biomes = generateBiomeData(chunk);
-
-            return new Column(chunkX, chunkZ, chunks, heightmap, biomes);
+            return new Column(chunkX, chunkZ, false, chunks, new TileEntity[0]);
 
         } catch (Exception e) {
             logger.error("Error converting Bukkit chunk to PacketEvents Column", e);
@@ -187,23 +215,17 @@ public class PacketEventsService extends PacketListenerAbstract {
         }
     }
 
-    private Column createFakeColumn(int chunkX, int chunkZ, byte[] chunkData) {
+    private Column createFakeColumn(int chunkX, int chunkZ) {
         try {
             // Create simplified fake chunk sections
             BaseChunk[] chunks = new BaseChunk[24];
 
             // Only create sections that have blocks (surface level)
             for (int sectionY = 0; sectionY < 24; sectionY++) {
-                chunks[sectionY] = createFakeChunkSection(chunkX, chunkZ, sectionY - 4, chunkData);
+                chunks[sectionY] = createFakeChunkSection(chunkX, chunkZ, sectionY - 4);
             }
 
-            // Generate simple heightmaps for fake chunks
-            int[] heightmap = generateFakeHeightmap(chunkX, chunkZ);
-
-            // Generate fake biome data
-            int[] biomes = generateFakeBiomeData(chunkX, chunkZ);
-
-            return new Column(chunkX, chunkZ, chunks, heightmap, biomes);
+            return new Column(chunkX, chunkZ, false, chunks, new TileEntity[0]);
 
         } catch (Exception e) {
             logger.error("Error creating fake PacketEvents Column", e);
@@ -212,54 +234,50 @@ public class PacketEventsService extends PacketListenerAbstract {
     }
 
     private BaseChunk createChunkSection(Chunk bukkitChunk, int sectionY) {
-        // Calculate actual Y coordinates for this section
         int minY = sectionY * 16;
         int maxY = minY + 15;
 
-        // If this section is outside the world bounds, return air section
         if (maxY < bukkitChunk.getWorld().getMinHeight() || minY > bukkitChunk.getWorld().getMaxHeight()) {
             return createAirSection();
         }
 
-        // Create storage for blocks in this section
-        LegacyFlexibleStorage blockStorage = new LegacyFlexibleStorage(4, 4096); // 16x16x16 = 4096 blocks
+        LegacyFlexibleStorage blockStorage = new LegacyFlexibleStorage(4, 4096);
+        ListPalette blockPalette = new ListPalette(4);
 
-        // Fill the section with blocks from the Bukkit chunk
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
                 for (int y = 0; y < 16; y++) {
                     int worldY = minY + y;
+                    int blockIndex = (y * 16 + z) * 16 + x;
 
                     // Check if this Y coordinate is within world bounds
                     if (worldY >= bukkitChunk.getWorld().getMinHeight() && worldY <= bukkitChunk.getWorld().getMaxHeight()) {
                         try {
                             org.bukkit.Material material = bukkitChunk.getBlock(x, worldY, z).getType();
-                            WrappedBlockState blockState = convertMaterialToBlockState(material);
-
-                            int blockIndex = (y * 16 + z) * 16 + x;
-                            blockStorage.set(blockIndex, blockState.getGlobalId());
+                            int blockId = convertMaterialToBlockId(material);
+                            blockStorage.set(blockIndex, blockId);
                         } catch (Exception e) {
-                            // If there's an error, default to air
-                            blockStorage.set((y * 16 + z) * 16 + x, 0); // Air
+                            // If there's an error, default to air (ID 0)
+                            blockStorage.set(blockIndex, 0);
                         }
                     } else {
-                        // Outside world bounds = air
-                        blockStorage.set((y * 16 + z) * 16 + x, 0);
+                        // Outside world bounds = air (ID 0)
+                        blockStorage.set(blockIndex, 0);
                     }
                 }
             }
         }
 
-        return new Chunk_v1_9(blockStorage);
+        DataPalette dataPalette = new DataPalette(blockPalette, blockStorage, PaletteType.CHUNK);
+        return new Chunk_v1_9(0, dataPalette);
     }
 
-    private BaseChunk createFakeChunkSection(int chunkX, int chunkZ, int sectionY, byte[] chunkData) {
-        // Create simplified fake section based on our generated terrain
+    private BaseChunk createFakeChunkSection(int chunkX, int chunkZ, int sectionY) {
         LegacyFlexibleStorage blockStorage = new LegacyFlexibleStorage(4, 4096);
+        ListPalette blockPalette = new ListPalette(4);
 
         // Generate fake terrain for this section
         int minY = sectionY * 16;
-        int maxY = minY + 15;
 
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
@@ -270,85 +288,56 @@ public class PacketEventsService extends PacketListenerAbstract {
                     int worldY = minY + y;
                     int blockIndex = (y * 16 + z) * 16 + x;
 
-                    WrappedBlockState blockState;
+                    int blockId;
                     if (worldY <= surfaceHeight) {
                         if (worldY == surfaceHeight) {
-                            blockState = StateTypes.GRASS_BLOCK.createBlockState(); // Surface
+                            blockId = 2; // Grass block
                         } else if (worldY > surfaceHeight - 3) {
-                            blockState = StateTypes.DIRT.createBlockState(); // Sub-surface
+                            blockId = 3; // Dirt
                         } else {
-                            blockState = StateTypes.STONE.createBlockState(); // Deep
+                            blockId = 1; // Stone
                         }
                     } else {
-                        blockState = StateTypes.AIR.createBlockState(); // Air above surface
+                        blockId = 0; // Air
                     }
 
-                    blockStorage.set(blockIndex, blockState.getGlobalId());
+                    blockStorage.set(blockIndex, blockId);
                 }
             }
         }
 
-        return new Chunk_v1_9(blockStorage);
+        DataPalette dataPalette = new DataPalette(blockPalette, blockStorage, PaletteType.CHUNK);
+        return new Chunk_v1_9(sectionY, dataPalette); // Section Y and DataPalette
     }
 
     private BaseChunk createAirSection() {
         LegacyFlexibleStorage airStorage = new LegacyFlexibleStorage(4, 4096);
-        WrappedBlockState air = StateTypes.AIR.createBlockState();
+        ListPalette airPalette = new ListPalette(4);
 
-        // Fill entire section with air
         for (int i = 0; i < 4096; i++) {
-            airStorage.set(i, air.getGlobalId());
+            airStorage.set(i, 0);
         }
 
-        return new Chunk_v1_9(airStorage);
+        DataPalette dataPalette = new DataPalette(airPalette, airStorage, PaletteType.CHUNK);
+        return new Chunk_v1_9(0, dataPalette); // Section Y and DataPalette
     }
 
-    private WrappedBlockState convertMaterialToBlockState(org.bukkit.Material material) {
-        // Convert Bukkit Material to PacketEvents BlockState
+    private int convertMaterialToBlockId(org.bukkit.Material material) {
         return switch (material) {
-            case STONE -> StateTypes.STONE.createBlockState();
-            case GRASS_BLOCK -> StateTypes.GRASS_BLOCK.createBlockState();
-            case DIRT -> StateTypes.DIRT.createBlockState();
-            case SAND -> StateTypes.SAND.createBlockState();
-            case WATER -> StateTypes.WATER.createBlockState();
-            case LAVA -> StateTypes.LAVA.createBlockState();
-            case BEDROCK -> StateTypes.BEDROCK.createBlockState();
-            case OAK_LOG -> StateTypes.OAK_LOG.createBlockState();
-            case OAK_LEAVES -> StateTypes.OAK_LEAVES.createBlockState();
-            case COBBLESTONE -> StateTypes.COBBLESTONE.createBlockState();
-            default -> StateTypes.AIR.createBlockState(); // Fallback to air for unknown materials
+            case STONE -> 1;
+            case GRASS_BLOCK -> 2;
+            case DIRT -> 3;
+            case COBBLESTONE -> 4;
+            case OAK_PLANKS -> 5;
+            case BEDROCK -> 7;
+            case WATER -> 8;
+            case LAVA -> 10;
+            case SAND -> 12;
+            case GRAVEL -> 13;
+            case OAK_LOG -> 17;
+            case OAK_LEAVES -> 18;
+            default -> 0; // Air for unknown materials
         };
-    }
-
-    private int[] generateHeightmapFromChunk(Chunk chunk) {
-        int[] heightmap = new int[256]; // 16x16 heightmap
-
-        for (int x = 0; x < 16; x++) {
-            for (int z = 0; z < 16; z++) {
-                int height = chunk.getWorld().getHighestBlockYAt(
-                    chunk.getX() * 16 + x,
-                    chunk.getZ() * 16 + z
-                );
-                heightmap[z * 16 + x] = height;
-            }
-        }
-
-        return heightmap;
-    }
-
-    private int[] generateFakeHeightmap(int chunkX, int chunkZ) {
-        int[] heightmap = new int[256];
-
-        for (int x = 0; x < 16; x++) {
-            for (int z = 0; z < 16; z++) {
-                int worldX = chunkX * 16 + x;
-                int worldZ = chunkZ * 16 + z;
-                int height = generateFakeTerrainHeight(worldX, worldZ);
-                heightmap[z * 16 + x] = height;
-            }
-        }
-
-        return heightmap;
     }
 
     private int generateFakeTerrainHeight(int worldX, int worldZ) {
@@ -357,66 +346,7 @@ public class PacketEventsService extends PacketListenerAbstract {
         noise += Math.sin(worldX * 0.007) * Math.cos(worldZ * 0.011) * 0.5;
         noise += Math.sin(worldX * 0.003) * Math.cos(worldZ * 0.009) * 0.25;
 
-        return (int) (64 + noise * 16); // Base height 64 with variation
-    }
-
-    private int[] generateBiomeData(Chunk chunk) {
-        // Create biome array for the chunk (4x4x24 sections = 384 values)
-        int[] biomes = new int[384];
-
-        // Sample biomes from the chunk
-        for (int sectionY = 0; sectionY < 24; sectionY++) {
-            for (int x = 0; x < 4; x++) {
-                for (int z = 0; z < 4; z++) {
-                    int worldX = chunk.getX() * 16 + x * 4;
-                    int worldZ = chunk.getZ() * 16 + z * 4;
-                    int worldY = (sectionY - 4) * 16; // -4 porque empieza en Y=-64
-
-                    try {
-                        org.bukkit.block.Biome biome = chunk.getWorld().getBiome(worldX, worldY, worldZ);
-                        int biomeId = convertBiomeToBiomeId(biome);
-                        biomes[(sectionY * 4 + z) * 4 + x] = biomeId;
-                    } catch (Exception e) {
-                        biomes[(sectionY * 4 + z) * 4 + x] = 1; // Plains fallback
-                    }
-                }
-            }
-        }
-
-        return biomes;
-    }
-
-    private int[] generateFakeBiomeData(int chunkX, int chunkZ) {
-        int[] biomes = new int[384];
-
-        // Generate simple fake biome data
-        for (int sectionY = 0; sectionY < 24; sectionY++) {
-            for (int x = 0; x < 4; x++) {
-                for (int z = 0; z < 4; z++) {
-                    int worldX = chunkX * 16 + x * 4;
-                    int worldZ = chunkZ * 16 + z * 4;
-
-                    // Simple biome generation based on coordinates
-                    int biomeId = generateFakeBiome(worldX, worldZ);
-                    biomes[(sectionY * 4 + z) * 4 + x] = biomeId;
-                }
-            }
-        }
-
-        return biomes;
-    }
-
-    private int generateFakeBiome(int worldX, int worldZ) {
-        double temperature = Math.sin(worldX * 0.005) * 0.5 + 0.5;
-        double humidity = Math.cos(worldZ * 0.007) * 0.5 + 0.5;
-
-        if (temperature > 0.8) {
-            return humidity > 0.5 ? 21 : 2;
-        } else if (temperature < 0.2) {
-            return humidity > 0.5 ? 30 : 12;
-        } else {
-            return humidity > 0.5 ? 4 : 1;
-        }
+        return (int) (64 + noise * 16);
     }
 
     private int convertBiomeToBiomeId(Biome biome) {
@@ -440,14 +370,12 @@ public class PacketEventsService extends PacketListenerAbstract {
             case "minecraft:beach" -> 16;
             case "minecraft:jungle" -> 21;
             case "minecraft:snowy_taiga" -> 30;
-            default -> 1; // plains fallback
+            default -> 1;
         };
     }
 
-
-    private long estimatePacketSize(WrapperPlayServerChunkData chunkData) {
-        // Estimate packet size based on chunk data
-        return 2048L; // Base chunk packet size estimate
+    private long estimatePacketSize() {
+        return 2048L;
     }
 
     public boolean isPacketEventsReady() {
@@ -455,6 +383,6 @@ public class PacketEventsService extends PacketListenerAbstract {
     }
 
     public String getPacketEventsVersion() {
-        return PacketEvents.getAPI().getVersion();
+        return PacketEvents.getAPI().getVersion().toString();
     }
 }

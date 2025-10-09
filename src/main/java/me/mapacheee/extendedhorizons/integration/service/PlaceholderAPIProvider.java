@@ -1,6 +1,3 @@
-/* PlaceholderAPI Provider - Provides placeholders for ExtendedHorizons integration
- * Offers comprehensive placeholders for view distance, performance, and statistics
- */
 package me.mapacheee.extendedhorizons.integration.service;
 
 import com.google.inject.Inject;
@@ -15,6 +12,10 @@ import me.mapacheee.extendedhorizons.optimization.service.CacheService;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+/* PlaceholderAPI Provider - Provides placeholders for ExtendedHorizons integration
+ * Offers comprehensive placeholders for view distance, performance, and statistics
+ */
 
 @Service
 public class PlaceholderAPIProvider extends PlaceholderExpansion {

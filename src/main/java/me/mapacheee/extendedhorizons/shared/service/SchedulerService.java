@@ -120,8 +120,7 @@ public class SchedulerService {
             int currentPlayers = Bukkit.getOnlinePlayers().size();
             peakPlayers.updateAndGet(peak -> Math.max(peak, currentPlayers));
 
-            // Check if adaptive adjustments are needed
-            if (configService.getConfig().performance().adaptivePerformance()) {
+            if (configService.isAdaptivePerformanceEnabled()) {
                 performAdaptiveAdjustments();
             }
 

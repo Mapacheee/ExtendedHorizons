@@ -39,11 +39,18 @@ public class ViewDataStorage {
 
     private void initializeDatabase() {
         try {
-            Config.DatabaseConfig dbConfig = configService.getConfig().database();
+            String fileName = configService.getDatabaseFileName();
             Path dataFolder = Path.of("plugins", "ExtendedHorizons");
-            String dbPath = dataFolder.resolve(dbConfig.fileName()).toString();
+            String dbPath = dataFolder.resolve(fileName + ".db").toString();
 
-            String url = "jdbc:h2:" + dbPath + ";AUTO_SERVER=TRUE;AUTO_SERVER_PORT=9092";
+            StringBuilder urlBuilder = new StringBuilder("jdbc:h2:").append(dbPath);
+
+            if (configService.isDatabaseAutoServerEnabled()) {
+                urlBuilder.append(";AUTO_SERVER=TRUE");
+                urlBuilder.append(";AUTO_SERVER_PORT=").append(configService.getDatabaseAutoServerPort());
+            }
+
+            String url = urlBuilder.toString();
             this.connection = DriverManager.getConnection(url, "sa", "");
 
             createTables();

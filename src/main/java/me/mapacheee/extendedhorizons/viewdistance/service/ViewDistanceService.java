@@ -1,8 +1,8 @@
 package me.mapacheee.extendedhorizons.viewdistance.service;
 
 import com.google.inject.Inject;
+import com.google.inject.Singleton;
 import com.thewinterframework.service.annotation.Service;
-import me.mapacheee.extendedhorizons.shared.config.Config;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.integration.service.LuckPermsIntegrationService;
@@ -15,18 +15,20 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Collection;
 
 /* View Distance Service - Core service managing player view distances and chunk sending
  * Handles real and fake chunk management with performance optimizations
  */
 
 @Service
-public class ViewDistanceService {
+@Singleton
+public class ViewDistanceService implements IViewDistanceService {
 
     private final Logger logger;
     private final ConfigService configService;
     private final PlayerViewService playerViewService;
-    private final ChunkSenderService chunkSenderService;
+    private IChunkSenderService chunkSenderService;
     private final LuckPermsIntegrationService luckPermsService;
     private final PerformanceMonitorService performanceMonitor;
 
@@ -41,14 +43,13 @@ public class ViewDistanceService {
             Logger logger,
             ConfigService configService,
             PlayerViewService playerViewService,
-            ChunkSenderService chunkSenderService,
             LuckPermsIntegrationService luckPermsService,
             PerformanceMonitorService performanceMonitor
     ) {
         this.logger = logger;
         this.configService = configService;
         this.playerViewService = playerViewService;
-        this.chunkSenderService = chunkSenderService;
+        this.chunkSenderService = null; // Will be injected later to avoid circular dependency
         this.luckPermsService = luckPermsService;
         this.performanceMonitor = performanceMonitor;
         this.playerViews = new ConcurrentHashMap<>();
@@ -56,6 +57,11 @@ public class ViewDistanceService {
         this.totalFakeChunksSent = new AtomicInteger(0);
         this.adaptiveMode = true;
         this.globalPause = false;
+    }
+
+    @Inject
+    public void setChunkSenderService(IChunkSenderService chunkSenderService) {
+        this.chunkSenderService = chunkSenderService;
     }
 
     public void initializePlayerView(Player player) {
@@ -91,15 +97,14 @@ public class ViewDistanceService {
             view = getPlayerView(player);
         }
 
-        Config config = configService.getConfig();
         int maxAllowed = getMaxAllowedDistance(player);
 
         if (distance > maxAllowed) {
             distance = maxAllowed;
         }
 
-        if (distance < config.viewDistance().minDistance()) {
-            distance = config.viewDistance().minDistance();
+        if (distance < configService.getMinViewDistance()) {
+            distance = configService.getMinViewDistance();
         }
 
         view.setTargetDistance(distance);
@@ -120,12 +125,11 @@ public class ViewDistanceService {
         if (targetDistance != view.getCurrentDistance()) {
             view.setCurrentDistance(targetDistance);
 
-            Config config = configService.getConfig();
-            boolean enableFakeChunks = config.viewDistance().enableFakeChunks() &&
-                                     targetDistance > config.viewDistance().fakeChunksStartDistance();
+            boolean enableFakeChunks = configService.areFakeChunksEnabled() &&
+                                     targetDistance > configService.getFakeChunksStartDistance();
             view.setFakeChunksEnabled(enableFakeChunks);
 
-            chunkSenderService.updatePlayerChunks(player, view);
+            chunkSenderService.sendChunks(player, view);
         }
     }
 
@@ -134,7 +138,7 @@ public class ViewDistanceService {
 
         if (!adaptiveMode) return targetDistance;
 
-        if (performanceMonitor.getCurrentTPS() < configService.getConfig().performance().minTpsThreshold()) {
+        if (performanceMonitor.getCurrentTPS() < configService.getMinTpsThreshold()) {
             return Math.max(8, targetDistance / 2);
         }
 
@@ -143,9 +147,9 @@ public class ViewDistanceService {
         }
 
         long networkUsage = view.getNetworkBytesUsed();
-        Config.NetworkConfig networkConfig = configService.getConfig().network();
+        long maxBytesPerPlayer = configService.getMaxBytesPerSecondPerPlayer();
 
-        if (networkUsage > networkConfig.maxBytesPerSecondPerPlayer()) {
+        if (networkUsage > maxBytesPerPlayer) {
             return Math.max(view.getCurrentDistance() - 1, 8);
         }
 
@@ -163,10 +167,9 @@ public class ViewDistanceService {
         PlayerView view = getPlayerView(player);
         if (view == null) return;
 
-        Config.IntegrationsConfig.LuckPermsConfig luckConfig =
-            configService.getConfig().integrations().luckperms();
+        int checkInterval = configService.getLuckPermsCheckInterval();
 
-        if (!view.needsPermissionCheck(luckConfig.checkInterval() * 1000L)) {
+        if (!view.needsPermissionCheck(checkInterval * 1000L)) {
             return;
         }
 
@@ -187,11 +190,7 @@ public class ViewDistanceService {
         long currentTime = System.currentTimeMillis();
         long timeDiff = currentTime - view.getLastMoveTime();
 
-        if (timeDiff < 100) {
-            view.setMovingTooFast(true);
-        } else {
-            view.setMovingTooFast(false);
-        }
+        view.setMovingTooFast(timeDiff < 100);
 
         view.updateLastMoveTime();
         view.setLastLocation(player.getLocation());
@@ -201,7 +200,7 @@ public class ViewDistanceService {
             chunkSenderService.unloadAllChunks(player);
             updatePlayerViewDistance(player);
         } else {
-            chunkSenderService.updatePlayerChunks(player, view);
+            chunkSenderService.sendChunks(player, view);
         }
     }
 
@@ -271,5 +270,62 @@ public class ViewDistanceService {
         totalFakeChunksSent.set(0);
 
         playerViews.values().forEach(PlayerView::resetStatistics);
+    }
+
+    @Override
+    public void updatePlayerView(Player player) {
+        updatePlayerViewDistance(player);
+    }
+
+    @Override
+    public void setViewDistance(Player player, int distance) {
+        setPlayerViewDistance(player, distance);
+    }
+
+    @Override
+    public int getViewDistance(Player player) {
+        PlayerView view = getPlayerView(player);
+        return view != null ? view.getTargetDistance() : configService.getDefaultViewDistance();
+    }
+
+    @Override
+    public int getEffectiveViewDistance(Player player) {
+        PlayerView view = getPlayerView(player);
+        return view != null ? view.getCurrentDistance() : configService.getDefaultViewDistance();
+    }
+
+    @Override
+    public void setGlobalPause(boolean paused) {
+        if (paused) {
+            pauseAll();
+        } else {
+            resumeAll();
+        }
+    }
+
+    @Override
+    public PlayerView getPlayerView(UUID playerId) {
+        return playerViews.get(playerId);
+    }
+
+    @Override
+    public Collection<PlayerView> getAllPlayerViews() {
+        return playerViews.values();
+    }
+
+    @Override
+    public void handleChunkLoad(Player player, me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap.ChunkCoordinate coordinate) {
+        PlayerView view = getPlayerView(player);
+        if (view != null) {
+            incrementChunksSent();
+        }
+    }
+
+    @Override
+    public void handleChunkUnload(Player player, me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap.ChunkCoordinate coordinate) {}
+
+    @Override
+    public void resetStats() {
+        resetStatistics();
     }
 }

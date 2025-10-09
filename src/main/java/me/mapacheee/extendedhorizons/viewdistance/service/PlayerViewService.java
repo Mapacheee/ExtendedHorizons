@@ -2,7 +2,6 @@ package me.mapacheee.extendedhorizons.viewdistance.service;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import me.mapacheee.extendedhorizons.shared.config.Config;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap;
@@ -33,8 +32,7 @@ public class PlayerViewService {
     }
 
     public ViewMap createViewMap(PlayerView playerView) {
-        Config config = configService.getConfig();
-        ViewMap.ViewShape shape = ViewMap.ViewShape.valueOf(config.viewDistance().shape().toUpperCase());
+        ViewMap.ViewShape shape = ViewMap.ViewShape.SQUARE;
         int maxDistance = playerView.getMaxAllowedDistance();
 
         ViewMap viewMap = new ViewMap(shape, maxDistance);
@@ -86,14 +84,7 @@ public class PlayerViewService {
             removeViewMap(playerView);
         }
 
-        PlayerView updatedView = new PlayerView(null) {
-            @Override
-            public int getMaxAllowedDistance() {
-                return newDistance;
-            }
-        };
-
-        createViewMap(updatedView);
+        createViewMap(playerView);
     }
 
     public boolean isLocationSignificantlyDifferent(Location loc1, Location loc2) {
@@ -131,13 +122,11 @@ public class PlayerViewService {
             return true;
         }
 
-        return playerView.getNetworkUsagePerSecond() > configService.getConfig()
-                .network().maxBytesPerSecondPerPlayer();
+        return playerView.getNetworkUsagePerSecond() > configService.getMaxBytesPerSecondPerPlayer();
     }
 
     public int calculateOptimalChunksPerTick(PlayerView playerView) {
-        Config.PerformanceConfig perfConfig = configService.getConfig().performance();
-        int baseChunksPerTick = perfConfig.maxChunksPerTick();
+        int baseChunksPerTick = configService.getMaxChunksPerTick();
 
         if (playerView.isMovingTooFast()) {
             return Math.max(1, baseChunksPerTick / 2);

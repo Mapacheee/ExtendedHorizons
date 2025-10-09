@@ -1,14 +1,15 @@
-/* ExtendedHorizons Plugin - Main class that initializes the Winter Framework
- * and sets up PacketEvents integration for advanced view distance management
- */
 package me.mapacheee.extendedhorizons;
 
 import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.settings.PacketEventsSettings;
 import com.thewinterframework.paper.PaperWinterPlugin;
 import com.thewinterframework.plugin.WinterBootPlugin;
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
+import org.bukkit.Bukkit;
 import org.slf4j.Logger;
+
+/* ExtendedHorizons Plugin - main class that initializes the Winter Framework
+ * and sets up PacketEvents integration for advanced view distance management
+ */
 
 @WinterBootPlugin
 public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
@@ -27,18 +28,22 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
     public void onPluginLoad() {
         super.onPluginLoad();
         instance = this;
-
-        initializePacketEvents();
+        PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
         getSLF4JLogger().info("ExtendedHorizons loaded successfully!");
     }
 
     @Override
     public void onPluginEnable() {
         super.onPluginEnable();
-
         PacketEvents.getAPI().init();
-        getSLF4JLogger().info("ExtendedHorizons enabled successfully!");
-        getSLF4JLogger().info("Running on server version: {}", PacketEvents.getAPI().getServerManager().getVersion());
+        if (PacketEvents.getAPI().isInitialized()) {
+            getSLF4JLogger().info("ExtendedHorizons enabled successfully!");
+            getSLF4JLogger().info("Using PacketEvents version: {}", PacketEvents.getAPI().getVersion());
+        } else {
+            getSLF4JLogger().error("PacketEvents plugin not found or not initialized! Please install PacketEvents plugin.");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
 
         detectServerType();
     }
@@ -46,37 +51,27 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
     @Override
     public void onPluginDisable() {
         super.onPluginDisable();
-
-        if (PacketEvents.getAPI().isInitialized()) {
-            PacketEvents.getAPI().terminate();
-        }
+        PacketEvents.getAPI().terminate();
         getSLF4JLogger().info("ExtendedHorizons disabled successfully!");
     }
 
-    private void initializePacketEvents() {
-        PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
-
-        PacketEventsSettings settings = PacketEvents.getAPI().getSettings();
-        settings
-            .debug(false)
-            .bStats(false)
-            .checkForUpdates(false)
-            .kickOnPacketException(false);
-    }
 
     private void detectServerType() {
         Logger logger = getSLF4JLogger();
 
         try {
-            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
-            logger.info("Detected Folia server - enabling regional threading optimizations");
-        } catch (ClassNotFoundException e) {
-            try {
-                Class.forName("io.papermc.paper.event.player.AsyncChatEvent");
+            String serverVersion = Bukkit.getVersion().toLowerCase();
+            String serverName = Bukkit.getName().toLowerCase();
+
+            if (serverVersion.contains("folia") || serverName.contains("folia")) {
+                logger.info("Detected Folia server - enabling regional threading optimizations");
+            } else if (serverVersion.contains("paper") || serverName.contains("paper")) {
                 logger.info("Detected Paper server - enabling Paper-specific optimizations");
-            } catch (ClassNotFoundException ex) {
+            } else {
                 logger.info("Detected Spigot/CraftBukkit server - using standard optimizations");
             }
+        } catch (Exception e) {
+            logger.warn("Could not detect server type, using standard optimizations", e);
         }
     }
 }

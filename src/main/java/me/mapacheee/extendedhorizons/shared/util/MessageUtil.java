@@ -3,7 +3,6 @@ package me.mapacheee.extendedhorizons.shared.util;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
-import me.mapacheee.extendedhorizons.shared.config.Messages;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.command.CommandSender;
@@ -39,8 +38,8 @@ public class MessageUtil {
     }
 
     public void sendMessageWithPrefix(CommandSender sender, String message) {
-        Messages messages = configService.getMessages();
-        String prefixed = messages.prefix() + message;
+        String prefix = configService.getPrefix();
+        String prefixed = prefix + message;
         sendMessage(sender, prefixed);
     }
 
@@ -50,8 +49,8 @@ public class MessageUtil {
     }
 
     public void sendMessageWithPrefix(CommandSender sender, String message, Map<String, String> placeholders) {
-        Messages messages = configService.getMessages();
-        String prefixed = messages.prefix() + message;
+        String prefix = configService.getPrefix();
+        String prefixed = prefix + message;
         sendMessage(sender, prefixed, placeholders);
     }
 
@@ -75,7 +74,7 @@ public class MessageUtil {
 
     private String translateHexColors(String message) {
         Matcher matcher = HEX_PATTERN.matcher(message);
-        StringBuffer buffer = new StringBuffer();
+        StringBuilder buffer = new StringBuilder();
 
         while (matcher.find()) {
             String hex = matcher.group(1);
@@ -88,69 +87,156 @@ public class MessageUtil {
     }
 
     public void sendNoPermission(CommandSender sender) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(sender, messages.general().noPermission());
+        String message = configService.getNoPermissionMessage();
+        sendMessageWithPrefix(sender, message);
     }
 
     public void sendPlayerNotFound(CommandSender sender, String playerName) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(sender, messages.general().playerNotFound(),
-                            Map.of("player", playerName));
+        String message = configService.getPlayerNotFoundMessage();
+        sendMessageWithPrefix(sender, message, Map.of("player", playerName));
     }
 
     public void sendConfigReloaded(CommandSender sender) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(sender, messages.general().configReloaded());
+        String message = configService.getConfigReloadedMessage();
+        sendMessageWithPrefix(sender, message);
     }
 
     public void sendCurrentDistance(Player player, int distance) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(player, messages.viewDistance().currentDistance(),
-                            Map.of("distance", String.valueOf(distance)));
+        String message = configService.getCurrentDistanceMessage();
+        sendMessageWithPrefix(player, message, Map.of("distance", String.valueOf(distance)));
     }
 
     public void sendDistanceChanged(Player player, int distance) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(player, messages.viewDistance().distanceChanged(),
-                            Map.of("distance", String.valueOf(distance)));
-    }
-
-    public void sendDistanceSetOther(CommandSender sender, String playerName, int distance) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(sender, messages.viewDistance().distanceSetOther(),
-                            Map.of("player", playerName, "distance", String.valueOf(distance)));
+        String message = configService.getDistanceChangedMessage();
+        sendMessageWithPrefix(player, message, Map.of("distance", String.valueOf(distance)));
     }
 
     public void sendMaxDistanceExceeded(CommandSender sender, int maxDistance) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(sender, messages.viewDistance().maxDistanceExceeded(),
-                            Map.of("max", String.valueOf(maxDistance)));
+        String message = configService.getMaxDistanceExceededMessage();
+        sendMessageWithPrefix(sender, message, Map.of("max", String.valueOf(maxDistance)));
     }
 
-    public void sendPermissionRequired(CommandSender sender, String permission) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(sender, messages.viewDistance().permissionRequired(),
-                            Map.of("permission", permission));
+    public void sendMinDistanceError(CommandSender sender, int minDistance) {
+        String message = configService.getMinDistanceErrorMessage();
+        sendMessageWithPrefix(sender, message, Map.of("min", String.valueOf(minDistance)));
     }
 
-    public void sendLowTpsWarning(CommandSender sender, double tps) {
-        Messages messages = configService.getMessages();
-        sendMessageWithPrefix(sender, messages.performance().lowTpsWarning(),
-                            Map.of("tps", String.format("%.1f", tps)));
+    public void sendDistanceSetOther(CommandSender sender, String playerName, int distance) {
+        String message = configService.getDistanceSetOtherMessage();
+        sendMessageWithPrefix(sender, message, Map.of("player", playerName, "distance", String.valueOf(distance)));
     }
 
     public void sendHelpMessage(CommandSender sender) {
-        Messages messages = configService.getMessages();
-        Messages.HelpMessages help = messages.help();
+        sendMessage(sender, configService.getHelpHeaderMessage());
+        sendMessage(sender, configService.getHelpInfoMessage());
+        sendMessage(sender, configService.getHelpDistanceMessage());
+        sendMessage(sender, configService.getHelpResetMessage());
 
-        sendMessage(sender, help.header());
-        sendMessage(sender, help.info());
-        sendMessage(sender, help.distance());
-        sendMessage(sender, help.reset());
-        sendMessage(sender, help.reload());
-        sendMessage(sender, help.stats());
-        sendMessage(sender, help.debug());
-        sendMessage(sender, help.world());
-        sendMessage(sender, help.footer());
+        if (sender.hasPermission("extendedhorizons.admin")) {
+            sendMessage(sender, configService.getHelpAdminHeaderMessage());
+            sendMessage(sender, configService.getHelpReloadMessage());
+            sendMessage(sender, configService.getHelpStatsMessage());
+            sendMessage(sender, configService.getHelpDebugMessage());
+            sendMessage(sender, configService.getHelpWorldMessage());
+        }
+
+        sendMessage(sender, configService.getHelpFooterMessage());
+    }
+
+    // Additional utility methods for the command
+    public void sendNoViewData(CommandSender sender) {
+        String message = configService.getNoViewDataMessage();
+        sendMessageWithPrefix(sender, message);
+    }
+
+    public void sendInvalidDistance(CommandSender sender, String distance) {
+        String message = configService.getInvalidDistanceMessage();
+        sendMessageWithPrefix(sender, message, Map.of("distance", distance));
+    }
+
+    public void sendViewDistanceReset(CommandSender sender, int distance) {
+        String message = configService.getViewDistanceResetMessage();
+        sendMessageWithPrefix(sender, message, Map.of("distance", String.valueOf(distance)));
+    }
+
+    public void sendConfigError(CommandSender sender) {
+        String message = configService.getConfigErrorMessage();
+        sendMessageWithPrefix(sender, message);
+    }
+
+    public void sendWorldNotFound(CommandSender sender, String worldName) {
+        String message = configService.getWorldNotFoundMessage();
+        sendMessageWithPrefix(sender, message, Map.of("world", worldName));
+    }
+
+    public void sendWorldUsage(CommandSender sender) {
+        String message = configService.getWorldUsageMessage();
+        sendMessageWithPrefix(sender, message);
+    }
+
+    public void sendWorldConfigNotice(CommandSender sender) {
+        String message = configService.getWorldConfigNoticeMessage();
+        sendMessageWithPrefix(sender, message);
+    }
+
+    public void sendDebugStatus(CommandSender sender, boolean enabled) {
+        String message = enabled ? configService.getDebugEnabledMessage() : configService.getDebugDisabledMessage();
+        sendMessageWithPrefix(sender, message);
+    }
+
+    public void sendUnknownCommand(CommandSender sender) {
+        String message = configService.getUnknownCommandMessage();
+        sendMessageWithPrefix(sender, message);
+    }
+
+    // Stats message methods
+    public void sendStatsHeader(CommandSender sender) {
+        String message = configService.getStatsHeaderMessage();
+        sendMessage(sender, message);
+    }
+
+    public void sendStatsPlayersOnline(CommandSender sender, int online, int max) {
+        String message = configService.getStatsPlayersOnlineMessage();
+        sendMessage(sender, message, Map.of("online", String.valueOf(online), "max", String.valueOf(max)));
+    }
+
+    public void sendStatsAverageDistance(CommandSender sender, double distance) {
+        String message = configService.getStatsAverageDistanceMessage();
+        sendMessage(sender, message, Map.of("distance", String.format("%.1f", distance)));
+    }
+
+    public void sendStatsChunksSent(CommandSender sender, int chunks) {
+        String message = configService.getStatsChunksSentMessage();
+        sendMessage(sender, message, Map.of("chunks", String.valueOf(chunks)));
+    }
+
+    public void sendStatsFakeChunksSent(CommandSender sender, int chunks) {
+        String message = configService.getStatsFakeChunksSentMessage();
+        sendMessage(sender, message, Map.of("chunks", String.valueOf(chunks)));
+    }
+
+    public void sendStatsCacheSize(CommandSender sender, double size) {
+        String message = configService.getStatsCacheSizeMessage();
+        sendMessage(sender, message, Map.of("size", String.valueOf(size)));
+    }
+
+    public void sendStatsServerTps(CommandSender sender, double tps) {
+        String message = configService.getStatsServerTpsMessage();
+        sendMessage(sender, message, Map.of("tps", String.format("%.1f", tps)));
+    }
+
+    public void sendStatsFooter(CommandSender sender) {
+        String message = configService.getStatsFooterMessage();
+        sendMessage(sender, message);
+    }
+
+    public void sendLowTpsWarning(CommandSender sender, double tps) {
+        String message = configService.getLowTpsWarningMessage();
+        sendMessageWithPrefix(sender, message, Map.of("tps", String.format("%.1f", tps)));
+    }
+
+    public void sendPerformanceRestored(CommandSender sender) {
+        String message = configService.getPerformanceRestoredMessage();
+        sendMessageWithPrefix(sender, message);
     }
 }

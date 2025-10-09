@@ -3,11 +3,9 @@ package me.mapacheee.extendedhorizons.viewdistance.command;
 import com.google.inject.Inject;
 import com.thewinterframework.command.CommandComponent;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import me.mapacheee.extendedhorizons.shared.config.Config;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
-import me.mapacheee.extendedhorizons.shared.config.Messages;
 import me.mapacheee.extendedhorizons.shared.util.MessageUtil;
-import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
+import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.optimization.service.PerformanceMonitorService;
 import me.mapacheee.extendedhorizons.optimization.service.CacheService;
@@ -23,8 +21,8 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 
 /* Extended Horizons Command - Main command handler using Winter Framework's command system
  * Provides comprehensive admin and player commands for view distance management
@@ -36,7 +34,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
     private final Logger logger;
     private final ConfigService configService;
     private final MessageUtil messageUtil;
-    private final ViewDistanceService viewDistanceService;
+    private final IViewDistanceService viewDistanceService;
     private final PerformanceMonitorService performanceMonitor;
     private final CacheService cacheService;
     private final LuckPermsIntegrationService luckPermsService;
@@ -46,7 +44,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
             Logger logger,
             ConfigService configService,
             MessageUtil messageUtil,
-            ViewDistanceService viewDistanceService,
+            IViewDistanceService viewDistanceService,
             PerformanceMonitorService performanceMonitor,
             CacheService cacheService,
             LuckPermsIntegrationService luckPermsService
@@ -63,7 +61,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage("This command can only be used by players!");
+            messageUtil.sendMessage(sender, configService.getPlayerOnlyMessage());
             return true;
         }
 
@@ -75,33 +73,15 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
         String subCommand = args[0].toLowerCase();
 
         switch (subCommand) {
-            case "help" -> {
-                handleHelp(player);
-            }
-            case "info" -> {
-                handleInfo(player);
-            }
-            case "distance" -> {
-                handleDistance(player, Arrays.copyOfRange(args, 1, args.length));
-            }
-            case "reset" -> {
-                handleReset(player, Arrays.copyOfRange(args, 1, args.length));
-            }
-            case "reload" -> {
-                handleReload(player);
-            }
-            case "stats" -> {
-                handleStats(player);
-            }
-            case "debug" -> {
-                handleDebug(player);
-            }
-            case "world" -> {
-                handleWorld(player, Arrays.copyOfRange(args, 1, args.length));
-            }
-            default -> {
-                messageUtil.sendMessage(player, configService.getMessages().general().unknownCommand());
-            }
+            case "help" -> handleHelp(player);
+            case "info" -> handleInfo(player);
+            case "distance" -> handleDistance(player, Arrays.copyOfRange(args, 1, args.length));
+            case "reset" -> handleReset(player, Arrays.copyOfRange(args, 1, args.length));
+            case "reload" -> handleReload(player);
+            case "stats" -> handleStats(player);
+            case "debug" -> handleDebug(player);
+            case "world" -> handleWorld(player, Arrays.copyOfRange(args, 1, args.length));
+            default -> messageUtil.sendUnknownCommand(player);
         }
         return true;
     }
@@ -145,25 +125,19 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        Messages messages = configService.getMessages();
-
         // Plugin info
-        messageUtil.sendMessageWithPrefix(player, messages.general().pluginInfo(),
-            Map.of(
-                "plugin", "ExtendedHorizons",
-                "version", ExtendedHorizonsPlugin.getInstance().getDescription().getVersion(),
-                "author", "Mapacheee"
-            ));
+        messageUtil.sendMessageWithPrefix(player, "&#3498DBPlugin: &#F39C12ExtendedHorizons &#3498DBv" +
+                ExtendedHorizonsPlugin.getInstance().getDescription().getVersion() + " &#3498DBby &#FFFFFFMapacheee");
 
         // Player view info if available
-        PlayerView playerView = viewDistanceService.getPlayerView(player);
+        PlayerView playerView = viewDistanceService.getPlayerView(player.getUniqueId());
         if (playerView != null) {
             messageUtil.sendCurrentDistance(player, playerView.getCurrentDistance());
 
             if (playerView.areFakeChunksEnabled()) {
-                Config config = configService.getConfig();
-                messageUtil.sendMessage(player, messages.viewDistance().fakeChunksEnabled(),
-                    Map.of("distance", String.valueOf(config.viewDistance().fakeChunksStartDistance())));
+                int fakeStartDistance = configService.getFakeChunksStartDistance();
+                messageUtil.sendMessage(player, "&#2ECC71Fake chunks enabled starting at &#FFFFFF" +
+                    fakeStartDistance + " &#2ECC71chunks");
             }
         }
     }
@@ -176,11 +150,11 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
 
         // If no arguments, show current distance
         if (args.length == 0) {
-            PlayerView playerView = viewDistanceService.getPlayerView(sender);
+            PlayerView playerView = viewDistanceService.getPlayerView(sender.getUniqueId());
             if (playerView != null) {
                 messageUtil.sendCurrentDistance(sender, playerView.getCurrentDistance());
             } else {
-                messageUtil.sendMessage(sender, "&#E74C3CNo view data available!");
+                messageUtil.sendNoViewData(sender);
             }
             return;
         }
@@ -204,7 +178,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
                     return;
                 }
 
-                PlayerView playerView = viewDistanceService.getPlayerView(target);
+                PlayerView playerView = viewDistanceService.getPlayerView(target.getUniqueId());
                 if (playerView != null) {
                     messageUtil.sendMessage(sender, "&#3498DB" + target.getName() + "'s view distance: &#F39C12" +
                                           playerView.getCurrentDistance() + " &#3498DBchunks");
@@ -232,17 +206,16 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
                 int distance = Integer.parseInt(args[1]);
                 setPlayerDistance(sender, target, distance);
             } catch (NumberFormatException e) {
-                messageUtil.sendMessage(sender, "&#E74C3CInvalid distance: " + args[1]);
+                messageUtil.sendInvalidDistance(sender, args[1]);
             }
         }
     }
 
     private void setPlayerDistance(Player sender, Player target, int distance) {
-        Config config = configService.getConfig();
+        int minDistance = configService.getMinViewDistance();
 
-        if (distance < config.viewDistance().minDistance()) {
-            messageUtil.sendMessage(sender, configService.getMessages().viewDistance().minDistanceNotMet(),
-                Map.of("min", String.valueOf(config.viewDistance().minDistance())));
+        if (distance < minDistance) {
+            messageUtil.sendMinDistanceError(sender, minDistance);
             return;
         }
 
@@ -252,7 +225,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        viewDistanceService.setPlayerViewDistance(target, distance);
+        viewDistanceService.setViewDistance(target, distance);
 
         if (sender.equals(target)) {
             messageUtil.sendDistanceChanged(target, distance);
@@ -283,12 +256,10 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        int defaultDistance = configService.getConfig().viewDistance().defaultDistance();
-        viewDistanceService.setPlayerViewDistance(target, defaultDistance);
+        int defaultDistance = configService.getDefaultViewDistance();
+        viewDistanceService.setViewDistance(target, defaultDistance);
 
-        Messages messages = configService.getMessages();
-        messageUtil.sendMessage(target, messages.viewDistance().distanceReset(),
-            Map.of("distance", String.valueOf(defaultDistance)));
+        messageUtil.sendViewDistanceReset(target, defaultDistance);
     }
 
     private void handleReload(Player sender) {
@@ -298,7 +269,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
         }
 
         try {
-            configService.reloadConfigs();
+            configService.reload();
             luckPermsService.invalidateAllCache();
             cacheService.clearAllCache();
 
@@ -306,7 +277,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
             logger.info("Configuration reloaded by {}", sender.getName());
 
         } catch (Exception e) {
-            messageUtil.sendMessage(sender, configService.getMessages().errors().configError());
+            messageUtil.sendConfigError(sender);
             logger.error("Error reloading configuration", e);
         }
     }
@@ -317,34 +288,23 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        Messages.StatsMessages stats = configService.getMessages().stats();
         PerformanceMonitorService.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
         CacheService.CacheStatistics cacheStats = cacheService.getStatistics();
 
-        messageUtil.sendMessage(sender, stats.header());
+        messageUtil.sendStatsHeader(sender);
+        messageUtil.sendStatsPlayersOnline(sender, Bukkit.getOnlinePlayers().size(), Bukkit.getMaxPlayers());
+        Collection<PlayerView> allViews = viewDistanceService.getAllPlayerViews();
+        double averageDistance = allViews.stream()
+            .mapToInt(PlayerView::getCurrentDistance)
+            .average()
+            .orElse(0.0);
+        messageUtil.sendStatsAverageDistance(sender, averageDistance);
 
-        messageUtil.sendMessage(sender, stats.playersOnline(),
-            Map.of(
-                "online", String.valueOf(Bukkit.getOnlinePlayers().size()),
-                "max", String.valueOf(Bukkit.getMaxPlayers())
-            ));
-
-        messageUtil.sendMessage(sender, stats.averageDistance(),
-            Map.of("distance", String.format("%.1f", viewDistanceService.getAverageViewDistance())));
-
-        messageUtil.sendMessage(sender, stats.chunksSent(),
-            Map.of("chunks", String.valueOf(viewDistanceService.getTotalChunksSent())));
-
-        messageUtil.sendMessage(sender, stats.fakeChunksSent(),
-            Map.of("fake_chunks", String.valueOf(viewDistanceService.getTotalFakeChunksSent())));
-
-        messageUtil.sendMessage(sender, stats.cacheSize(),
-            Map.of("size", String.valueOf(cacheStats.currentSizeMB())));
-
-        messageUtil.sendMessage(sender, stats.serverTps(),
-            Map.of("tps", String.format("%.1f", metrics.tps())));
-
-        messageUtil.sendMessage(sender, stats.footer());
+        messageUtil.sendStatsChunksSent(sender, viewDistanceService.getTotalChunksSent());
+        messageUtil.sendStatsFakeChunksSent(sender, viewDistanceService.getTotalFakeChunksSent());
+        messageUtil.sendStatsCacheSize(sender, cacheStats.currentSizeMB());
+        messageUtil.sendStatsServerTps(sender, metrics.tps());
+        messageUtil.sendStatsFooter(sender);
     }
 
     private void handleDebug(Player sender) {
@@ -354,9 +314,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
         }
 
         boolean debugEnabled = configService.isDebugEnabled();
-        Messages.DebugMessages debug = configService.getMessages().debug();
-
-        messageUtil.sendMessage(sender, debugEnabled ? debug.enabled() : debug.disabled());
+        messageUtil.sendDebugStatus(sender, debugEnabled);
     }
 
     private void handleWorld(Player sender, String[] args) {
@@ -366,15 +324,14 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            messageUtil.sendMessage(sender, "&#E74C3CUsage: /eh world <world> [distance]");
+            messageUtil.sendWorldUsage(sender);
             return;
         }
 
         String worldName = args[0];
         World world = Bukkit.getWorld(worldName);
         if (world == null) {
-            messageUtil.sendMessage(sender, configService.getMessages().world().notFound(),
-                Map.of("world", worldName));
+            messageUtil.sendWorldNotFound(sender, worldName);
             return;
         }
 
@@ -387,8 +344,7 @@ public class ExtendedHorizonsCommand implements CommandExecutor, TabCompleter {
         }
 
         // This would require a way to update world-specific config
-        messageUtil.sendMessage(sender,
-            "&#F39C12World-specific configuration changes require config file editing and reload.");
+        messageUtil.sendWorldConfigNotice(sender);
     }
 
     private List<String> filterStartingWith(String prefix, List<String> options) {

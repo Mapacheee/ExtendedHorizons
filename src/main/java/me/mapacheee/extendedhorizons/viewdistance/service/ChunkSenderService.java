@@ -4,13 +4,12 @@ import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUnloadChunk;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import me.mapacheee.extendedhorizons.shared.config.Config;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap;
 import me.mapacheee.extendedhorizons.viewdistance.entity.ChunkRegion;
 import me.mapacheee.extendedhorizons.optimization.service.CacheService;
-import me.mapacheee.extendedhorizons.integration.service.PacketEventsService;
+import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.entity.Player;
@@ -28,13 +27,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 
 @Service
-public class ChunkSenderService {
+public class ChunkSenderService implements IChunkSenderService {
 
     private final Logger logger;
     private final ConfigService configService;
     private final PlayerViewService playerViewService;
     private final CacheService cacheService;
-    private final PacketEventsService packetEventsService;
+    private final IPacketEventsService packetEventsService;
 
     private final ExecutorService chunkProcessingExecutor;
     private final ConcurrentHashMap<Player, Set<ViewMap.ChunkCoordinate>> sentChunks;
@@ -46,7 +45,7 @@ public class ChunkSenderService {
             ConfigService configService,
             PlayerViewService playerViewService,
             CacheService cacheService,
-            PacketEventsService packetEventsService
+            IPacketEventsService packetEventsService
     ) {
         this.logger = logger;
         this.configService = configService;
@@ -54,9 +53,7 @@ public class ChunkSenderService {
         this.cacheService = cacheService;
         this.packetEventsService = packetEventsService;
 
-        Config.PerformanceConfig perfConfig = configService.getConfig().performance();
-        int threadCount = perfConfig.workerThreads() == 0 ?
-            Runtime.getRuntime().availableProcessors() : perfConfig.workerThreads();
+        int threadCount = Runtime.getRuntime().availableProcessors();
 
         this.chunkProcessingExecutor = Executors.newFixedThreadPool(threadCount);
         this.sentChunks = new ConcurrentHashMap<>();
@@ -69,18 +66,16 @@ public class ChunkSenderService {
         CompletableFuture<PlayerViewService.ViewMapUpdate> updateFuture =
             playerViewService.calculateViewUpdate(player, playerView);
 
-        updateFuture.thenAcceptAsync(update -> {
-            processChunkUpdate(player, playerView, update);
-        }, chunkProcessingExecutor);
+        updateFuture.thenAcceptAsync(update -> processChunkUpdate(player, playerView, update), chunkProcessingExecutor);
     }
 
     private void processChunkUpdate(Player player, PlayerView playerView, PlayerViewService.ViewMapUpdate update) {
         Set<ViewMap.ChunkCoordinate> currentSent = sentChunks.getOrDefault(player, ConcurrentHashMap.newKeySet());
 
         int chunksPerTick = playerViewService.calculateOptimalChunksPerTick(playerView);
-        Config.PerformanceConfig perfConfig = configService.getConfig().performance();
+        int maxGenerationPerTick = configService.getMaxChunksPerTick();
 
-        if (globalChunksPerTick.get() >= perfConfig.maxGenerationPerTick()) {
+        if (globalChunksPerTick.get() >= maxGenerationPerTick) {
             playerView.setWaitingForChunks(true);
             return;
         }
@@ -108,7 +103,7 @@ public class ChunkSenderService {
 
         for (ViewMap.ChunkCoordinate coord : newChunks) {
             if (sentThisTick >= chunksPerTick) break;
-            if (globalChunksPerTick.incrementAndGet() > configService.getConfig().performance().maxGenerationPerTick()) {
+            if (globalChunksPerTick.incrementAndGet() > configService.getMaxChunksPerTick()) {
                 break;
             }
 
@@ -168,9 +163,9 @@ public class ChunkSenderService {
     }
 
     private byte[] generateFakeChunkPacket(ChunkRegion.FakeChunkData fakeData) {
-        Config.FakeChunksConfig fakeConfig = configService.getConfig().fakeChunks();
+        boolean simulateTerrain = configService.areFakeChunksEnabled();
 
-        if (!fakeConfig.simulateTerrain()) {
+        if (!simulateTerrain) {
             return generateEmptyChunkData();
         }
 
@@ -194,7 +189,7 @@ public class ChunkSenderService {
                     if (index < chunkData.length) {
                         if (y == surfaceHeight) {
                             chunkData[index] = blockId;
-                        } else if (y < surfaceHeight) {
+                        } else {
                             chunkData[index] = y < 0 ? (byte) 7 : (byte) 1;
                         }
                     }
@@ -221,11 +216,12 @@ public class ChunkSenderService {
     }
 
     private void sendChunkPacket(Player player, Chunk chunk) {
-        packetEventsService.sendRealChunk(player, chunk);
+        var chunkData = packetEventsService.createChunkData(chunk);
+        packetEventsService.sendChunkPacket(player, chunkData);
     }
 
     private void sendFakeChunkPacket(Player player, int chunkX, int chunkZ, byte[] chunkData) {
-        packetEventsService.sendFakeChunk(player, chunkX, chunkZ, chunkData);
+        packetEventsService.sendFakeChunkPacket(player, chunkX, chunkZ);
     }
 
     private void unloadChunk(Player player, int chunkX, int chunkZ) {
@@ -252,5 +248,87 @@ public class ChunkSenderService {
 
     public int getCurrentGlobalChunksPerTick() {
         return globalChunksPerTick.get();
+    }
+
+    @Override
+    public CompletableFuture<Void> sendChunks(Player player, PlayerView playerView) {
+        return CompletableFuture.runAsync(() -> updatePlayerChunks(player, playerView), chunkProcessingExecutor);
+    }
+
+    @Override
+    public CompletableFuture<Void> sendFakeChunks(Player player, PlayerView playerView) {
+        return CompletableFuture.runAsync(() -> {
+            if (playerView.areFakeChunksEnabled()) {
+                int distance = playerView.getCurrentDistance();
+                int fakeStartDistance = configService.getFakeChunksStartDistance();
+
+                for (int x = -distance; x <= distance; x++) {
+                    for (int z = -distance; z <= distance; z++) {
+                        double chunkDistance = Math.sqrt(x * x + z * z);
+                        if (chunkDistance > fakeStartDistance && chunkDistance <= distance) {
+                            ViewMap.ChunkCoordinate coord = new ViewMap.ChunkCoordinate(
+                                (int) player.getLocation().getX() / 16 + x,
+                                (int) player.getLocation().getZ() / 16 + z
+                            );
+                            sendFakeChunk(player, playerView, coord);
+                        }
+                    }
+                }
+            }
+        }, chunkProcessingExecutor);
+    }
+
+    @Override
+    public CompletableFuture<Void> sendChunk(Player player, ViewMap.ChunkCoordinate coordinate, boolean fake) {
+        return CompletableFuture.runAsync(() -> {
+            PlayerView playerView = new PlayerView(player); // Temporary view
+            if (fake) {
+                sendFakeChunk(player, playerView, coordinate);
+            } else {
+                sendRealChunk(player, playerView, coordinate);
+            }
+        }, chunkProcessingExecutor);
+    }
+
+    @Override
+    public CompletableFuture<Void> unloadChunk(Player player, ViewMap.ChunkCoordinate coordinate) {
+        return CompletableFuture.runAsync(() -> {
+            unloadChunk(player, coordinate.x(), coordinate.z());
+        });
+    }
+
+    @Override
+    public boolean hasChunkBeenSent(Player player, ViewMap.ChunkCoordinate coordinate) {
+        Set<ViewMap.ChunkCoordinate> playerChunks = sentChunks.get(player);
+        return playerChunks != null && playerChunks.contains(coordinate);
+    }
+
+    @Override
+    public void markChunkAsSent(Player player, ViewMap.ChunkCoordinate coordinate) {
+        sentChunks.computeIfAbsent(player, k -> ConcurrentHashMap.newKeySet()).add(coordinate);
+    }
+
+    @Override
+    public void unmarkChunk(Player player, ViewMap.ChunkCoordinate coordinate) {
+        Set<ViewMap.ChunkCoordinate> playerChunks = sentChunks.get(player);
+        if (playerChunks != null) {
+            playerChunks.remove(coordinate);
+        }
+    }
+
+    @Override
+    public int getChunksPerTick() {
+        return globalChunksPerTick.get();
+    }
+
+    @Override
+    public void setChunksPerTick(int chunksPerTick) {
+        globalChunksPerTick.set(chunksPerTick);
+    }
+
+    @Override
+    public void cleanup() {
+        chunkProcessingExecutor.shutdown();
+        sentChunks.clear();
     }
 }
