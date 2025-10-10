@@ -1,6 +1,3 @@
-/* Cache Service - Manages caching of fake chunks and performance optimizations
- * Handles memory management and cache eviction strategies
- */
 package me.mapacheee.extendedhorizons.optimization.service;
 
 import com.google.inject.Inject;
@@ -15,6 +12,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+
+/* Cache Service - Manages caching of fake chunks and performance optimizations
+ * Handles memory management and cache eviction strategies
+ */
 
 @Service
 public class CacheService {

@@ -117,14 +117,6 @@ public class ConfigService {
         return configFile.getBoolean("view-distance.enable-fake-chunks", true);
     }
 
-    public double getMinTpsThreshold() {
-        return configFile.getDouble("performance.min-tps-threshold", 18.0);
-    }
-
-    public boolean isAdaptivePerformanceEnabled() {
-        return configFile.getBoolean("performance.adaptive-performance", true);
-    }
-
     public int getMaxChunksPerTick() {
         return configFile.getInt("performance.max-chunks-per-tick", 5);
     }
@@ -135,6 +127,10 @@ public class ConfigService {
 
     public boolean isLuckPermsEnabled() {
         return configFile.getBoolean("integrations.luckperms.enabled", true);
+    }
+
+    public boolean isLuckPermsGroupPermissionsEnabled() {
+        return configFile.getBoolean("integrations.luckperms.use-group-permissions", true);
     }
 
     public int getLuckPermsCheckInterval() {
@@ -200,22 +196,6 @@ public class ConfigService {
 
     public String getMinDistanceExceededMessage() {
         return messagesFile.getString("view-distance.min-distance-exceeded", "&#E74C3CMinimum view distance is &#FFFFFF{min} &#E74C3Cchunks!");
-    }
-
-    public String getLowTpsWarningMessage() {
-        return messagesFile.getString("performance.low-tps-warning", "&#E74C3CServer TPS is low (&#FFFFFF{tps}&#E74C3C). Performance monitoring is active.");
-    }
-
-    public boolean isPerformanceWarningLoggingEnabled() {
-        return configFile.getBoolean("monitoring.log-performance-warnings", true);
-    }
-
-    public String getPerformanceRestoredMessage() {
-        return messagesFile.getString("performance.performance-restored", "&#2ECC71Server performance restored!");
-    }
-
-    public boolean isLuckPermsGroupPermissionsEnabled() {
-        return configFile.getBoolean("integrations.luckperms.use-group-permissions", true);
     }
 
     public String getInvalidDistanceMessage() {
@@ -353,9 +333,6 @@ public class ConfigService {
         return messagesFile.getString("stats.cache-size", "&#F39C12Cache Size: &#FFFFFF{size}");
     }
 
-    public String getStatsServerTpsMessage() {
-        return messagesFile.getString("stats.server-tps", "&#F39C12Server TPS: &#FFFFFF{tps}");
-    }
 
     public String getStatsFooterMessage() {
         return messagesFile.getString("stats.footer", "&#3498DB==========================================");

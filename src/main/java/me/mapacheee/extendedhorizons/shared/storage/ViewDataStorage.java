@@ -2,7 +2,6 @@ package me.mapacheee.extendedhorizons.shared.storage;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import me.mapacheee.extendedhorizons.shared.config.Config;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import org.slf4j.Logger;
@@ -150,19 +149,19 @@ public class ViewDataStorage {
         });
     }
 
-    public CompletableFuture<Void> savePlayerData(PlayerView playerView) {
-        return CompletableFuture.runAsync(() -> {
+    public void savePlayerData(PlayerView playerView) {
+        CompletableFuture.runAsync(() -> {
             if (!initialized) return;
 
             PlayerViewData data = new PlayerViewData(
-                playerView.getPlayerId(),
-                playerView.getPlayerName(),
-                playerView.getTargetDistance(),
-                playerView.areFakeChunksEnabled(),
-                playerView.isAdaptiveModeEnabled(),
-                playerView.getChunksSent(),
-                playerView.getFakeChunksSent(),
-                playerView.getNetworkBytesUsed()
+                    playerView.getPlayerId(),
+                    playerView.getPlayerName(),
+                    playerView.getTargetDistance(),
+                    playerView.areFakeChunksEnabled(),
+                    playerView.isAdaptiveModeEnabled(),
+                    playerView.getChunksSent(),
+                    playerView.getFakeChunksSent(),
+                    playerView.getNetworkBytesUsed()
             );
 
             savePlayerData(data);

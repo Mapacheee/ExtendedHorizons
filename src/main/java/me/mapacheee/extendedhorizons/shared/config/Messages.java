@@ -1,7 +1,8 @@
+package me.mapacheee.extendedhorizons.shared.config;
+
 /* Messages record for ExtendedHorizons plugin
  * Contains all translatable messages with HEX color support
  */
-package me.mapacheee.extendedhorizons.shared.config;
 
 public record Messages(
     String prefix,

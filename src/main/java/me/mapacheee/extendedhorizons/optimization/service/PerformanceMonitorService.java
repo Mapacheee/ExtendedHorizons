@@ -86,7 +86,7 @@ public class PerformanceMonitorService {
         long nonHeapMax = memoryBean.getNonHeapMemoryUsage().getMax();
 
         if (heapMax == -1) heapMax = Runtime.getRuntime().maxMemory();
-        if (nonHeapMax == -1) nonHeapMax = 256 * 1024 * 1024; // 256MB estimate
+        if (nonHeapMax == -1) nonHeapMax = 256 * 1024 * 1024;
 
         return (heapMax + nonHeapMax) / (1024 * 1024);
     }

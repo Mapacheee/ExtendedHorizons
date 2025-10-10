@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /* Scheduler Service - Manages all automated tasks and periodic operations
@@ -71,42 +72,42 @@ public class SchedulerService {
 
         // Chunk processing reset task (every tick)
         tasks.add(Bukkit.getScheduler().runTaskTimer(
-            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
+                Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")),
             chunkSenderService::resetGlobalChunkCounter,
             0L, 1L
         ));
 
         // Performance monitoring task (every 5 seconds)
         tasks.add(Bukkit.getScheduler().runTaskTimerAsynchronously(
-            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
+                Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")),
             this::performanceCheck,
             100L, 100L
         ));
 
         // Permission check task (every 60 seconds)
         tasks.add(Bukkit.getScheduler().runTaskTimerAsynchronously(
-            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
+                Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")),
             this::checkPlayerPermissions,
             1200L, 1200L
         ));
 
         // Auto-save task (every 5 minutes)
         tasks.add(Bukkit.getScheduler().runTaskTimerAsynchronously(
-            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
+                Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")),
             this::autoSavePlayerData,
             6000L, 6000L
         ));
 
         // Statistics collection task (every hour)
         tasks.add(Bukkit.getScheduler().runTaskTimerAsynchronously(
-            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
+                Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")),
             this::collectHourlyStatistics,
             72000L, 72000L
         ));
 
         // Daily statistics task (every 24 hours)
         tasks.add(Bukkit.getScheduler().runTaskTimerAsynchronously(
-            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
+                Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")),
             this::collectDailyStatistics,
             0L, 1728000L // 24 hours in ticks
         ));

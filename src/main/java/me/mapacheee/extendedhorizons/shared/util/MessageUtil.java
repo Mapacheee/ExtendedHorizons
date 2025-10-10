@@ -225,23 +225,8 @@ public class MessageUtil {
         sendMessage(sender, message, Map.of("size", String.valueOf(size)));
     }
 
-    public void sendStatsServerTps(CommandSender sender, double tps) {
-        String message = configService.getStatsServerTpsMessage();
-        sendMessage(sender, message, Map.of("tps", String.format("%.1f", tps)));
-    }
-
     public void sendStatsFooter(CommandSender sender) {
         String message = configService.getStatsFooterMessage();
         sendMessage(sender, message);
-    }
-
-    public void sendLowTpsWarning(CommandSender sender, double tps) {
-        String message = configService.getLowTpsWarningMessage();
-        sendMessageWithPrefix(sender, message, Map.of("tps", String.format("%.1f", tps)));
-    }
-
-    public void sendPerformanceRestored(CommandSender sender) {
-        String message = configService.getPerformanceRestoredMessage();
-        sendMessageWithPrefix(sender, message);
     }
 }
