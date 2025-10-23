@@ -3,10 +3,7 @@
 </div>
 
 <div align="center">
-  <em>
-    High-performance per-player view distance for Paper/Folia with optional client-only ("fake") chunks.<br>
-    Made with Winter + Incendo Cloud and PacketEvents.
-  </em>
+  <img width="1800" height="2000" alt="fondo" src="https://github.com/user-attachments/assets/87ac01de-8852-4c8a-b3bb-81982d10f7a0" />
 </div>
 
 ---
