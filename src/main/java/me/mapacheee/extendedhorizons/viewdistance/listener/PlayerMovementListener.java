@@ -49,14 +49,15 @@ public class PlayerMovementListener implements Listener {
         }
 
         try {
-            int defaultDistance = configService.getDefaultViewDistance();
-            viewDistanceService.setViewDistance(player, defaultDistance);
+            viewDistanceService.initializePlayerView(player);
+
+            int effectiveDistance = viewDistanceService.getEffectiveViewDistance(player);
 
             logger.debug("Initialized view distance for player {} with distance {}",
-                        player.getName(), defaultDistance);
+                        player.getName(), effectiveDistance);
 
             if (configService.isWelcomeMessageEnabled()) {
-                messageUtil.sendWelcomeMessage(player, defaultDistance);
+                messageUtil.sendWelcomeMessage(player, effectiveDistance);
             }
 
         } catch (Exception e) {

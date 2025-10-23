@@ -6,6 +6,7 @@ import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
 import me.mapacheee.extendedhorizons.optimization.service.PerformanceMonitorService;
+import me.mapacheee.extendedhorizons.shared.storage.ViewDataStorage;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
@@ -29,6 +30,7 @@ public class ViewDistanceService implements IViewDistanceService {
     private final PlayerViewService playerViewService;
     private final ILuckPermsIntegrationService luckPermsService;
     private final PerformanceMonitorService performanceMonitor;
+    private final ViewDataStorage storage;
 
     private final Map<UUID, PlayerView> playerViews;
     private final AtomicInteger totalChunksSent;
@@ -44,13 +46,15 @@ public class ViewDistanceService implements IViewDistanceService {
             ConfigService configService,
             PlayerViewService playerViewService,
             ILuckPermsIntegrationService luckPermsService,
-            PerformanceMonitorService performanceMonitor
+            PerformanceMonitorService performanceMonitor,
+            ViewDataStorage storage
     ) {
         this.logger = logger;
         this.configService = configService;
         this.playerViewService = playerViewService;
         this.luckPermsService = luckPermsService;
         this.performanceMonitor = performanceMonitor;
+        this.storage = storage;
         this.playerViews = new ConcurrentHashMap<>();
         this.totalChunksSent = new AtomicInteger(0);
         this.totalFakeChunksSent = new AtomicInteger(0);
@@ -79,8 +83,11 @@ public class ViewDistanceService implements IViewDistanceService {
         PlayerView playerView = new PlayerView(player);
         playerViews.put(player.getUniqueId(), playerView);
 
+        var playerData = storage.getPlayerDataSync(player.getUniqueId());
+        int preferredDistance = playerData != null ? playerData.preferredDistance() : configService.getDefaultViewDistance();
+
         int defaultDistance = Math.min(
-                configService.getDefaultViewDistance(),
+                preferredDistance,
                 getMaxAllowedDistance(player)
         );
         playerView.setTargetDistance(defaultDistance);
@@ -135,6 +142,7 @@ public class ViewDistanceService implements IViewDistanceService {
             player.setSendViewDistance(distance);
         } catch (Throwable ignored) { }
 
+        storage.savePlayerData(view);
         updatePlayerViewDistance(player);
     }
 

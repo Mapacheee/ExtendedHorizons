@@ -13,7 +13,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
-/* Database Storage Service - Handles H2 database operations for player data persistence
+/* Database Storage Service - Handles SQLite database operations for player data persistence
  * Manages player view preferences and statistics with connection pooling
  */
 
@@ -42,23 +42,16 @@ public class ViewDataStorage {
             Path dataFolder = Path.of("plugins", "ExtendedHorizons");
             String dbPath = dataFolder.resolve(fileName + ".db").toString();
 
-            StringBuilder urlBuilder = new StringBuilder("jdbc:h2:").append(dbPath);
-
-            if (configService.isDatabaseAutoServerEnabled()) {
-                urlBuilder.append(";AUTO_SERVER=TRUE");
-                urlBuilder.append(";AUTO_SERVER_PORT=").append(configService.getDatabaseAutoServerPort());
-            }
-
-            String url = urlBuilder.toString();
-            this.connection = DriverManager.getConnection(url, "sa", "");
+            String url = "jdbc:sqlite:" + dbPath;
+            this.connection = DriverManager.getConnection(url);
 
             createTables();
             this.initialized = true;
 
-            logger.info("H2 Database initialized successfully at {}", dbPath);
+            logger.info("SQLite Database initialized successfully at {}", dbPath);
 
         } catch (SQLException e) {
-            logger.error("Failed to initialize H2 database", e);
+            logger.error("Failed to initialize SQLite database", e);
         }
     }
 
@@ -149,23 +142,55 @@ public class ViewDataStorage {
         });
     }
 
+    public PlayerViewData getPlayerDataSync(UUID playerId) {
+        if (!initialized) return new PlayerViewData(playerId, "", 16, false, true, 0, 0, 0);
+
+        PlayerViewData cached = dataCache.get(playerId);
+        if (cached != null) return cached;
+
+        String sql = "SELECT * FROM player_data WHERE player_uuid = ?";
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, playerId.toString());
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    PlayerViewData data = new PlayerViewData(
+                        playerId,
+                        rs.getString("player_name"),
+                        rs.getInt("preferred_distance"),
+                        rs.getBoolean("fake_chunks_enabled"),
+                        rs.getBoolean("adaptive_mode_enabled"),
+                        rs.getLong("total_chunks_sent"),
+                        rs.getLong("total_fake_chunks_sent"),
+                        rs.getLong("total_network_bytes")
+                    );
+
+                    dataCache.put(playerId, data);
+                    return data;
+                }
+            }
+
+        } catch (SQLException e) {
+            logger.error("Error loading player data for {}", playerId, e);
+        }
+
+        return new PlayerViewData(playerId, "", 16, false, true, 0, 0, 0);
+    }
+
     public void savePlayerData(PlayerView playerView) {
-        CompletableFuture.runAsync(() -> {
-            if (!initialized) return;
+        PlayerViewData data = new PlayerViewData(
+                playerView.getPlayerId(),
+                playerView.getPlayerName(),
+                playerView.getTargetDistance(),
+                playerView.areFakeChunksEnabled(),
+                playerView.isAdaptiveModeEnabled(),
+                playerView.getChunksSent(),
+                playerView.getFakeChunksSent(),
+                playerView.getNetworkBytesUsed()
+        );
 
-            PlayerViewData data = new PlayerViewData(
-                    playerView.getPlayerId(),
-                    playerView.getPlayerName(),
-                    playerView.getTargetDistance(),
-                    playerView.areFakeChunksEnabled(),
-                    playerView.isAdaptiveModeEnabled(),
-                    playerView.getChunksSent(),
-                    playerView.getFakeChunksSent(),
-                    playerView.getNetworkBytesUsed()
-            );
-
-            savePlayerData(data);
-        });
+        savePlayerData(data).join(); // Wait for the save to complete
     }
 
     public CompletableFuture<Void> savePlayerData(PlayerViewData data) {
@@ -173,7 +198,7 @@ public class ViewDataStorage {
             if (!initialized) return;
 
             String sql = """
-                MERGE INTO player_data (
+                INSERT OR REPLACE INTO player_data (
                     player_uuid, player_name, preferred_distance, fake_chunks_enabled,
                     adaptive_mode_enabled, total_chunks_sent, total_fake_chunks_sent,
                     total_network_bytes, last_login, updated_at
@@ -204,7 +229,7 @@ public class ViewDataStorage {
             if (!initialized) return;
 
             String sql = """
-                MERGE INTO daily_stats (
+                INSERT OR REPLACE INTO daily_stats (
                     stat_date, total_players, chunks_sent, fake_chunks_sent,
                     network_bytes, average_tps, peak_players
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)

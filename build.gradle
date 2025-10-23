@@ -58,8 +58,8 @@ dependencies {
     // PacketEvents
     compileOnly("com.github.retrooper:packetevents-spigot:2.9.5")
 
-    // H2 Database
-    implementation('com.h2database:h2:2.2.220')
+    // SQLite
+    implementation("org.xerial:sqlite-jdbc:3.7.2")
 
     // PlaceholderAPI
     compileOnly("me.clip:placeholderapi:2.11.6")
