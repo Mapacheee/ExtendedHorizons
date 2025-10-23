@@ -7,10 +7,13 @@ import com.thewinterframework.module.annotation.ModuleComponent;
 import com.thewinterframework.plugin.module.PluginModule;
 import com.thewinterframework.plugin.WinterPlugin;
 import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
-import me.mapacheee.extendedhorizons.integration.service.LuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.integration.service.NoOpLuckPermsIntegrationService;
 import me.mapacheee.extendedhorizons.integration.service.PacketEventsService;
 import me.mapacheee.extendedhorizons.optimization.service.PerformanceMonitorService;
 import me.mapacheee.extendedhorizons.viewdistance.service.*;
+import org.bukkit.Bukkit;
+import org.bukkit.plugin.Plugin;
 import org.slf4j.Logger;
 
 /**
@@ -50,7 +53,7 @@ public class ServiceConfigurationModule implements PluginModule {
             Logger logger,
             ConfigService configService,
             PlayerViewService playerViewService,
-            LuckPermsIntegrationService luckPermsService,
+            ILuckPermsIntegrationService luckPermsService,
             PerformanceMonitorService performanceMonitor
     ) {
         ViewDistanceService service = new ViewDistanceService(logger, configService, playerViewService, luckPermsService, performanceMonitor);
@@ -81,5 +84,25 @@ public class ServiceConfigurationModule implements PluginModule {
         PacketEventsService service = new PacketEventsService(logger, (me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin) plugin);
         logger.info("PacketEventsService created");
         return service;
+    }
+
+    @Provides
+    @Singleton
+    public ILuckPermsIntegrationService provideLuckPermsIntegrationService(
+            Logger logger,
+            ConfigService configService
+    ) {
+        Plugin luckPerms = Bukkit.getPluginManager().getPlugin("LuckPerms");
+        if (luckPerms != null && luckPerms.isEnabled()) {
+            try {
+                Class<?> clazz = Class.forName("me.mapacheee.extendedhorizons.integration.service.LuckPermsIntegrationService");
+                return (ILuckPermsIntegrationService) clazz.getConstructor(Logger.class, ConfigService.class).newInstance(logger, configService);
+            } catch (Exception e) {
+                logger.warn("Failed to load LuckPerms integration: " + e.getMessage());
+                return new NoOpLuckPermsIntegrationService(configService);
+            }
+        } else {
+            return new NoOpLuckPermsIntegrationService(configService);
+        }
     }
 }

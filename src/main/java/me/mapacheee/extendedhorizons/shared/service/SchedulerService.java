@@ -8,7 +8,7 @@ import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
 import me.mapacheee.extendedhorizons.viewdistance.service.ChunkSenderService;
 import me.mapacheee.extendedhorizons.optimization.service.PerformanceMonitorService;
 import me.mapacheee.extendedhorizons.optimization.service.CacheService;
-import me.mapacheee.extendedhorizons.integration.service.LuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
@@ -34,7 +34,7 @@ public class SchedulerService {
     private final ChunkSenderService chunkSenderService;
     private final PerformanceMonitorService performanceMonitor;
     private final CacheService cacheService;
-    private final LuckPermsIntegrationService luckPermsService;
+    private final ILuckPermsIntegrationService luckPermsService;
 
     private final List<BukkitTask> tasks;
     private final AtomicInteger peakPlayers;
@@ -49,7 +49,7 @@ public class SchedulerService {
             ChunkSenderService chunkSenderService,
             PerformanceMonitorService performanceMonitor,
             CacheService cacheService,
-            LuckPermsIntegrationService luckPermsService
+            ILuckPermsIntegrationService luckPermsService
     ) {
         this.logger = logger;
         this.configService = configService;

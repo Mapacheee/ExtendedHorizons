@@ -7,8 +7,6 @@ import org.bukkit.block.Biome;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
-import static org.bukkit.block.Biome.*;
-
 /* Chunk region entity that represents a group of chunks for optimized processing
  * Handles fake chunk generation and caching for performance
  */

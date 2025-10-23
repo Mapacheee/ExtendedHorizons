@@ -36,10 +36,6 @@ public class ConfigService {
         return configFile.getBoolean("general.debug", false);
     }
 
-    public boolean isFoliaDetectionEnabled() {
-        return configFile.getBoolean("general.detect-folia", true);
-    }
-
     private String hyphenVariant(String worldName) {
         return worldName.replace('_', '-');
     }
@@ -96,7 +92,6 @@ public class ConfigService {
                     configFile.getBoolean("worlds.default.fake-chunks-enabled", true))));
     }
 
-    // Configuration getters
     public int getMaxViewDistance() {
         return configFile.getInt("view-distance.max-distance", 64);
     }

@@ -4,13 +4,14 @@ import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
-import me.mapacheee.extendedhorizons.integration.service.LuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
 import me.mapacheee.extendedhorizons.optimization.service.PerformanceMonitorService;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,7 +27,7 @@ public class ViewDistanceService implements IViewDistanceService {
     private final Logger logger;
     private final ConfigService configService;
     private final PlayerViewService playerViewService;
-    private final LuckPermsIntegrationService luckPermsService;
+    private final ILuckPermsIntegrationService luckPermsService;
     private final PerformanceMonitorService performanceMonitor;
 
     private final Map<UUID, PlayerView> playerViews;
@@ -42,7 +43,7 @@ public class ViewDistanceService implements IViewDistanceService {
             Logger logger,
             ConfigService configService,
             PlayerViewService playerViewService,
-            LuckPermsIntegrationService luckPermsService,
+            ILuckPermsIntegrationService luckPermsService,
             PerformanceMonitorService performanceMonitor
     ) {
         this.logger = logger;
@@ -217,7 +218,7 @@ public class ViewDistanceService implements IViewDistanceService {
 
         if (view.getCurrentWorld() != player.getWorld()) {
             view.setCurrentWorld(player.getWorld());
-            getChunkSenderService().unloadAllChunks(player);
+            Objects.requireNonNull(getChunkSenderService()).unloadAllChunks(player);
             updatePlayerViewDistance(player);
         } else {
             IChunkSenderService chunkSender = getChunkSenderService();

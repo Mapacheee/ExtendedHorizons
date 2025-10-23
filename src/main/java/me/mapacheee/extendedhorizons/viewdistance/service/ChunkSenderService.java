@@ -15,6 +15,7 @@ import org.bukkit.Chunk;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -118,7 +119,7 @@ public class ChunkSenderService implements IChunkSenderService {
     }
 
     private void sendRealChunk(Player player, PlayerView playerView, ViewMap.ChunkCoordinate coord) {
-        Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("ExtendedHorizons"), () -> {
+        Bukkit.getScheduler().runTask(Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")), () -> {
             try {
                 Chunk chunk = player.getWorld().getChunkAt(coord.x(), coord.z());
 
@@ -149,7 +150,7 @@ public class ChunkSenderService implements IChunkSenderService {
 
                 byte[] chunkPacketData = generateFakeChunkPacket(fakeData);
 
-                Bukkit.getScheduler().runTask(Bukkit.getPluginManager().getPlugin("ExtendedHorizons"), () -> {
+                Bukkit.getScheduler().runTask(Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")), () -> {
                     sendFakeChunkPacket(player, coord.x(), coord.z(), chunkPacketData);
                     playerView.incrementFakeChunksSent();
                     playerView.addNetworkBytesUsed(chunkPacketData.length);

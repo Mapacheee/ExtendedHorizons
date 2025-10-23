@@ -1,7 +1,6 @@
 package me.mapacheee.extendedhorizons.integration.service;
 
 import com.google.inject.Inject;
-import com.thewinterframework.service.annotation.Service;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
@@ -15,7 +14,6 @@ import org.slf4j.Logger;
 
 /* PlaceholderAPI Provider - Provides placeholders for ExtendedHorizons integration */
 
-@Service
 public class PlaceholderAPIProvider extends PlaceholderExpansion {
 
     private final Logger logger;

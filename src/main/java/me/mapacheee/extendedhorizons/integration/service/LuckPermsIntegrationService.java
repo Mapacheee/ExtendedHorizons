@@ -1,7 +1,6 @@
 package me.mapacheee.extendedhorizons.integration.service;
 
 import com.google.inject.Inject;
-import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
@@ -21,8 +20,7 @@ import java.util.regex.Pattern;
  * Integrates with LuckPerms to provide group and user-specific view distance permissions
  */
 
-@Service
-public class LuckPermsIntegrationService {
+public class LuckPermsIntegrationService implements ILuckPermsIntegrationService {
 
     private final Logger logger;
     private final ConfigService configService;
@@ -86,7 +84,6 @@ public class LuckPermsIntegrationService {
             int highestDistance = 0;
             boolean hasUnlimited = false;
 
-            // Check user permissions
             for (Node node : user.getNodes()) {
                 if (node.getKey().startsWith("extendedhorizons.distance.")) {
                     if (node.getKey().equals("extendedhorizons.distance.unlimited")) {

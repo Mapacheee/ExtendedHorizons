@@ -8,7 +8,7 @@ import me.mapacheee.extendedhorizons.shared.util.MessageUtil;
 import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.optimization.service.CacheService;
-import me.mapacheee.extendedhorizons.integration.service.LuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -32,7 +32,7 @@ public class ExtendedHorizonsCommand {
     private final MessageUtil messageUtil;
     private final IViewDistanceService viewDistanceService;
     private final CacheService cacheService;
-    private final LuckPermsIntegrationService luckPermsService;
+    private final ILuckPermsIntegrationService luckPermsService;
 
     @Inject
     public ExtendedHorizonsCommand(
@@ -41,7 +41,7 @@ public class ExtendedHorizonsCommand {
             MessageUtil messageUtil,
             IViewDistanceService viewDistanceService,
             CacheService cacheService,
-            LuckPermsIntegrationService luckPermsService
+            ILuckPermsIntegrationService luckPermsService
     ) {
         this.logger = logger;
         this.configService = configService;
@@ -100,7 +100,7 @@ public class ExtendedHorizonsCommand {
         String info = configService.getPluginInfoMessage();
         messageUtil.sendMessageWithPrefix(player, info, java.util.Map.of(
                 "plugin", "ExtendedHorizons",
-                "version", ExtendedHorizonsPlugin.getInstance().getDescription().getVersion(),
+                "version", ExtendedHorizonsPlugin.getInstance().getPluginMeta().getVersion(),
                 "author", "Mapacheee"
         ));
 
