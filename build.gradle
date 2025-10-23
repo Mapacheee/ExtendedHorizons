@@ -47,8 +47,8 @@ dependencies {
     implementation("com.thewinterframework:paper:1.0.4")
     api("com.thewinterframework:paper:1.0.4")
     annotationProcessor("com.thewinterframework:paper:1.0.4")
-    api('com.thewinterframework:configuration:1.0.1')
-    annotationProcessor('com.thewinterframework:configuration:1.0.1')
+    api('com.thewinterframework:configuration:1.0.2')
+    annotationProcessor('com.thewinterframework:configuration:1.0.2')
     api('com.thewinterframework:command:1.0.1')
     annotationProcessor('com.thewinterframework:command:1.0.1')
 
