@@ -83,10 +83,6 @@ integrations:
     check-interval: 60 # seconds
     use-group-permissions: true
 
-# Logging / monitoring
-monitoring:
-  log-performance-warnings: true
-
 # Message toggles (actual texts live in messages.yml)
 messages:
   welcome-message:
