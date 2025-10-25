@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'me.mapacheee'
-version = '1.0.3'
+version = '1.1.0'
 description = 'ExtendedHorizons - Advanced view distance extension plugin'
 
 java {
@@ -53,10 +53,10 @@ dependencies {
     annotationProcessor('com.thewinterframework:command:1.0.1')
 
     // Paper API
-    compileOnly("io.papermc.paper:paper-api:1.21.10-R0.1-SNAPSHOT")
+    implementation 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
 
     // PacketEvents
-    compileOnly("com.github.retrooper:packetevents-spigot:2.9.5")
+    compileOnly("com.github.retrooper:packetevents-spigot:2.10.0")
 
     // SQLite
     implementation("org.xerial:sqlite-jdbc:3.7.2")
