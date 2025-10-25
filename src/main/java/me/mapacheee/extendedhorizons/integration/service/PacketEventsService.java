@@ -128,20 +128,21 @@ public class PacketEventsService extends PacketListenerAbstract implements IPack
                 return;
             }
 
-            boolean wasLoaded = world.isChunkLoaded(chunkX, chunkZ);
-            if (!wasLoaded) {
-                world.loadChunk(chunkX, chunkZ, true);
-            }
-            Chunk c = world.getChunkAt(chunkX, chunkZ);
-            if (!wasLoaded) {
-                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            world.getChunkAtAsync(chunkX, chunkZ).thenAccept(chunk -> {
+                Bukkit.getScheduler().runTask(plugin, () -> {
                     try {
-                        world.unloadChunk(chunkX, chunkZ, false);
-                    } catch (Exception ignored) {}
-                }, 40L);
-            }
+                        sendChunk(player, chunkX, chunkZ);
 
-            updatePlayerStats(player);
+                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                            try {
+                                world.unloadChunk(chunkX, chunkZ, false);
+                            } catch (Exception ignored) {}
+                        }, 1L);
+                    } catch (Exception e) {
+                        logger.error("Failed to send fake chunk ({},{}) to player {}", chunkX, chunkZ, player.getName(), e);
+                    }
+                });
+            });
 
         } catch (Exception e) {
             logger.error("Failed to send fake chunk ({},{}) to player {}", chunkX, chunkZ, player.getName(), e);
@@ -226,5 +227,13 @@ public class PacketEventsService extends PacketListenerAbstract implements IPack
 
     public int getCacheSize() {
         return chunkPacketCache.size();
+    }
+
+    private void sendChunk(Player player, int chunkX, int chunkZ) {
+        try {
+            player.getClass().getMethod("sendChunk", int.class, int.class).invoke(player, chunkX, chunkZ);
+        } catch (Exception e) {
+            logger.error("Failed to send chunk using sendChunk method", e);
+        }
     }
 }

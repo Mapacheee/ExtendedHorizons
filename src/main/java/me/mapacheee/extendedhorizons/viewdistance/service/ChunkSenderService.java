@@ -118,26 +118,20 @@ public class ChunkSenderService implements IChunkSenderService {
     }
 
     private void sendRealChunk(Player player, PlayerView playerView, ViewMap.ChunkCoordinate coord) {
-        Bukkit.getScheduler().runTask(Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")), () -> {
-            try {
-                Chunk chunk = player.getWorld().getChunkAt(coord.x(), coord.z());
-
-                if (chunk.isLoaded()) {
-                    sendChunkPacket(player, chunk);
+        player.getWorld().getChunkAtAsync(coord.x(), coord.z()).thenAccept(chunk -> {
+            Bukkit.getScheduler().runTask(Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")), () -> {
+                try {
+                    sendChunk(player, coord.x(), coord.z());
                     playerView.incrementChunksSent();
 
                     long chunkSize = estimateChunkSize(chunk);
                     playerView.addNetworkBytesUsed(chunkSize);
-                } else {
-                    chunk.load(true);
-                    sendChunkPacket(player, chunk);
-                    playerView.incrementChunksSent();
-                }
 
-            } catch (Exception e) {
-                logger.error("Failed to send real chunk at {}, {} to player {}",
-                           coord.x(), coord.z(), player.getName(), e);
-            }
+                } catch (Exception e) {
+                    logger.error("Failed to send real chunk at {}, {} to player {}",
+                               coord.x(), coord.z(), player.getName(), e);
+                }
+            });
         });
     }
 
@@ -146,7 +140,7 @@ public class ChunkSenderService implements IChunkSenderService {
             try {
                 packetEventsService.sendFakeChunkPacket(player, coord.x(), coord.z());
                 playerView.incrementFakeChunksSent();
-                playerView.addNetworkBytesUsed(8192L); // Estimate
+                playerView.addNetworkBytesUsed(8192L);
             } catch (Exception e) {
                 logger.error("Failed to send fake chunk at {}, {} to player {}",
                            coord.x(), coord.z(), player.getName(), e);
@@ -266,5 +260,13 @@ public class ChunkSenderService implements IChunkSenderService {
     public void cleanup() {
         chunkProcessingExecutor.shutdown();
         sentChunks.clear();
+    }
+
+    private void sendChunk(Player player, int chunkX, int chunkZ) {
+        try {
+            player.getClass().getMethod("sendChunk", int.class, int.class).invoke(player, chunkX, chunkZ);
+        } catch (Exception e) {
+            logger.error("Failed to send chunk using sendChunk method", e);
+        }
     }
 }
