@@ -7,7 +7,6 @@ import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap;
-import me.mapacheee.extendedhorizons.viewdistance.entity.ChunkRegion;
 import me.mapacheee.extendedhorizons.optimization.service.CacheService;
 import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
 import org.bukkit.Bukkit;
@@ -145,17 +144,9 @@ public class ChunkSenderService implements IChunkSenderService {
     private void sendFakeChunk(Player player, PlayerView playerView, ViewMap.ChunkCoordinate coord) {
         chunkProcessingExecutor.execute(() -> {
             try {
-                ChunkRegion region = cacheService.getOrCreateRegion(coord.x() >> 5, coord.z() >> 5, player.getWorld());
-                ChunkRegion.FakeChunkData fakeData = region.getFakeChunk(coord.x(), coord.z());
-
-                byte[] chunkPacketData = generateFakeChunkPacket(fakeData);
-
-                Bukkit.getScheduler().runTask(Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")), () -> {
-                    sendFakeChunkPacket(player, coord.x(), coord.z(), chunkPacketData);
-                    playerView.incrementFakeChunksSent();
-                    playerView.addNetworkBytesUsed(chunkPacketData.length);
-                });
-
+                packetEventsService.sendFakeChunkPacket(player, coord.x(), coord.z());
+                playerView.incrementFakeChunksSent();
+                playerView.addNetworkBytesUsed(8192L); // Estimate
             } catch (Exception e) {
                 logger.error("Failed to send fake chunk at {}, {} to player {}",
                            coord.x(), coord.z(), player.getName(), e);
@@ -163,67 +154,11 @@ public class ChunkSenderService implements IChunkSenderService {
         });
     }
 
-    private byte[] generateFakeChunkPacket(ChunkRegion.FakeChunkData fakeData) {
-        boolean simulateTerrain = configService.areFakeChunksEnabled();
-
-        if (!simulateTerrain) {
-            return generateEmptyChunkData();
-        }
-
-        return generateTerrainChunkData(fakeData);
-    }
-
-    private byte[] generateEmptyChunkData() {
-        return new byte[1024];
-    }
-
-    private byte[] generateTerrainChunkData(ChunkRegion.FakeChunkData fakeData) {
-        byte[] chunkData = new byte[8192];
-
-        int surfaceHeight = fakeData.surfaceHeight();
-        byte blockId = getBlockIdFromMaterial(fakeData.surfaceMaterial());
-
-        for (int y = 0; y <= surfaceHeight && y < 384; y++) {
-            for (int x = 0; x < 16; x++) {
-                for (int z = 0; z < 16; z++) {
-                    int index = calculateBlockIndex(x, y, z);
-                    if (index < chunkData.length) {
-                        if (y == surfaceHeight) {
-                            chunkData[index] = blockId;
-                        } else {
-                            chunkData[index] = y < 0 ? (byte) 7 : (byte) 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        return chunkData;
-    }
-
-    private byte getBlockIdFromMaterial(org.bukkit.Material material) {
-        return switch (material) {
-            case GRASS_BLOCK -> (byte) 2;
-            case STONE -> (byte) 1;
-            case SAND -> (byte) 12;
-            case WATER -> (byte) 9;
-            case SNOW_BLOCK -> (byte) 80;
-            default -> (byte) 2;
-        };
-    }
-
-    private int calculateBlockIndex(int x, int y, int z) {
-        return (y * 16 + z) * 16 + x;
-    }
-
     private void sendChunkPacket(Player player, Chunk chunk) {
         var chunkData = packetEventsService.createChunkData(chunk);
         packetEventsService.sendChunkPacket(player, chunkData);
     }
 
-    private void sendFakeChunkPacket(Player player, int chunkX, int chunkZ, byte[] chunkData) {
-        packetEventsService.sendFakeChunkPacket(player, chunkX, chunkZ);
-    }
 
     private void unloadChunk(Player player, int chunkX, int chunkZ) {
         WrapperPlayServerUnloadChunk unloadPacket = new WrapperPlayServerUnloadChunk(chunkX, chunkZ);
@@ -282,7 +217,7 @@ public class ChunkSenderService implements IChunkSenderService {
     @Override
     public CompletableFuture<Void> sendChunk(Player player, ViewMap.ChunkCoordinate coordinate, boolean fake) {
         return CompletableFuture.runAsync(() -> {
-            PlayerView playerView = new PlayerView(player); // Temporary view
+            PlayerView playerView = new PlayerView(player);
             if (fake) {
                 sendFakeChunk(player, playerView, coordinate);
             } else {

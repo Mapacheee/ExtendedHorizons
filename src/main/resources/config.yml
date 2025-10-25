@@ -11,7 +11,6 @@
 general:
   enabled: true
   debug: false
-  detect-folia: true
 
 # Global view distance limits and defaults
 view-distance:
@@ -45,13 +44,10 @@ worlds:
 fake-chunks:
   cache-size: 64
 
-# Database (H2) used for player view persistence
+# Database (SQLite) used for player view persistence
 database:
   enabled: true
   file-name: "extendedhorizons"
-  auto-server: true
-  auto-server-port: 9092
-  connection-pool-size: 10
 
 # Integrations
 integrations:

@@ -54,7 +54,7 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
             Logger logger = getSLF4JLogger();
             PlaceholderAPIProvider provider = new PlaceholderAPIProvider(logger, configService, viewDistanceService);
             provider.tryRegister();
-        } catch (Throwable ignored) {
+        } catch (Throwable e) {
             getSLF4JLogger().warn("PlaceholderAPI not found. Skipping placeholder hook.");
         }
 

@@ -333,15 +333,6 @@ public class ConfigService {
         return messagesFile.getString("stats.footer", "&#3498DB==========================================");
     }
 
-    public void reload() {
-        try {
-            logger.info("Configuration and messages reloaded successfully");
-        } catch (Exception e) {
-            logger.error("Failed to reload configuration", e);
-            throw new RuntimeException("Configuration reload failed", e);
-        }
-    }
-
     public boolean isValidViewDistance(int distance) {
         return distance >= getMinViewDistance() && distance <= getMaxViewDistance();
     }

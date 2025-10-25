@@ -46,4 +46,6 @@ public interface IViewDistanceService {
     int getTotalFakeChunksSent();
 
     void resetStats();
+
+    void updatePlayerPermissions(Player player);
 }

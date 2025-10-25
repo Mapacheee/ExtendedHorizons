@@ -5,7 +5,6 @@ import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
-import me.mapacheee.extendedhorizons.optimization.service.PerformanceMonitorService;
 import me.mapacheee.extendedhorizons.shared.storage.ViewDataStorage;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -29,7 +28,6 @@ public class ViewDistanceService implements IViewDistanceService {
     private final ConfigService configService;
     private final PlayerViewService playerViewService;
     private final ILuckPermsIntegrationService luckPermsService;
-    private final PerformanceMonitorService performanceMonitor;
     private final ViewDataStorage storage;
 
     private final Map<UUID, PlayerView> playerViews;
@@ -46,14 +44,12 @@ public class ViewDistanceService implements IViewDistanceService {
             ConfigService configService,
             PlayerViewService playerViewService,
             ILuckPermsIntegrationService luckPermsService,
-            PerformanceMonitorService performanceMonitor,
             ViewDataStorage storage
     ) {
         this.logger = logger;
         this.configService = configService;
         this.playerViewService = playerViewService;
         this.luckPermsService = luckPermsService;
-        this.performanceMonitor = performanceMonitor;
         this.storage = storage;
         this.playerViews = new ConcurrentHashMap<>();
         this.totalChunksSent = new AtomicInteger(0);
@@ -93,12 +89,7 @@ public class ViewDistanceService implements IViewDistanceService {
         playerView.setTargetDistance(defaultDistance);
         playerView.setCurrentDistance(defaultDistance);
 
-        try {
-            player.setViewDistance(defaultDistance);
-        } catch (Throwable ignored) {}
-        try {
-            player.setSendViewDistance(defaultDistance);
-        } catch (Throwable ignored) { }
+        setPlayerViewDistanceSafe(player, defaultDistance);
 
         updatePlayerPermissions(player);
         logger.info("Initialized view for player {} with distance {}",
@@ -108,7 +99,7 @@ public class ViewDistanceService implements IViewDistanceService {
     public void removePlayerView(Player player) {
         PlayerView view = playerViews.remove(player.getUniqueId());
         if (view != null) {
-            getChunkSenderService().unloadAllChunks(player);
+            Objects.requireNonNull(getChunkSenderService()).unloadAllChunks(player);
             logger.debug("Removed view for player {}", player.getName());
         }
     }
@@ -135,12 +126,7 @@ public class ViewDistanceService implements IViewDistanceService {
         }
 
         view.setTargetDistance(distance);
-        try {
-            player.setViewDistance(distance);
-        } catch (Throwable ignored) { }
-        try {
-            player.setSendViewDistance(distance);
-        } catch (Throwable ignored) { }
+        setPlayerViewDistanceSafe(player, distance);
 
         storage.savePlayerData(view);
         updatePlayerViewDistance(player);
@@ -165,12 +151,7 @@ public class ViewDistanceService implements IViewDistanceService {
                     && targetDistance > configService.getFakeChunksStartDistance();
             playerView.setFakeChunksEnabled(enableFakeChunks);
 
-            try {
-                player.setViewDistance(targetDistance);
-            } catch (Throwable ignored) { }
-            try {
-                player.setSendViewDistance(targetDistance);
-            } catch (Throwable ignored) { }
+            setPlayerViewDistanceSafe(player, targetDistance);
 
             IChunkSenderService chunkSender = getChunkSenderService();
             if (chunkSender != null) {
@@ -299,7 +280,7 @@ public class ViewDistanceService implements IViewDistanceService {
         totalFakeChunksSent.incrementAndGet();
     }
 
-    public void resetStatistics() {
+    public void resetStats() {
         totalChunksSent.set(0);
         totalFakeChunksSent.set(0);
 
@@ -358,8 +339,12 @@ public class ViewDistanceService implements IViewDistanceService {
     @Override
     public void handleChunkUnload(Player player, me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap.ChunkCoordinate coordinate) {}
 
-    @Override
-    public void resetStats() {
-        resetStatistics();
+    private void setPlayerViewDistanceSafe(Player player, int distance) {
+        try {
+            player.setViewDistance(distance);
+            player.setSendViewDistance(distance);
+        } catch (Throwable e) {
+            logger.warn("Error setting view distance for player {}", player.getName(), e);
+        }
     }
 }

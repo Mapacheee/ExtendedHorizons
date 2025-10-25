@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.viewdistance.command;
 
 import com.google.inject.Inject;
 import com.thewinterframework.command.CommandComponent;
+import com.thewinterframework.service.ReloadServiceManager;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.shared.util.MessageUtil;
@@ -34,6 +35,7 @@ public class ExtendedHorizonsCommand {
     private final IViewDistanceService viewDistanceService;
     private final CacheService cacheService;
     private final ILuckPermsIntegrationService luckPermsService;
+    private final ReloadServiceManager reloadServiceManager;
 
     @Inject
     public ExtendedHorizonsCommand(
@@ -42,7 +44,8 @@ public class ExtendedHorizonsCommand {
             MessageUtil messageUtil,
             IViewDistanceService viewDistanceService,
             CacheService cacheService,
-            ILuckPermsIntegrationService luckPermsService
+            ILuckPermsIntegrationService luckPermsService,
+            ReloadServiceManager reloadServiceManager
     ) {
         this.logger = logger;
         this.configService = configService;
@@ -50,6 +53,7 @@ public class ExtendedHorizonsCommand {
         this.viewDistanceService = viewDistanceService;
         this.cacheService = cacheService;
         this.luckPermsService = luckPermsService;
+        this.reloadServiceManager = reloadServiceManager;
     }
 
     @Command("extendedhorizons")
@@ -197,9 +201,7 @@ public class ExtendedHorizonsCommand {
     public void handleReload(Source source) {
         CommandSender sender = source.source();
         try {
-            configService.reload();
-            luckPermsService.invalidateAllCache();
-            cacheService.clearAllCache();
+            reloadServiceManager.reload();
 
             if (sender instanceof Player p) {
                 messageUtil.sendConfigReloaded(p);

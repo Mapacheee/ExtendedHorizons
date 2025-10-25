@@ -10,7 +10,6 @@ import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
 import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
 import me.mapacheee.extendedhorizons.integration.service.NoOpLuckPermsIntegrationService;
 import me.mapacheee.extendedhorizons.integration.service.PacketEventsService;
-import me.mapacheee.extendedhorizons.optimization.service.PerformanceMonitorService;
 import me.mapacheee.extendedhorizons.shared.storage.ViewDataStorage;
 import me.mapacheee.extendedhorizons.viewdistance.service.*;
 import org.bukkit.Bukkit;
@@ -55,10 +54,9 @@ public class ServiceConfigurationModule implements PluginModule {
             ConfigService configService,
             PlayerViewService playerViewService,
             ILuckPermsIntegrationService luckPermsService,
-            PerformanceMonitorService performanceMonitor,
             ViewDataStorage storage
     ) {
-        ViewDistanceService service = new ViewDistanceService(logger, configService, playerViewService, luckPermsService, performanceMonitor, storage);
+        ViewDistanceService service = new ViewDistanceService(logger, configService, playerViewService, luckPermsService, storage);
         logger.info("ViewDistanceService created");
         return service;
     }

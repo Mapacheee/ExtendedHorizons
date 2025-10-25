@@ -34,8 +34,9 @@ public class PlayerViewService {
     public ViewMap createViewMap(PlayerView playerView) {
         ViewMap.ViewShape shape = ViewMap.ViewShape.SQUARE;
         int maxDistance = playerView.getMaxAllowedDistance();
+        int fakeStartDistance = configService.getFakeChunksStartDistance();
 
-        ViewMap viewMap = new ViewMap(shape, maxDistance);
+        ViewMap viewMap = new ViewMap(shape, maxDistance, fakeStartDistance);
         viewMaps.put(playerView, viewMap);
 
         return viewMap;

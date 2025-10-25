@@ -1,6 +1,7 @@
 package me.mapacheee.extendedhorizons.viewdistance.entity;
 
 import org.bukkit.Location;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,22 +14,102 @@ public class ViewMap {
 
     private final ViewShape shape;
     private final int maxDistance;
+    private final int fakeStartDistance;
     private final Map<ChunkCoordinate, ChunkState> chunkStates;
     private final Set<ChunkCoordinate> visibleChunks;
     private final Set<ChunkCoordinate> fakeChunks;
     private volatile Location centerLocation;
+    private Set<ChunkCoordinate> previousVisibleChunks;
+    private Set<ChunkCoordinate> previousFakeChunks;
 
-    public ViewMap(ViewShape shape, int maxDistance) {
+    public ViewMap(ViewShape shape, int maxDistance, int fakeStartDistance) {
         this.shape = shape;
         this.maxDistance = maxDistance;
+        this.fakeStartDistance = fakeStartDistance;
         this.chunkStates = new ConcurrentHashMap<>();
         this.visibleChunks = ConcurrentHashMap.newKeySet();
         this.fakeChunks = ConcurrentHashMap.newKeySet();
+        this.previousVisibleChunks = ConcurrentHashMap.newKeySet();
+        this.previousFakeChunks = ConcurrentHashMap.newKeySet();
     }
 
     public void updateCenter(Location newCenter) {
+        Location oldCenter = this.centerLocation;
         this.centerLocation = newCenter.clone();
-        recalculateVisibleChunks();
+
+        if (oldCenter == null) {
+            recalculateVisibleChunks();
+            return;
+        }
+
+        int oldChunkX = oldCenter.getBlockX() >> 4;
+        int oldChunkZ = oldCenter.getBlockZ() >> 4;
+        int newChunkX = newCenter.getBlockX() >> 4;
+        int newChunkZ = newCenter.getBlockZ() >> 4;
+
+        int deltaX = newChunkX - oldChunkX;
+        int deltaZ = newChunkZ - oldChunkZ;
+
+        if (deltaX == 0 && deltaZ == 0) {
+            return;
+        }
+
+        if (Math.abs(deltaX) <= 2 && Math.abs(deltaZ) <= 2) {
+            updateChunksIncrementally(deltaX, deltaZ, oldChunkX, oldChunkZ);
+        } else {
+            recalculateVisibleChunks();
+        }
+    }
+
+    private void updateChunksIncrementally(int deltaX, int deltaZ, int oldChunkX, int oldChunkZ) {
+        int newCenterX = oldChunkX + deltaX;
+        int newCenterZ = oldChunkZ + deltaZ;
+
+        Set<ChunkCoordinate> newVisibleChunks = calculateVisibleChunksForCenter(newCenterX, newCenterZ);
+        Set<ChunkCoordinate> newFakeChunks = new HashSet<>();
+
+        for (ChunkCoordinate coord : newVisibleChunks) {
+            double distance = Math.sqrt(
+                Math.pow(coord.x() - newCenterX, 2) +
+                Math.pow(coord.z() - newCenterZ, 2)
+            );
+            if (distance > fakeStartDistance) {
+                newFakeChunks.add(coord);
+            }
+        }
+
+        visibleChunks.clear();
+        visibleChunks.addAll(newVisibleChunks);
+        fakeChunks.clear();
+        fakeChunks.addAll(newFakeChunks);
+
+        previousVisibleChunks.clear();
+        previousVisibleChunks.addAll(newVisibleChunks);
+        previousFakeChunks.clear();
+        previousFakeChunks.addAll(newFakeChunks);
+    }
+
+    private Set<ChunkCoordinate> calculateVisibleChunksForCenter(int centerX, int centerZ) {
+        Set<ChunkCoordinate> visible = new HashSet<>();
+
+        visible.add(new ChunkCoordinate(centerX, centerZ));
+
+        for (int distance = 1; distance <= maxDistance; distance++) {
+            Set<ChunkCoordinate> chunksAtDistance = getChunksAtDistance(centerX, centerZ, distance);
+            for (ChunkCoordinate coord : chunksAtDistance) {
+                if (shape.isWithinShape(centerX, centerZ, coord.x(), coord.z(), distance)) {
+                    visible.add(coord);
+                }
+            }
+        }
+
+        return visible;
+    }
+
+    private boolean isWithinDistance(int chunkX, int chunkZ, int centerX, int centerZ, int maxDist) {
+        int dx = Math.abs(chunkX - centerX);
+        int dz = Math.abs(chunkZ - centerZ);
+        return shape.isWithinShape(centerX, centerZ, chunkX, chunkZ, maxDist);
     }
 
     public Set<ChunkCoordinate> getVisibleChunks() {
@@ -68,6 +149,9 @@ public class ViewMap {
         int centerChunkX = centerLocation.getBlockX() >> 4;
         int centerChunkZ = centerLocation.getBlockZ() >> 4;
 
+        ViewMap.ChunkCoordinate centerCoord = new ViewMap.ChunkCoordinate(centerChunkX, centerChunkZ);
+        visibleChunks.add(centerCoord);
+
         for (int distance = 1; distance <= maxDistance; distance++) {
             Set<ChunkCoordinate> chunksAtDistance = getChunksAtDistance(centerChunkX, centerChunkZ, distance);
 
@@ -75,7 +159,7 @@ public class ViewMap {
                 if (shape.isWithinShape(centerChunkX, centerChunkZ, coord.x(), coord.z(), distance)) {
                     visibleChunks.add(coord);
 
-                    if (distance > 32) {
+                    if (distance > fakeStartDistance) {
                         fakeChunks.add(coord);
                     }
                 }
@@ -171,7 +255,7 @@ public class ViewMap {
         }
 
         @Override
-        public String toString() {
+        public @NotNull String toString() {
             return "(" + x + ", " + z + ")";
         }
     }
