@@ -10,6 +10,8 @@ import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerCh
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUnloadChunk;
 import com.github.retrooper.packetevents.protocol.world.chunk.Column;
 import com.github.retrooper.packetevents.protocol.world.chunk.LightData;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
@@ -20,9 +22,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.World;
 import org.slf4j.Logger;
-
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * PacketEvents Service - Direct chunk streaming approach
@@ -89,9 +88,7 @@ public class PacketEventsService extends PacketListenerAbstract implements IPack
         Column column = wrapperFromEvent.getColumn();
         LightData lightData = wrapperFromEvent.getLightData();
 
-        WrapperPlayServerChunkData detached = (lightData != null)
-                ? new WrapperPlayServerChunkData(column, lightData, true)
-                : new WrapperPlayServerChunkData(column);
+        WrapperPlayServerChunkData detached = new WrapperPlayServerChunkData(column, lightData, true);
 
         String cacheKey = getChunkKey(player.getWorld(), column.getX(), column.getZ());
 
@@ -132,12 +129,12 @@ public class PacketEventsService extends PacketListenerAbstract implements IPack
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     try {
                         sendChunk(player, chunkX, chunkZ);
-
+                        updatePlayerStats(player);
                         Bukkit.getScheduler().runTaskLater(plugin, () -> {
                             try {
                                 world.unloadChunk(chunkX, chunkZ, false);
                             } catch (Exception ignored) {}
-                        }, 1L);
+                        }, 20L);
                     } catch (Exception e) {
                         logger.error("Failed to send fake chunk ({},{}) to player {}", chunkX, chunkZ, player.getName(), e);
                     }
