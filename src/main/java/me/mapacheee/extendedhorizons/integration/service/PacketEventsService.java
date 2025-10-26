@@ -122,24 +122,7 @@ public class PacketEventsService extends PacketListenerAbstract implements IPack
             if (cachedPacket != null) {
                 PacketEvents.getAPI().getPlayerManager().sendPacket(player, cachedPacket);
                 updatePlayerStats(player);
-                return;
             }
-
-            world.getChunkAtAsync(chunkX, chunkZ).thenAccept(chunk -> {
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    try {
-                        sendChunk(player, chunkX, chunkZ);
-                        updatePlayerStats(player);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            try {
-                                world.unloadChunk(chunkX, chunkZ, false);
-                            } catch (Exception ignored) {}
-                        }, 20L);
-                    } catch (Exception e) {
-                        logger.error("Failed to send fake chunk ({},{}) to player {}", chunkX, chunkZ, player.getName(), e);
-                    }
-                });
-            });
 
         } catch (Exception e) {
             logger.error("Failed to send fake chunk ({},{}) to player {}", chunkX, chunkZ, player.getName(), e);
@@ -207,30 +190,5 @@ public class PacketEventsService extends PacketListenerAbstract implements IPack
     public void unregisterListener() {
         PacketEvents.getAPI().getEventManager().unregisterListener(this);
         logger.info("PacketEvents listener unregistered");
-    }
-
-    public boolean isPacketEventsReady() {
-        return PacketEvents.getAPI().isInitialized();
-    }
-
-    public String getPacketEventsVersion() {
-        return PacketEvents.getAPI().getVersion().toString();
-    }
-
-    public void clearCache() {
-        chunkPacketCache.clear();
-        logger.debug("Chunk packet cache cleared");
-    }
-
-    public int getCacheSize() {
-        return chunkPacketCache.size();
-    }
-
-    private void sendChunk(Player player, int chunkX, int chunkZ) {
-        try {
-            player.getClass().getMethod("sendChunk", int.class, int.class).invoke(player, chunkX, chunkZ);
-        } catch (Exception e) {
-            logger.error("Failed to send chunk using sendChunk method", e);
-        }
     }
 }
