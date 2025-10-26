@@ -5,6 +5,12 @@
 <div align="center">
   <img width="1800" height="2000" alt="fondo" src="https://github.com/user-attachments/assets/87ac01de-8852-4c8a-b3bb-81982d10f7a0" />
 </div>
+<div align="center">
+  <img width="1920" height="991" alt="2025-10-25_09 24 09" src="https://github.com/user-attachments/assets/f09f418f-340a-487d-8a8c-d169601dc1fc" />
+</div>
+<div align="center">
+  <img width="1920" height="991" alt="2025-10-26_09 03 15(1)(1)" src="https://github.com/user-attachments/assets/3454b354-996a-4ced-893a-4d70cb7f105e" />
+</div>
 
 ---
 
