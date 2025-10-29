@@ -79,8 +79,8 @@ public class MessageUtil {
         while (matcher.find()) {
             String hex = matcher.group(1);
             matcher.appendReplacement(buffer, "§x§" + hex.charAt(0) + "§" + hex.charAt(1) +
-                                    "§" + hex.charAt(2) + "§" + hex.charAt(3) +
-                                    "§" + hex.charAt(4) + "§" + hex.charAt(5));
+                "§" + hex.charAt(2) + "§" + hex.charAt(3) +
+                "§" + hex.charAt(4) + "§" + hex.charAt(5));
         }
         matcher.appendTail(buffer);
         return buffer.toString();

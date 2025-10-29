@@ -3,8 +3,8 @@ package me.mapacheee.extendedhorizons.shared.service;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
-import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import me.mapacheee.extendedhorizons.shared.storage.ViewDataStorage;
+import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
@@ -32,10 +32,10 @@ public class SchedulerService {
 
     @Inject
     public SchedulerService(
-            Logger logger,
-            ConfigService configService,
-            IViewDistanceService viewDistanceService,
-            ViewDataStorage storage
+        Logger logger,
+        ConfigService configService,
+        IViewDistanceService viewDistanceService,
+        ViewDataStorage storage
     ) {
         this.logger = logger;
         this.configService = configService;
@@ -103,7 +103,7 @@ public class SchedulerService {
             storage.saveDailyStats(stats);
 
             logger.info("Daily statistics saved - Peak players: {}, Chunks sent: {}, Fake chunks: {}",
-                       stats.peakPlayers(), stats.chunksSent(), stats.fakeChunksSent());
+                stats.peakPlayers(), stats.chunksSent(), stats.fakeChunksSent());
 
         } catch (Exception e) {
             logger.error("Error collecting daily statistics", e);

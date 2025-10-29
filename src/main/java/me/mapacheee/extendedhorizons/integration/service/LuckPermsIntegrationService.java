@@ -11,8 +11,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -96,7 +96,8 @@ public class LuckPermsIntegrationService implements ILuckPermsIntegrationService
                         try {
                             int distance = Integer.parseInt(matcher.group(1));
                             highestDistance = Math.max(highestDistance, distance);
-                        } catch (NumberFormatException ignored) {}
+                        } catch (NumberFormatException ignored) {
+                        }
                     }
                 }
             }
@@ -116,7 +117,8 @@ public class LuckPermsIntegrationService implements ILuckPermsIntegrationService
                                     try {
                                         int distance = Integer.parseInt(matcher.group(1));
                                         highestDistance = Math.max(highestDistance, distance);
-                                    } catch (NumberFormatException ignored) {}
+                                    } catch (NumberFormatException ignored) {
+                                    }
                                 }
                             }
                         }
@@ -234,5 +236,7 @@ public class LuckPermsIntegrationService implements ILuckPermsIntegrationService
         boolean luckPermsAvailable,
         int cachedPermissions,
         boolean useGroupPermissions
-    ) {}
+    ) {
+
+    }
 }

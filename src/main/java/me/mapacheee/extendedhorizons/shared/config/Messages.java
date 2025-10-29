@@ -18,13 +18,16 @@ public record Messages(
     StartupMessages startup,
     ShutdownMessages shutdown
 ) {
+
     public record GeneralMessages(
         String noPermission,
         String playerNotFound,
         String configReloaded,
         String pluginInfo,
         String unknownCommand
-    ) {}
+    ) {
+
+    }
 
     public record ViewDistanceMessages(
         String currentDistance,
@@ -36,7 +39,9 @@ public record Messages(
         String permissionRequired,
         String fakeChunksEnabled,
         String fakeChunksDisabled
-    ) {}
+    ) {
+
+    }
 
     public record PerformanceMessages(
         String lowTpsWarning,
@@ -45,7 +50,9 @@ public record Messages(
         String chunkGenerationLimit,
         String adaptiveModeEnabled,
         String adaptiveModeDisabled
-    ) {}
+    ) {
+
+    }
 
     public record StatsMessages(
         String header,
@@ -58,7 +65,9 @@ public record Messages(
         String serverTps,
         String workerThreads,
         String footer
-    ) {}
+    ) {
+
+    }
 
     public record DebugMessages(
         String enabled,
@@ -66,7 +75,9 @@ public record Messages(
         String chunkInfo,
         String playerInfo,
         String performanceInfo
-    ) {}
+    ) {
+
+    }
 
     public record ErrorMessages(
         String databaseError,
@@ -75,7 +86,9 @@ public record Messages(
         String permissionCheckFailed,
         String configError,
         String packeteventsError
-    ) {}
+    ) {
+
+    }
 
     public record HelpMessages(
         String header,
@@ -87,21 +100,27 @@ public record Messages(
         String debug,
         String world,
         String footer
-    ) {}
+    ) {
+
+    }
 
     public record WorldMessages(
         String distanceSet,
         String notFound,
         String disabled,
         String performanceModeChanged
-    ) {}
+    ) {
+
+    }
 
     public record IntegrationMessages(
         String placeholderapiEnabled,
         String placeholderapiDisabled,
         String luckpermsEnabled,
         String luckpermsDisabled
-    ) {}
+    ) {
+
+    }
 
     public record StartupMessages(
         String loading,
@@ -109,12 +128,16 @@ public record Messages(
         String enabled,
         String serverDetected,
         String packeteventsInitialized
-    ) {}
+    ) {
+
+    }
 
     public record ShutdownMessages(
         String disabling,
         String disabled,
         String savingData,
         String dataSaved
-    ) {}
+    ) {
+
+    }
 }

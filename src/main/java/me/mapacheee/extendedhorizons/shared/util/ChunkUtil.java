@@ -6,9 +6,9 @@ import org.bukkit.Location;
 import org.bukkit.World;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.HashSet;
 
 /* Chunk Utilities - Helper methods for chunk calculations and operations
  * Provides optimized chunk coordinate operations and distance calculations

@@ -4,12 +4,12 @@ import com.google.inject.Inject;
 import com.thewinterframework.command.CommandComponent;
 import com.thewinterframework.service.ReloadServiceManager;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.optimization.service.CacheService;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.shared.util.MessageUtil;
-import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
-import me.mapacheee.extendedhorizons.optimization.service.CacheService;
-import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
@@ -39,13 +39,13 @@ public class ExtendedHorizonsCommand {
 
     @Inject
     public ExtendedHorizonsCommand(
-            Logger logger,
-            ConfigService configService,
-            MessageUtil messageUtil,
-            IViewDistanceService viewDistanceService,
-            CacheService cacheService,
-            ILuckPermsIntegrationService luckPermsService,
-            ReloadServiceManager reloadServiceManager
+        Logger logger,
+        ConfigService configService,
+        MessageUtil messageUtil,
+        IViewDistanceService viewDistanceService,
+        CacheService cacheService,
+        ILuckPermsIntegrationService luckPermsService,
+        ReloadServiceManager reloadServiceManager
     ) {
         this.logger = logger;
         this.configService = configService;
@@ -110,9 +110,9 @@ public class ExtendedHorizonsCommand {
         if (source.source() instanceof Player player) {
             String info = configService.getPluginInfoMessage();
             messageUtil.sendMessageWithPrefix(player, info, java.util.Map.of(
-                    "plugin", "ExtendedHorizons",
-                    "version", ExtendedHorizonsPlugin.getInstance().getPluginMeta().getVersion(),
-                    "author", "Mapacheee"
+                "plugin", "ExtendedHorizons",
+                "version", ExtendedHorizonsPlugin.getInstance().getPluginMeta().getVersion(),
+                "author", "Mapacheee"
             ));
 
             PlayerView playerView = viewDistanceService.getPlayerView(player.getUniqueId());
@@ -167,8 +167,8 @@ public class ExtendedHorizonsCommand {
         if (playerView != null) {
             String msg = configService.getOtherCurrentDistanceMessage();
             messageUtil.sendMessage(sender, msg, java.util.Map.of(
-                    "player", target.getName(),
-                    "distance", String.valueOf(playerView.getCurrentDistance())
+                "player", target.getName(),
+                "distance", String.valueOf(playerView.getCurrentDistance())
             ));
         } else {
             String msg = configService.getNoViewDataOtherMessage();
@@ -257,8 +257,8 @@ public class ExtendedHorizonsCommand {
         int maxDistance = configService.getMaxViewDistanceForWorld(world.getName());
         String msg = configService.getWorldMaxDistanceInfoMessage();
         messageUtil.sendMessage(sender, msg, java.util.Map.of(
-                "world", world.getName(),
-                "distance", String.valueOf(maxDistance)
+            "world", world.getName(),
+            "distance", String.valueOf(maxDistance)
         ));
     }
 

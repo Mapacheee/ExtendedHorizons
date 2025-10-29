@@ -8,10 +8,10 @@ import org.slf4j.Logger;
 
 import java.nio.file.Path;
 import java.sql.*;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Map;
 
 /* Database Storage Service - Handles SQLite database operations for player data persistence
  * Manages player view preferences and statistics with connection pooling
@@ -180,14 +180,14 @@ public class ViewDataStorage {
 
     public void savePlayerData(PlayerView playerView) {
         PlayerViewData data = new PlayerViewData(
-                playerView.getPlayerId(),
-                playerView.getPlayerName(),
-                playerView.getTargetDistance(),
-                playerView.areFakeChunksEnabled(),
-                playerView.isAdaptiveModeEnabled(),
-                playerView.getChunksSent(),
-                playerView.getFakeChunksSent(),
-                playerView.getNetworkBytesUsed()
+            playerView.getPlayerId(),
+            playerView.getPlayerName(),
+            playerView.getTargetDistance(),
+            playerView.areFakeChunksEnabled(),
+            playerView.isAdaptiveModeEnabled(),
+            playerView.getChunksSent(),
+            playerView.getFakeChunksSent(),
+            playerView.getNetworkBytesUsed()
         );
 
         savePlayerData(data).join(); // Wait for the save to complete
@@ -289,7 +289,9 @@ public class ViewDataStorage {
         long totalChunksSent,
         long totalFakeChunksSent,
         long totalNetworkBytes
-    ) {}
+    ) {
+
+    }
 
     public record DailyStats(
         java.util.Date date,
@@ -299,5 +301,7 @@ public class ViewDataStorage {
         long networkBytes,
         double averageTps,
         int peakPlayers
-    ) {}
+    ) {
+
+    }
 }

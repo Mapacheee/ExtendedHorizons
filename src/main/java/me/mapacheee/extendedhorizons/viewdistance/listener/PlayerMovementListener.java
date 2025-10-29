@@ -3,16 +3,16 @@ package me.mapacheee.extendedhorizons.viewdistance.listener;
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
-import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import me.mapacheee.extendedhorizons.shared.util.MessageUtil;
+import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.slf4j.Logger;
 
 /**
@@ -29,10 +29,10 @@ public class PlayerMovementListener implements Listener {
 
     @Inject
     public PlayerMovementListener(
-            Logger logger,
-            ConfigService configService,
-            IViewDistanceService viewDistanceService,
-            MessageUtil messageUtil
+        Logger logger,
+        ConfigService configService,
+        IViewDistanceService viewDistanceService,
+        MessageUtil messageUtil
     ) {
         this.logger = logger;
         this.configService = configService;
@@ -54,7 +54,7 @@ public class PlayerMovementListener implements Listener {
             int effectiveDistance = viewDistanceService.getEffectiveViewDistance(player);
 
             logger.debug("Initialized view distance for player {} with distance {}",
-                        player.getName(), effectiveDistance);
+                player.getName(), effectiveDistance);
 
             if (configService.isWelcomeMessageEnabled()) {
                 messageUtil.sendWelcomeMessage(player, effectiveDistance);
@@ -112,11 +112,11 @@ public class PlayerMovementListener implements Listener {
             viewDistanceService.setViewDistance(player, defaultDistance);
 
             logger.debug("Reset view distance for player {} in world {}",
-                        player.getName(), player.getWorld().getName());
+                player.getName(), player.getWorld().getName());
 
         } catch (Exception e) {
             logger.error("Error resetting view distance for player {} in world {}",
-                        player.getName(), player.getWorld().getName(), e);
+                player.getName(), player.getWorld().getName(), e);
         }
     }
 }

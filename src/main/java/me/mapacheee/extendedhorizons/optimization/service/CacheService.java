@@ -129,6 +129,7 @@ public class CacheService {
     }
 
     public record CacheStatistics(long totalSize, long regionCount) {
+
         public long currentSizeMB() {
             // Assuming totalSize is in some unit, but for now return as is
             // In a real implementation, calculate based on memory usage

@@ -10,8 +10,8 @@ import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /* Player View Service - Manages individual player view configurations and state
  * Handles view map calculations and player-specific optimizations
@@ -152,5 +152,7 @@ public class PlayerViewService {
         Set<ViewMap.ChunkCoordinate> fakeChunks,
         int totalVisibleChunks,
         int totalFakeChunks
-    ) {}
+    ) {
+
+    }
 }

@@ -9,6 +9,7 @@ public interface ILuckPermsIntegrationService {
 
     /**
      * Gets the maximum view distance for a player based on permissions
+     *
      * @param player the player
      * @return the max view distance
      */
@@ -16,6 +17,7 @@ public interface ILuckPermsIntegrationService {
 
     /**
      * Invalidates the cache for a specific player
+     *
      * @param player the player
      */
     void invalidatePlayerCache(Player player);

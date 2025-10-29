@@ -3,7 +3,9 @@ package me.mapacheee.extendedhorizons.viewdistance.entity;
 import org.bukkit.Location;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /* View map entity that handles chunk visibility calculations and management
@@ -19,8 +21,8 @@ public class ViewMap {
     private final Set<ChunkCoordinate> visibleChunks;
     private final Set<ChunkCoordinate> fakeChunks;
     private volatile Location centerLocation;
-    private Set<ChunkCoordinate> previousVisibleChunks;
-    private Set<ChunkCoordinate> previousFakeChunks;
+    private final Set<ChunkCoordinate> previousVisibleChunks;
+    private final Set<ChunkCoordinate> previousFakeChunks;
 
     public ViewMap(ViewShape shape, int maxDistance, int fakeStartDistance) {
         this.shape = shape;
@@ -71,7 +73,7 @@ public class ViewMap {
         for (ChunkCoordinate coord : newVisibleChunks) {
             double distance = Math.sqrt(
                 Math.pow(coord.x() - newCenterX, 2) +
-                Math.pow(coord.z() - newCenterZ, 2)
+                    Math.pow(coord.z() - newCenterZ, 2)
             );
             if (distance > fakeStartDistance) {
                 newFakeChunks.add(coord);
@@ -244,6 +246,7 @@ public class ViewMap {
     }
 
     public record ChunkCoordinate(int x, int z) {
+
         public double distanceTo(ChunkCoordinate other) {
             int dx = this.x - other.x;
             int dz = this.z - other.z;

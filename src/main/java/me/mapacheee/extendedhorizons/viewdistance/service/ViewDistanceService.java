@@ -2,20 +2,20 @@ package me.mapacheee.extendedhorizons.viewdistance.service;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import me.mapacheee.extendedhorizons.shared.config.ConfigService;
-import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.shared.storage.ViewDataStorage;
+import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.Collection;
 
 /* View Distance Service - Core service managing player view distances and chunk sending
  * Handles real and fake chunk management with performance optimizations
@@ -40,11 +40,11 @@ public class ViewDistanceService implements IViewDistanceService {
 
     @Inject
     public ViewDistanceService(
-            Logger logger,
-            ConfigService configService,
-            PlayerViewService playerViewService,
-            ILuckPermsIntegrationService luckPermsService,
-            ViewDataStorage storage
+        Logger logger,
+        ConfigService configService,
+        PlayerViewService playerViewService,
+        ILuckPermsIntegrationService luckPermsService,
+        ViewDataStorage storage
     ) {
         this.logger = logger;
         this.configService = configService;
@@ -83,8 +83,8 @@ public class ViewDistanceService implements IViewDistanceService {
         int preferredDistance = playerData != null ? playerData.preferredDistance() : configService.getDefaultViewDistance();
 
         int defaultDistance = Math.min(
-                preferredDistance,
-                getMaxAllowedDistance(player)
+            preferredDistance,
+            getMaxAllowedDistance(player)
         );
         playerView.setTargetDistance(defaultDistance);
         playerView.setCurrentDistance(defaultDistance);
@@ -93,7 +93,7 @@ public class ViewDistanceService implements IViewDistanceService {
 
         updatePlayerPermissions(player);
         logger.info("Initialized view for player {} with distance {}",
-                   player.getName(), playerView.getCurrentDistance());
+            player.getName(), playerView.getCurrentDistance());
     }
 
     public void removePlayerView(Player player) {
@@ -147,8 +147,8 @@ public class ViewDistanceService implements IViewDistanceService {
             playerView.setCurrentDistance(targetDistance);
 
             boolean enableFakeChunks = configService.areFakeChunksEnabled()
-                    && configService.areFakeChunksEnabledForWorld(player.getWorld().getName())
-                    && targetDistance > configService.getFakeChunksStartDistance();
+                && configService.areFakeChunksEnabledForWorld(player.getWorld().getName())
+                && targetDistance > configService.getFakeChunksStartDistance();
             playerView.setFakeChunksEnabled(enableFakeChunks);
 
             setPlayerViewDistanceSafe(player, targetDistance);
@@ -259,9 +259,9 @@ public class ViewDistanceService implements IViewDistanceService {
         if (playerViews.isEmpty()) return 0;
 
         return playerViews.values().stream()
-                .mapToInt(PlayerView::getCurrentDistance)
-                .average()
-                .orElse(0);
+            .mapToInt(PlayerView::getCurrentDistance)
+            .average()
+            .orElse(0);
     }
 
     public int getTotalChunksSent() {
@@ -337,7 +337,8 @@ public class ViewDistanceService implements IViewDistanceService {
     }
 
     @Override
-    public void handleChunkUnload(Player player, me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap.ChunkCoordinate coordinate) {}
+    public void handleChunkUnload(Player player, me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap.ChunkCoordinate coordinate) {
+    }
 
     private void setPlayerViewDistanceSafe(Player player, int distance) {
         try {

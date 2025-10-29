@@ -4,9 +4,9 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Singleton;
 import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
 import me.mapacheee.extendedhorizons.integration.service.PacketEventsService;
+import me.mapacheee.extendedhorizons.viewdistance.service.ChunkSenderService;
 import me.mapacheee.extendedhorizons.viewdistance.service.IChunkSenderService;
 import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
-import me.mapacheee.extendedhorizons.viewdistance.service.ChunkSenderService;
 import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
 
 /**
