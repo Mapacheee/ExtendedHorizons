@@ -28,6 +28,7 @@ public class PlayerView {
     private final AtomicInteger fakeChunksSent;
     private final AtomicBoolean movingTooFast;
     private final AtomicBoolean waitingForChunks;
+    private final AtomicInteger clientViewDistance;
 
     private volatile Location lastLocation;
     private volatile World currentWorld;
@@ -48,6 +49,7 @@ public class PlayerView {
         this.fakeChunksSent = new AtomicInteger(0);
         this.movingTooFast = new AtomicBoolean(false);
         this.waitingForChunks = new AtomicBoolean(false);
+        this.clientViewDistance = new AtomicInteger(player.getClientViewDistance());
         this.lastLocation = player.getLocation().clone();
         this.currentWorld = player.getWorld();
         this.lastPermissionCheck = 0;
@@ -151,6 +153,18 @@ public class PlayerView {
 
     public void setWaitingForChunks(boolean waiting) {
         this.waitingForChunks.set(waiting);
+    }
+
+    public int getClientViewDistance() {
+        return clientViewDistance.get();
+    }
+
+    public void setClientViewDistance(int distance) {
+        this.clientViewDistance.set(distance);
+    }
+
+    public int getInternalViewDistance() {
+        return Math.min(getClientViewDistance(), Math.min(getCurrentDistance(), getMaxAllowedDistance()));
     }
 
     public Location getLastLocation() {

@@ -15,12 +15,15 @@ public record Config(
     IntegrationsConfig integrations,
     MonitoringConfig monitoring
 ) {
+
     public record GeneralConfig(
         boolean enabled,
         String language,
         boolean debug,
         boolean detectFolia
-    ) {}
+    ) {
+
+    }
 
     public record ViewDistanceConfig(
         int maxDistance,
@@ -29,7 +32,9 @@ public record Config(
         String shape,
         boolean enableFakeChunks,
         int fakeChunksStartDistance
-    ) {}
+    ) {
+
+    }
 
     public record PerformanceConfig(
         int maxChunksPerTick,
@@ -38,7 +43,9 @@ public record Config(
         double minTpsThreshold,
         boolean enableMultithreading,
         int workerThreads
-    ) {}
+    ) {
+
+    }
 
     public record NetworkConfig(
         long maxBytesPerSecondPerPlayer,
@@ -46,7 +53,9 @@ public record Config(
         boolean adaptiveSpeed,
         int compressionLevel,
         boolean enablePacketBundling
-    ) {}
+    ) {
+
+    }
 
     public record FakeChunksConfig(
         boolean simulateTerrain,
@@ -54,19 +63,24 @@ public record Config(
         boolean simulateStructures,
         int cacheSize,
         boolean heightBased
-    ) {}
+    ) {
+
+    }
 
     public record WorldsConfig(
         WorldConfig defaultWorld,
         WorldConfig worldNether,
         WorldConfig worldTheEnd
     ) {
+
         public record WorldConfig(
             boolean enabled,
             int maxDistance,
             boolean fakeChunksEnabled,
             String performanceMode
-        ) {}
+        ) {
+
+        }
     }
 
     public record DatabaseConfig(
@@ -75,18 +89,26 @@ public record Config(
         int connectionPoolSize,
         boolean enableCache,
         int autoSaveInterval
-    ) {}
+    ) {
+
+    }
 
     public record IntegrationsConfig(
         PlaceholderApiConfig placeholderapi,
         LuckPermsConfig luckperms
     ) {
-        public record PlaceholderApiConfig(boolean enabled) {}
+
+        public record PlaceholderApiConfig(boolean enabled) {
+
+        }
+
         public record LuckPermsConfig(
             boolean enabled,
             int checkInterval,
             boolean useGroupPermissions
-        ) {}
+        ) {
+
+        }
     }
 
     public record MonitoringConfig(
@@ -94,5 +116,7 @@ public record Config(
         boolean logPerformanceWarnings,
         int chunkLoadTimeout,
         int networkTimeout
-    ) {}
+    ) {
+
+    }
 }

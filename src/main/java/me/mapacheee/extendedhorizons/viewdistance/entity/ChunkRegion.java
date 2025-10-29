@@ -4,8 +4,8 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
 
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /* Chunk region entity that represents a group of chunks for optimized processing
  * Handles fake chunk generation and caching for performance
@@ -138,6 +138,7 @@ public class ChunkRegion {
         Biome biome,
         Material surfaceMaterial
     ) {
+
         public boolean hasWater() {
             return surfaceHeight < 63;
         }

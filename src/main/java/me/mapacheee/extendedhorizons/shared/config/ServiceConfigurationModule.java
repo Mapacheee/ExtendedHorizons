@@ -1,13 +1,13 @@
 package me.mapacheee.extendedhorizons.shared.config;
 
+import com.google.inject.Injector;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
-import com.google.inject.Injector;
 import com.thewinterframework.module.annotation.ModuleComponent;
-import com.thewinterframework.plugin.module.PluginModule;
 import com.thewinterframework.plugin.WinterPlugin;
-import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
+import com.thewinterframework.plugin.module.PluginModule;
 import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
+import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
 import me.mapacheee.extendedhorizons.integration.service.NoOpLuckPermsIntegrationService;
 import me.mapacheee.extendedhorizons.integration.service.PacketEventsService;
 import me.mapacheee.extendedhorizons.shared.storage.ViewDataStorage;
@@ -50,11 +50,11 @@ public class ServiceConfigurationModule implements PluginModule {
     @Provides
     @Singleton
     public IViewDistanceService provideViewDistanceService(
-            Logger logger,
-            ConfigService configService,
-            PlayerViewService playerViewService,
-            ILuckPermsIntegrationService luckPermsService,
-            ViewDataStorage storage
+        Logger logger,
+        ConfigService configService,
+        PlayerViewService playerViewService,
+        ILuckPermsIntegrationService luckPermsService,
+        ViewDataStorage storage
     ) {
         ViewDistanceService service = new ViewDistanceService(logger, configService, playerViewService, luckPermsService, storage);
         logger.info("ViewDistanceService created");
@@ -64,11 +64,11 @@ public class ServiceConfigurationModule implements PluginModule {
     @Provides
     @Singleton
     public IChunkSenderService provideChunkSenderService(
-            Logger logger,
-            ConfigService configService,
-            PlayerViewService playerViewService,
-            me.mapacheee.extendedhorizons.optimization.service.CacheService cacheService,
-            IPacketEventsService packetEventsService
+        Logger logger,
+        ConfigService configService,
+        PlayerViewService playerViewService,
+        me.mapacheee.extendedhorizons.optimization.service.CacheService cacheService,
+        IPacketEventsService packetEventsService
     ) {
         ChunkSenderService service = new ChunkSenderService(logger, configService, playerViewService, cacheService, packetEventsService);
         logger.info("ChunkSenderService created");
@@ -78,8 +78,8 @@ public class ServiceConfigurationModule implements PluginModule {
     @Provides
     @Singleton
     public IPacketEventsService providePacketEventsService(
-            Logger logger,
-            WinterPlugin plugin
+        Logger logger,
+        WinterPlugin plugin
     ) {
         PacketEventsService service = new PacketEventsService(logger, (me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin) plugin);
         logger.info("PacketEventsService created");
@@ -89,8 +89,8 @@ public class ServiceConfigurationModule implements PluginModule {
     @Provides
     @Singleton
     public ILuckPermsIntegrationService provideLuckPermsIntegrationService(
-            Logger logger,
-            ConfigService configService
+        Logger logger,
+        ConfigService configService
     ) {
         Plugin luckPerms = Bukkit.getPluginManager().getPlugin("LuckPerms");
         if (luckPerms != null && luckPerms.isEnabled()) {

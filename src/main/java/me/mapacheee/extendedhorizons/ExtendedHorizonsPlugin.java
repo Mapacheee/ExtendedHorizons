@@ -71,20 +71,24 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
     private void detectServerType() {
         Logger logger = getSLF4JLogger();
+        if (hasClass("io.papermc.paper.threadedregions.RegionizedServer")) {
+            logger.info("Detected Folia server - enabling regional threading optimizations");
+            // TODO: folia scheduler support, optimizations
+        } else if (hasClass("io.papermc.paper.event.player.AsyncChatEvent")) {
+            logger.info("Detected Paper server - enabling Paper-specific optimizations");
+            // TODO: Paper-specific optimization
+        } else {
+            logger.info("Detected Spigot/CraftBukkit server - using standard optimizations");
+            // TODO: standard optimizations
+        }
+    }
 
+    private boolean hasClass(String className) {
         try {
-            String serverVersion = Bukkit.getVersion().toLowerCase();
-            String serverName = Bukkit.getName().toLowerCase();
-
-            if (serverVersion.contains("folia") || serverName.contains("folia")) {
-                logger.info("Detected Folia server - enabling regional threading optimizations");
-            } else if (serverVersion.contains("paper") || serverName.contains("paper")) {
-                logger.info("Detected Paper server - enabling Paper-specific optimizations");
-            } else {
-                logger.info("Detected Spigot/CraftBukkit server - using standard optimizations");
-            }
-        } catch (Exception e) {
-            logger.warn("Could not detect server type, using standard optimizations", e);
+            Class.forName(className);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
         }
     }
 }

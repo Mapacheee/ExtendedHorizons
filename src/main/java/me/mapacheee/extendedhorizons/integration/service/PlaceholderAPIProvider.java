@@ -24,9 +24,9 @@ public class PlaceholderAPIProvider extends PlaceholderExpansion {
 
     @Inject
     public PlaceholderAPIProvider(
-            Logger logger,
-            ConfigService configService,
-            ViewDistanceService viewDistanceService
+        Logger logger,
+        ConfigService configService,
+        ViewDistanceService viewDistanceService
     ) {
         this.logger = logger;
         this.configService = configService;

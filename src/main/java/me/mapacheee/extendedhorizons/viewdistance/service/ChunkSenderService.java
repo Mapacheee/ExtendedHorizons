@@ -4,17 +4,17 @@ import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUnloadChunk;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
+import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
+import me.mapacheee.extendedhorizons.optimization.service.CacheService;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap;
-import me.mapacheee.extendedhorizons.optimization.service.CacheService;
-import me.mapacheee.extendedhorizons.integration.service.IPacketEventsService;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,11 +41,11 @@ public class ChunkSenderService implements IChunkSenderService {
 
     @Inject
     public ChunkSenderService(
-            Logger logger,
-            ConfigService configService,
-            PlayerViewService playerViewService,
-            CacheService cacheService,
-            IPacketEventsService packetEventsService
+        Logger logger,
+        ConfigService configService,
+        PlayerViewService playerViewService,
+        CacheService cacheService,
+        IPacketEventsService packetEventsService
     ) {
         this.logger = logger;
         this.configService = configService;
@@ -88,7 +88,7 @@ public class ChunkSenderService implements IChunkSenderService {
     }
 
     private void unloadRemovedChunks(Player player, Set<ViewMap.ChunkCoordinate> removedChunks,
-                                   Set<ViewMap.ChunkCoordinate> currentSent) {
+                                     Set<ViewMap.ChunkCoordinate> currentSent) {
         for (ViewMap.ChunkCoordinate coord : removedChunks) {
             if (currentSent.contains(coord)) {
                 unloadChunk(player, coord.x(), coord.z());
@@ -98,7 +98,7 @@ public class ChunkSenderService implements IChunkSenderService {
     }
 
     private void sendNewChunks(Player player, PlayerView playerView, Set<ViewMap.ChunkCoordinate> newChunks,
-                             Set<ViewMap.ChunkCoordinate> fakeChunks, int chunksPerTick) {
+                               Set<ViewMap.ChunkCoordinate> fakeChunks, int chunksPerTick) {
         int sentThisTick = 0;
 
         for (ViewMap.ChunkCoordinate coord : newChunks) {
@@ -119,7 +119,7 @@ public class ChunkSenderService implements IChunkSenderService {
 
     private void sendRealChunk(Player player, PlayerView playerView, ViewMap.ChunkCoordinate coord) {
         player.getWorld().getChunkAtAsync(coord.x(), coord.z()).thenAccept(chunk -> {
-            Bukkit.getScheduler().runTask(Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("ExtendedHorizons")), () -> {
+            Bukkit.getScheduler().runTask(ExtendedHorizonsPlugin.getInstance(), () -> {
                 try {
                     sendChunk(player, coord.x(), coord.z());
                     playerView.incrementChunksSent();
@@ -129,7 +129,7 @@ public class ChunkSenderService implements IChunkSenderService {
 
                 } catch (Exception e) {
                     logger.error("Failed to send real chunk at {}, {} to player {}",
-                               coord.x(), coord.z(), player.getName(), e);
+                        coord.x(), coord.z(), player.getName(), e);
                 }
             });
         });
@@ -143,7 +143,7 @@ public class ChunkSenderService implements IChunkSenderService {
                 playerView.addNetworkBytesUsed(8192L);
             } catch (Exception e) {
                 logger.error("Failed to send fake chunk at {}, {} to player {}",
-                           coord.x(), coord.z(), player.getName(), e);
+                    coord.x(), coord.z(), player.getName(), e);
             }
         });
     }
@@ -189,13 +189,13 @@ public class ChunkSenderService implements IChunkSenderService {
     public CompletableFuture<Void> sendFakeChunks(Player player, PlayerView playerView) {
         return CompletableFuture.runAsync(() -> {
             if (playerView.areFakeChunksEnabled()) {
-                int distance = playerView.getCurrentDistance();
+                int distance = playerView.getInternalViewDistance();
                 int fakeStartDistance = configService.getFakeChunksStartDistance();
 
                 for (int x = -distance; x <= distance; x++) {
                     for (int z = -distance; z <= distance; z++) {
-                        double chunkDistance = Math.sqrt(x * x + z * z);
-                        if (chunkDistance > fakeStartDistance && chunkDistance <= distance) {
+                        int chunkDistanceSqr = x * x + z * z;
+                        if (chunkDistanceSqr > fakeStartDistance * fakeStartDistance && chunkDistanceSqr <= distance * distance) {
                             ViewMap.ChunkCoordinate coord = new ViewMap.ChunkCoordinate(
                                 (int) player.getLocation().getX() / 16 + x,
                                 (int) player.getLocation().getZ() / 16 + z

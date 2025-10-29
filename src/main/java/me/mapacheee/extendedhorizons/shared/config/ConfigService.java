@@ -19,9 +19,9 @@ public class ConfigService {
 
     @Inject
     public ConfigService(
-            Logger logger,
-            @FileName("config.yml") YamlConfig configFile,
-            @FileName("messages.yml") YamlConfig messagesFile
+        Logger logger,
+        @FileName("config.yml") YamlConfig configFile,
+        @FileName("messages.yml") YamlConfig messagesFile
     ) {
         this.logger = logger;
         this.configFile = configFile;
