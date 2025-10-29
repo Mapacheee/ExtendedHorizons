@@ -194,8 +194,8 @@ public class ChunkSenderService implements IChunkSenderService {
 
                 for (int x = -distance; x <= distance; x++) {
                     for (int z = -distance; z <= distance; z++) {
-                        double chunkDistance = Math.sqrt(x * x + z * z);
-                        if (chunkDistance > fakeStartDistance && chunkDistance <= distance) {
+                        int chunkDistanceSqr = x * x + z * z;
+                        if (chunkDistanceSqr > fakeStartDistance * fakeStartDistance && chunkDistanceSqr <= distance * distance) {
                             ViewMap.ChunkCoordinate coord = new ViewMap.ChunkCoordinate(
                                 (int) player.getLocation().getX() / 16 + x,
                                 (int) player.getLocation().getZ() / 16 + z

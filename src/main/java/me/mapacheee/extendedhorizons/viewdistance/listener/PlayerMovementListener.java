@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.viewdistance.listener;
 
+import com.destroystokyo.paper.event.player.PlayerClientOptionsChangeEvent;
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
 import me.mapacheee.extendedhorizons.shared.config.ConfigService;
@@ -118,5 +119,10 @@ public class PlayerMovementListener implements Listener {
             logger.error("Error resetting view distance for player {} in world {}",
                 player.getName(), player.getWorld().getName(), e);
         }
+    }
+
+    @EventHandler
+    public void onPlayerChangeSettings(PlayerClientOptionsChangeEvent e) {
+        viewDistanceService.getPlayerView(e.getPlayer().getUniqueId()).setClientViewDistance(e.getViewDistance());
     }
 }

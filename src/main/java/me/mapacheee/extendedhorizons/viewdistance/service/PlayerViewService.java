@@ -33,10 +33,10 @@ public class PlayerViewService {
 
     public ViewMap createViewMap(PlayerView playerView) {
         ViewMap.ViewShape shape = ViewMap.ViewShape.SQUARE;
-        int maxDistance = playerView.getMaxAllowedDistance();
+        int internalDistance = playerView.getInternalViewDistance();
         int fakeStartDistance = configService.getFakeChunksStartDistance();
 
-        ViewMap viewMap = new ViewMap(shape, maxDistance, fakeStartDistance);
+        ViewMap viewMap = new ViewMap(shape, internalDistance, fakeStartDistance);
         viewMaps.put(playerView, viewMap);
 
         return viewMap;
@@ -64,6 +64,7 @@ public class PlayerViewService {
             Set<ViewMap.ChunkCoordinate> previousChunks = viewMap.getVisibleChunks();
 
             viewMap.updateCenter(currentLocation);
+            viewMap.updateViewDistance(playerView.getInternalViewDistance());
 
             Set<ViewMap.ChunkCoordinate> newChunks = viewMap.getNewChunks(previousChunks);
             Set<ViewMap.ChunkCoordinate> removedChunks = viewMap.getRemovedChunks(previousChunks);
