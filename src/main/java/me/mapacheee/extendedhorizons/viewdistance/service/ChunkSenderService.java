@@ -189,7 +189,7 @@ public class ChunkSenderService implements IChunkSenderService {
     public CompletableFuture<Void> sendFakeChunks(Player player, PlayerView playerView) {
         return CompletableFuture.runAsync(() -> {
             if (playerView.areFakeChunksEnabled()) {
-                int distance = playerView.getCurrentDistance();
+                int distance = playerView.getInternalViewDistance();
                 int fakeStartDistance = configService.getFakeChunksStartDistance();
 
                 for (int x = -distance; x <= distance; x++) {
