@@ -1,103 +1,93 @@
 # ExtendedHorizons Messages
-# Supports HEX colors using &#RRGGBB format
+# Supports MiniMessage
 
-prefix: "&#C935F2「&#BF32E7E&#B42FDBx&#AA2DD0t&#9F2AC5e&#9527B9n&#8A24AEd&#8022A3e&#751F97d&#6B1C8CH&#771F99o&#8322A6r&#8E25B2i&#9A29BFz&#A62CCCo&#B22FD9n&#BD32E5s&#C935F2」&#C935F2» "
+prefix: "<sprite:blocks:item/spyglass> <shadow:#9E2DC9:0.6><#C935F2>EHorizons</#C935F2></shadow:#9E2DC9:0.6> <#C935F2>»</#C935F2><reset> "
 
 # General messages
 general:
-  no-permission: "&#14D9D9You don't have permission to use this command!"
-  player-not-found: "&#14D9D9Player '&#C935F2{player}&#14D9D9' not found!"
-  player-only: "&#14D9D9This command can only be used by players!"
-  config-reloaded: "&#14D9D9Configuration reloaded successfully!"
-  config-error: "&#14D9D9Error reloading configuration!"
-  plugin-info: "&#3498DB{plugin} v{version} by {author}"
-  unknown-command: "&#14D9D9Unknown command! Use &#C935F2/eh help &#14D9D9for available commands."
+  no-permission: "<#14D9D9>You don't have permission to use this command!"
+  player-not-found: "<#14D9D9>Player '<#C935F2>{player}<#14D9D9>' not found!"
+  player-only: "<#14D9D9>This command can only be used by players!"
+  config-reloaded: "<#14D9D9>Configuration reloaded successfully!"
+  config-error: "<#14D9D9>Error reloading configuration!"
+  plugin-info: "<#3498DB>{plugin} v{version} by {author}"
+  unknown-command: "<#14D9D9>Unknown command! Use <#C935F2>/eh help <#14D9D9>for available commands."
 
 # View distance messages
 view-distance:
-  current-distance: "&#3498DBYour current view distance: &#F39C12{distance} &#3498DBchunks"
-  distance-changed: "&#14D9D9View distance changed to &#C935F2{distance} &#14D9D9chunks"
-  distance-set-other: "&#14D9D9Set &#C935F2{player}'s &#14D9D9view distance to &#C935F2{distance} &#14D9D9chunks"
-  other-current-distance: "&#3498DB{player}'s view distance: &#F39C12{distance} &#3498DBchunks"
-  no-view-data: "&#14D9D9No view data available!"
-  no-view-data-other: "&#14D9D9No view data available for &#C935F2{player}"
-  reset: "&#14D9D9View distance reset to default: &#C935F2{distance} &#14D9D9chunks"
-  max-distance-exceeded: "&#14D9D9Maximum view distance is &#C935F2{max} &#14D9D9chunks!"
-  min-distance-error: "&#14D9D9Minimum view distance is &#C935F2{min} &#14D9D9chunks!"
-  invalid-distance: "&#14D9D9Invalid distance specified: &#C935F2{distance}"
-  fake-chunks-enabled: "&#F39C12Fake chunks enabled for distances above &#C935F2{distance} &#F39C12chunks"
-  fake-chunks-disabled: "&#E67E22Fake chunks disabled"
+  current-distance: "<#3498DB>Your current view distance: <#F39C12>{distance} <#3498DB>chunks"
+  distance-changed: "<#14D9D9>View distance changed to <#C935F2>{distance} <#14D9D9>chunks"
+  distance-set-other: "<#14D9D9>Set <#C935F2>{player}'s <#14D9D9>view distance to <#C935F2>{distance} <#14D9D9>chunks"
+  other-current-distance: "<#3498DB>{player}'s view distance: <#F39C12>{distance} <#3498DB>chunks"
+  no-view-data: "<#14D9D9>No view data available!"
+  no-view-data-other: "<#14D9D9>No view data available for <#C935F2>{player}"
+  reset: "<#14D9D9>View distance reset to default: <#C935F2>{distance} <#14D9D9>chunks"
+  max-distance-exceeded: "<#14D9D9>Maximum view distance is <#C935F2>{max} <#14D9D9>chunks!"
+  min-distance-error: "<#14D9D9>Minimum view distance is <#C935F2>{min} <#14D9D9>chunks!"
+  invalid-distance: "<#14D9D9>Invalid distance specified: <#C935F2>{distance}"
 
 # Statistics messages
 stats:
-  header: "&#3498DB========= &#F39C12ExtendedHorizons Stats &#3498DB========="
-  players-online: "&#3498DBPlayers Online: &#C935F2{online}&#3498DB/&#C935F2{max}"
-  average-distance: "&#3498DBAverage Distance: &#F39C12{distance} &#3498DBchunks"
-  chunks-sent: "&#3498DBChunks Sent: &#C935F2{chunks}"
-  fake-chunks-sent: "&#3498DBFake Chunks Sent: &#C935F2{chunks}"
-  cache-size: "&#3498DBCache Size: &#C935F2{size} &#3498DBMB"
-  footer: "&#3498DB==========================================="
-
-# Debug messages
-debug:
-  enabled: "&#14D9D9Debug mode is enabled"
-  disabled: "&#14D9D9Debug mode is disabled"
-  chunk-info: "&#3498DBChunk &#C935F2{x}&#3498DB, &#C935F2{z} &#3498DB- Type: &#F39C12{type}&#3498DB, Size: &#F39C12{size} &#3498DBbytes"
-  player-info: "&#3498DBPlayer &#C935F2{player} &#3498DB- Distance: &#F39C12{distance}&#3498DB, Network: &#F39C12{network}&#3498DB B/s"
+  - "<#3498DB>========= <#F39C12>ExtendedHorizons Stats <#3498DB>========="
+  - "<#3498DB>Players Online: <#C935F2>{online}<#3498DB>/<#C935F2>{max}"
+  - "<#3498DB>Average Distance: <#F39C12>{distance} <#3498DB>chunks"
+  - "<#3498DB>Cached Chunks: <#C935F2>{cached_chunks}<#3498DB>/<#C935F2>{max_cached} <#F39C12>({cache_usage})"
+  - "<#3498DB>Cache Entries: <#C935F2>{size}"
+  - "<#3498DB>==========================================="
 
 # Error messages
 errors:
-  database-error: "&#14D9D9Database error occurred! Check console for details."
-  network-error: "&#14D9D9Network error for player &#C935F2{player}&#14D9D9!"
-  chunk-generation-failed: "&#14D9D9Failed to generate chunk at &#C935F2{x}&#14D9D9, &#C935F2{z}"
-  permission-check-failed: "&#14D9D9Failed to check permissions for &#C935F2{player}"
-  packetevents-error: "&#14D9D9PacketEvents error occurred!"
+  database-error: "<#14D9D9>Database error occurred! Check console for details."
+  network-error: "<#14D9D9>Network error for player <#C935F2>{player}<#14D9D9>!"
+  chunk-generation-failed: "<#14D9D9>Failed to generate chunk at <#C935F2>{x}<#14D9D9>, <#C935F2>{z}"
+  permission-check-failed: "<#14D9D9>Failed to check permissions for <#C935F2>{player}"
+  packetevents-error: "<#14D9D9>PacketEvents error occurred!"
 
-# Command help messages
+# Help messages. Use [ADMIN] prefix to mark admin-only lines.
 help:
-  header: "&#3498DB========= &#F39C12ExtendedHorizons Help &#3498DB========="
-  info: "&#3498DB/eh info &#C935F2- Show plugin and player information"
-  distance: "&#3498DB/eh check <player> &#C935F2- Check another player's view distance"
-  reset: "&#3498DB/eh reset &#C935F2- Reset view distance to default"
-  admin-header: "&#14D9D9=== Admin Commands ==="
-  reload: "&#14D9D9/eh reload &#C935F2- Reload configuration"
-  stats: "&#14D9D9/eh stats &#C935F2- Show plugin statistics"
-  debug: "&#14D9D9/eh debug &#C935F2- Toggle debug mode"
-  world: "&#14D9D9/eh worldinfo <world> &#C935F2- World-specific settings"
-  footer: "&#3498DB==========================================="
+  - "<#3498DB>========= <#F39C12>ExtendedHorizons Help <#3498DB>========="
+  - "<#3498DB>/eh info <#C935F2>- Show plugin and player information"
+  - "<#3498DB>/eh check <player> <#C935F2>- Check another player's view distance"
+  - "<#3498DB>/eh reset <#C935F2>- Reset view distance to default"
+  - "<#3498DB>/eh setme <chunks> <#C935F2>- Set your own view distance"
+  - "[ADMIN] <#14D9D9>=== Admin Commands ==="
+  - "[ADMIN] <#14D9D9>/eh reload <#C935F2>- Reload configuration"
+  - "[ADMIN] <#14D9D9>/eh stats <#C935F2>- Show plugin statistics"
+  - "[ADMIN] <#14D9D9>/eh worldinfo <world> <#C935F2>- World-specific settings"
+  - "<#3498DB>==========================================="
 
 # World-specific messages
 world:
-  not-found: "&#14D9D9World '&#C935F2{world}&#14D9D9' not found!"
-  usage: "&#14D9D9Usage: /eh world <world> [distance]"
-  config-notice: "&#F39C12World-specific configuration changes require config file editing and reload."
-  distance-set: "&#14D9D9Set view distance for world &#C935F2{world} &#14D9D9to &#C935F2{distance} &#14D9D9chunks"
-  disabled: "&#14D9D9ExtendedHorizons is disabled in world &#C935F2{world}"
-  performance-mode-changed: "&#3498DBPerformance mode for &#C935F2{world} &#3498DBchanged to &#F39C12{mode}"
-  max-distance-info: "&#3498DBWorld &#C935F2{world} &#3498DBmax distance: &#F39C12{distance}"
+  not-found: "<#14D9D9>World '<#C935F2>{world}<#14D9D9>' not found!"
+  usage: "<#14D9D9>Usage: /eh world <world> [distance]"
+  config-notice: "<#F39C12>World-specific configuration changes require config file editing and reload."
+  distance-set: "<#14D9D9>Set view distance for world <#C935F2>{world} <#14D9D9>to <#C935F2>{distance} <#14D9D9>chunks"
+  disabled: "<#14D9D9>ExtendedHorizons is disabled in world <#C935F2>{world}"
+  performance-mode-changed: "<#3498DB>Performance mode for <#C935F2>{world} <#3498DB>changed to <#F39C12>{mode}"
+  max-distance-info: "<#3498DB>World <#C935F2>{world} <#3498DB>max distance: <#F39C12>{distance}"
 
 # Integration messages
 integrations:
-  placeholderapi-enabled: "&#14D9D9PlaceholderAPI integration enabled"
-  placeholderapi-disabled: "&#95A5A6PlaceholderAPI not found"
-  luckperms-enabled: "&#14D9D9LuckPerms integration enabled"
-  luckperms-disabled: "&#95A5A6LuckPerms not found"
+  placeholderapi-enabled: "<#14D9D9>PlaceholderAPI integration enabled"
+  placeholderapi-disabled: "<#95A5A6>PlaceholderAPI not found"
+  luckperms-enabled: "<#14D9D9>LuckPerms integration enabled"
+  luckperms-disabled: "<#95A5A6>LuckPerms not found"
 
 # Startup/shutdown messages
 startup:
-  loading: "&#3498DBLoading ExtendedHorizons..."
-  loaded: "&#14D9D9ExtendedHorizons loaded successfully!"
-  enabled: "&#14D9D9ExtendedHorizons enabled successfully!"
-  server-detected: "&#3498DBDetected server type: &#F39C12{type}"
-  packetevents-initialized: "&#14D9D9PacketEvents initialized successfully"
+  loading: "<#3498DB>Loading ExtendedHorizons..."
+  loaded: "<#14D9D9>ExtendedHorizons loaded successfully!"
+  enabled: "<#14D9D9>ExtendedHorizons enabled successfully!"
+  server-detected: "<#3498DB>Detected server type: <#F39C12>{type}"
+  packetevents-initialized: "<#14D9D9>PacketEvents initialized successfully"
 
 # Welcome message (text lives here; enable flag is in config.yml)
 messages:
   welcome-message:
-    text: "&#14D9D9Welcome! Your view distance has been set to &#C935F2{distance} &#14D9D9chunks."
+    text: "<#14D9D9>Welcome! Your view distance has been set to <#C935F2>{distance} <#14D9D9>chunks."
 
 # Additional preserved keys
 additional:
-  no-view-data: "&#14D9D9No view data available!"
-  distance-set-other: "&#14D9D9Set &#C935F2{player}'s &#14D9D9view distance to &#C935F2{distance} &#14D9D9chunks"
-  min-distance-error: "&#14D9D9Minimum view distance is &#C935F2{min} &#14D9D9chunks!"
+  no-view-data: "<#14D9D9>No view data available!"
+  distance-set-other: "<#14D9D9>Set <#C935F2>{player}'s <#14D9D9>view distance to <#C9ChooseF2>{distance} <#14D9D9>chunks"
+  min-distance-error: "<#14D9D9>Minimum view distance is <#C935F2>{min} <#14D9D9>chunks!"

@@ -2,350 +2,222 @@ package me.mapacheee.extendedhorizons.viewdistance.service;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import me.mapacheee.extendedhorizons.integration.service.ILuckPermsIntegrationService;
-import me.mapacheee.extendedhorizons.shared.config.ConfigService;
-import me.mapacheee.extendedhorizons.shared.storage.ViewDataStorage;
+import me.mapacheee.extendedhorizons.integration.luckperms.LuckPermsService;
+import me.mapacheee.extendedhorizons.shared.service.ConfigService;
+import me.mapacheee.extendedhorizons.shared.service.MessageService;
+import me.mapacheee.extendedhorizons.shared.storage.PlayerStorageService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.slf4j.Logger;
 
-import java.util.Collection;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
-/* View Distance Service - Core service managing player view distances and chunk sending
- * Handles real and fake chunk management with performance optimizations
+/*
+ *   Manages extended view distance with dual system:
+ *   - Real chunks (0 to server view-distance): Handled by server naturally
+ *   - Fake chunks (beyond server view-distance): Sent from packet cache
  */
-
 @Service
-public class ViewDistanceService implements IViewDistanceService {
+public class ViewDistanceService {
 
-    private final Logger logger;
+    private final Map<UUID, PlayerView> playerViews = new ConcurrentHashMap<>();
     private final ConfigService configService;
-    private final PlayerViewService playerViewService;
-    private final ILuckPermsIntegrationService luckPermsService;
-    private final ViewDataStorage storage;
-
-    private final Map<UUID, PlayerView> playerViews;
-    private final AtomicInteger totalChunksSent;
-    private final AtomicInteger totalFakeChunksSent;
-    private volatile boolean adaptiveMode;
-    private volatile boolean globalPause;
-
-    private IChunkSenderService chunkSenderService;
+    private final PlayerStorageService storageService;
+    private final ChunkService chunkService;
+    private final FakeChunkService fakeChunkService;
+    private final PacketService packetService;
+    private final LuckPermsService luckPermsService;
+    private final MessageService messageService;
 
     @Inject
-    public ViewDistanceService(
-        Logger logger,
-        ConfigService configService,
-        PlayerViewService playerViewService,
-        ILuckPermsIntegrationService luckPermsService,
-        ViewDataStorage storage
-    ) {
-        this.logger = logger;
+    public ViewDistanceService(ConfigService configService,
+                               PlayerStorageService storageService,
+                               ChunkService chunkService,
+                               FakeChunkService fakeChunkService,
+                               PacketService packetService,
+                               LuckPermsService luckPermsService,
+                               MessageService messageService) {
         this.configService = configService;
-        this.playerViewService = playerViewService;
+        this.storageService = storageService;
+        this.chunkService = chunkService;
+        this.fakeChunkService = fakeChunkService;
+        this.packetService = packetService;
         this.luckPermsService = luckPermsService;
-        this.storage = storage;
-        this.playerViews = new ConcurrentHashMap<>();
-        this.totalChunksSent = new AtomicInteger(0);
-        this.totalFakeChunksSent = new AtomicInteger(0);
-        this.adaptiveMode = false;
-        this.globalPause = false;
+        this.messageService = messageService;
     }
 
-    @Inject
-    public void setChunkSenderService(IChunkSenderService chunkSenderService) {
-        this.chunkSenderService = chunkSenderService;
-        logger.info("ChunkSenderService injected successfully");
-    }
+    /**
+     * Handles the logic when a player joins the server.
+     */
+    public void handlePlayerJoin(Player player) {
+        storageService.getPlayerData(player.getUniqueId()).thenAccept(playerData -> {
+            int fallbackDefault = configService.get().viewDistance().defaultDistance();
+            int initialDistance = playerData.map(me.mapacheee.extendedhorizons.shared.storage.PlayerData::getViewDistance).orElse(fallbackDefault);
+            int clamped = clampDistance(player, initialDistance);
+            PlayerView playerView = new PlayerView(player, clamped);
+            playerViews.put(player.getUniqueId(), playerView);
 
-    private IChunkSenderService getChunkSenderService() {
-        if (chunkSenderService == null) {
-            logger.warn("ChunkSenderService is not yet injected, skipping chunk operations");
-            return null;
-        }
-        return chunkSenderService;
-    }
+            packetService.ensureClientRadius(player, clamped);
 
-    public void initializePlayerView(Player player) {
-        if (!configService.isEnabled()) return;
-        if (!configService.isWorldEnabled(player.getWorld().getName())) return;
+            Bukkit.getScheduler().runTaskLater(me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getPlugin(me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.class), () -> {
+                if (!player.isOnline()) return;
+                packetService.ensureClientRadius(player, clamped);
+            }, 5L);
 
-        PlayerView playerView = new PlayerView(player);
-        playerViews.put(player.getUniqueId(), playerView);
-
-        var playerData = storage.getPlayerDataSync(player.getUniqueId());
-        int preferredDistance = playerData != null ? playerData.preferredDistance() : configService.getDefaultViewDistance();
-
-        int defaultDistance = Math.min(
-            preferredDistance,
-            getMaxAllowedDistance(player)
-        );
-        playerView.setTargetDistance(defaultDistance);
-        playerView.setCurrentDistance(defaultDistance);
-
-        setPlayerViewDistanceSafe(player, defaultDistance);
-
-        updatePlayerPermissions(player);
-        logger.info("Initialized view for player {} with distance {}",
-            player.getName(), playerView.getCurrentDistance());
-    }
-
-    public void removePlayerView(Player player) {
-        PlayerView view = playerViews.remove(player.getUniqueId());
-        if (view != null) {
-            Objects.requireNonNull(getChunkSenderService()).unloadAllChunks(player);
-            logger.debug("Removed view for player {}", player.getName());
-        }
-    }
-
-    public PlayerView getPlayerView(Player player) {
-        return playerViews.get(player.getUniqueId());
-    }
-
-    public void setPlayerViewDistance(Player player, int distance) {
-        PlayerView view = getPlayerView(player);
-        if (view == null) {
-            initializePlayerView(player);
-            view = getPlayerView(player);
-        }
-
-        int maxAllowed = getMaxAllowedDistance(player);
-
-        if (distance > maxAllowed) {
-            distance = maxAllowed;
-        }
-
-        if (distance < configService.getMinViewDistance()) {
-            distance = configService.getMinViewDistance();
-        }
-
-        view.setTargetDistance(distance);
-        setPlayerViewDistanceSafe(player, distance);
-
-        storage.savePlayerData(view);
-        updatePlayerViewDistance(player);
-    }
-
-    public void updatePlayerViewDistance(Player player) {
-        PlayerView playerView = playerViews.get(player.getUniqueId());
-        if (playerView == null) return;
-
-        if (globalPause) {
-            playerView.setWaitingForChunks(true);
-            return;
-        }
-
-        int targetDistance = calculateOptimalDistance(player, playerView);
-
-        if (targetDistance != playerView.getCurrentDistance()) {
-            playerView.setCurrentDistance(targetDistance);
-
-            boolean enableFakeChunks = configService.areFakeChunksEnabled()
-                && configService.areFakeChunksEnabledForWorld(player.getWorld().getName())
-                && targetDistance > configService.getFakeChunksStartDistance();
-            playerView.setFakeChunksEnabled(enableFakeChunks);
-
-            setPlayerViewDistanceSafe(player, targetDistance);
-
-            IChunkSenderService chunkSender = getChunkSenderService();
-            if (chunkSender != null) {
-                chunkSender.sendChunks(player, playerView);
-            } else {
-                logger.debug("Skipping chunk sending for {} - ChunkSenderService not ready", player.getName());
+            var msgCfg = configService.get().messages();
+            if (msgCfg != null && msgCfg.welcomeMessage() != null && msgCfg.welcomeMessage().enabled()) {
+                Bukkit.getScheduler().runTaskLater(me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getPlugin(me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.class), () -> {
+                    if (player.isOnline()) messageService.sendWelcome(player, clamped);
+                }, 15L);
             }
-        }
+
+            Bukkit.getScheduler().runTaskLater(me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getPlugin(me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.class), () -> {
+                if (!player.isOnline()) return;
+                packetService.ensureClientRadius(player, clamped);
+                updatePlayerView(player);
+            }, 20L);
+        });
     }
 
-    private int calculateOptimalDistance(Player player, PlayerView view) {
-        return view.getTargetDistance();
-    }
-
-    private int getMaxAllowedDistance(Player player) {
-        int worldMax = configService.getMaxViewDistanceForWorld(player.getWorld().getName());
-        int permissionMax = luckPermsService.getMaxViewDistance(player);
-
-        return Math.min(worldMax, permissionMax);
-    }
-
-    public void updatePlayerPermissions(Player player) {
-        PlayerView view = getPlayerView(player);
-        if (view == null) return;
-
-        int checkInterval = configService.getLuckPermsCheckInterval();
-
-        if (!view.needsPermissionCheck(checkInterval * 1000L)) {
-            return;
+    /**
+     * Handles the logic when a player quits the server.
+     */
+    public void handlePlayerQuit(Player player) {
+        PlayerView playerView = playerViews.remove(player.getUniqueId());
+        if (playerView != null) {
+            storageService.savePlayerData(new me.mapacheee.extendedhorizons.shared.storage.PlayerData(player.getUniqueId(), playerView.getTargetDistance()));
         }
 
-        int maxDistance = getMaxAllowedDistance(player);
-        view.setMaxAllowedDistance(maxDistance);
-        view.setLastPermissionCheck(System.currentTimeMillis());
-
-        if (view.getTargetDistance() > maxDistance) {
-            view.setTargetDistance(maxDistance);
-            updatePlayerViewDistance(player);
-        }
+        chunkService.clearPlayerChunks(player);
+        fakeChunkService.clearPlayerFakeChunks(player);
     }
 
-    public void handlePlayerMovement(Player player) {
-        PlayerView view = getPlayerView(player);
-        if (view == null) return;
+    /**
+     * Sets player target distance with clamp and triggers update.
+     */
+    public void setPlayerDistance(Player player, int requestedDistance) {
+        PlayerView view = playerViews.computeIfAbsent(player.getUniqueId(), id -> new PlayerView(player, clampDistance(player, requestedDistance)));
+        int clamped = clampDistance(player, requestedDistance);
+        view.setTargetDistance(clamped);
 
-        long currentTime = System.currentTimeMillis();
-        long timeDiff = currentTime - view.getLastMoveTime();
+        storageService.savePlayerData(new me.mapacheee.extendedhorizons.shared.storage.PlayerData(player.getUniqueId(), clamped));
+        packetService.ensureClientRadius(player, clamped);
 
-        view.setMovingTooFast(timeDiff < 100);
-
-        view.updateLastMoveTime();
-        view.setLastLocation(player.getLocation());
-
-        if (view.getCurrentWorld() != player.getWorld()) {
-            view.setCurrentWorld(player.getWorld());
-            Objects.requireNonNull(getChunkSenderService()).unloadAllChunks(player);
-            updatePlayerViewDistance(player);
-        } else {
-            IChunkSenderService chunkSender = getChunkSenderService();
-            if (chunkSender != null) {
-                chunkSender.sendChunks(player, view);
-            } else {
-                logger.debug("Skipping chunk sending for {} - ChunkSenderService not ready", player.getName());
-            }
-        }
+        updatePlayerView(player);
     }
 
-    public void pauseAll() {
-        globalPause = true;
-        logger.info("Global view distance pause enabled");
+    /**
+     * Returns allowed maximum distance for this player after LuckPerms check.
+     */
+    public int getAllowedMax(Player player) {
+        int configMax = configService.get().viewDistance().maxDistance();
+        return luckPermsService != null && luckPermsService.isEnabled()
+                ? Math.min(configMax, luckPermsService.resolveMaxDistance(player, configMax))
+                : configMax;
     }
 
-    public void resumeAll() {
-        globalPause = false;
-
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            PlayerView view = getPlayerView(player);
-            if (view != null) {
-                view.setWaitingForChunks(false);
-                updatePlayerViewDistance(player);
-            }
-        }
-
-        logger.info("Global view distance pause disabled");
+    private int clampDistance(Player player, int value) {
+        int min = configService.get().viewDistance().minDistance();
+        int max = getAllowedMax(player);
+        if (value < min) return min;
+        return Math.min(value, max);
     }
 
-    public void setAdaptiveMode(boolean enabled) {
-        this.adaptiveMode = enabled;
-        logger.info("Adaptive mode {}", enabled ? "enabled" : "disabled");
-    }
-
-    public boolean isAdaptiveMode() {
-        return adaptiveMode;
-    }
-
-    public boolean isGlobalPaused() {
-        return globalPause;
-    }
-
-    public int getTotalPlayers() {
-        return playerViews.size();
-    }
-
-    public double getAverageViewDistance() {
-        if (playerViews.isEmpty()) return 0;
-
-        return playerViews.values().stream()
-            .mapToInt(PlayerView::getCurrentDistance)
-            .average()
-            .orElse(0);
-    }
-
-    public int getTotalChunksSent() {
-        return totalChunksSent.get();
-    }
-
-    public int getTotalFakeChunksSent() {
-        return totalFakeChunksSent.get();
-    }
-
-    public void incrementChunksSent() {
-        totalChunksSent.incrementAndGet();
-    }
-
-    public void incrementFakeChunksSent() {
-        totalFakeChunksSent.incrementAndGet();
-    }
-
-    public void resetStats() {
-        totalChunksSent.set(0);
-        totalFakeChunksSent.set(0);
-
-        playerViews.values().forEach(PlayerView::resetStatistics);
-    }
-
-    @Override
+    /**
+     * Update player view when they move - DUAL SYSTEM
+     */
     public void updatePlayerView(Player player) {
-        updatePlayerViewDistance(player);
-    }
+        PlayerView playerView = playerViews.get(player.getUniqueId());
+        if (playerView == null || !player.isOnline()) return;
 
-    @Override
-    public void setViewDistance(Player player, int distance) {
-        setPlayerViewDistance(player, distance);
-    }
+        int clampedTarget = clampDistance(player, playerView.getTargetDistance());
+        if (clampedTarget != playerView.getTargetDistance()) {
+            playerView.setTargetDistance(clampedTarget);
+        }
 
-    @Override
-    public int getViewDistance(Player player) {
-        PlayerView view = getPlayerView(player);
-        return view != null ? view.getTargetDistance() : configService.getDefaultViewDistance();
-    }
+        packetService.ensureClientCenter(player);
+        packetService.ensureClientRadius(player, playerView.getTargetDistance());
 
-    @Override
-    public int getEffectiveViewDistance(Player player) {
-        PlayerView view = getPlayerView(player);
-        return view != null ? view.getCurrentDistance() : configService.getDefaultViewDistance();
-    }
+        Set<Long> allNeededChunks = chunkService.computeSquareKeys(player, playerView.getTargetDistance());
+        ChunkClassification classification = classifyChunks(player, allNeededChunks);
 
-    @Override
-    public void setGlobalPause(boolean paused) {
-        if (paused) {
-            pauseAll();
-        } else {
-            resumeAll();
+        Set<Long> currentRealChunks = chunkService.getPlayerChunks(player.getUniqueId());
+        Set<Long> toUnload = new HashSet<>(currentRealChunks);
+        toUnload.removeAll(classification.realChunks);
+
+        if (!toUnload.isEmpty()) {
+            chunkService.unloadPlayerChunks(player, toUnload);
+        }
+
+        chunkService.loadAndKeepChunks(player, classification.realChunks);
+
+        if (configService.get().performance().fakeChunks().enabled() && !classification.fakeChunks.isEmpty()) {
+            fakeChunkService.sendFakeChunks(player, classification.fakeChunks);
         }
     }
 
-    @Override
-    public PlayerView getPlayerView(UUID playerId) {
-        return playerViews.get(playerId);
-    }
+    /**
+     * Fast update for players in flight or moving fast
+     */
+    public void updatePlayerViewFast(Player player) {
+        PlayerView playerView = playerViews.get(player.getUniqueId());
+        if (playerView == null || !player.isOnline()) return;
 
-    @Override
-    public Collection<PlayerView> getAllPlayerViews() {
-        return playerViews.values();
-    }
+        int baseTarget = clampDistance(player, playerView.getTargetDistance());
+        packetService.ensureClientCenter(player);
+        packetService.ensureClientRadius(player, baseTarget);
 
-    @Override
-    public void handleChunkLoad(Player player, me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap.ChunkCoordinate coordinate) {
-        PlayerView view = getPlayerView(player);
-        if (view != null) {
-            incrementChunksSent();
+        Set<Long> allNeededChunks = chunkService.computeSquareKeys(player, baseTarget);
+        ChunkClassification classification = classifyChunks(player, allNeededChunks);
+
+        chunkService.loadAndKeepChunks(player, classification.realChunks);
+
+        if (configService.get().performance().fakeChunks().enabled() && !classification.fakeChunks.isEmpty()) {
+            fakeChunkService.sendFakeChunks(player, classification.fakeChunks);
         }
     }
 
-    @Override
-    public void handleChunkUnload(Player player, me.mapacheee.extendedhorizons.viewdistance.entity.ViewMap.ChunkCoordinate coordinate) {
+    /**
+     * Classifies chunks into real (within server view-distance) and fake (beyond server view-distance)
+     */
+    private ChunkClassification classifyChunks(Player player, Set<Long> allChunks) {
+        int serverViewDistance = fakeChunkService.getServerViewDistance();
+        int playerChunkX = player.getLocation().getBlockX() >> 4;
+        int playerChunkZ = player.getLocation().getBlockZ() >> 4;
+
+        Set<Long> realChunks = new HashSet<>();
+        Set<Long> fakeChunks = new HashSet<>();
+
+        for (long key : allChunks) {
+            int chunkX = (int) (key & 0xFFFFFFFFL);
+            int chunkZ = (int) (key >> 32);
+            int distance = Math.max(Math.abs(chunkX - playerChunkX), Math.abs(chunkZ - playerChunkZ));
+
+            if (distance <= serverViewDistance) {
+                realChunks.add(key);
+            } else {
+                fakeChunks.add(key);
+            }
+        }
+
+        return new ChunkClassification(realChunks, fakeChunks);
     }
 
-    private void setPlayerViewDistanceSafe(Player player, int distance) {
-        try {
-            player.setViewDistance(distance);
-            player.setSendViewDistance(distance);
-        } catch (Throwable e) {
-            logger.warn("Error setting view distance for player {}", player.getName(), e);
+    /**
+     * Simple container for chunk classification result
+     */
+    private static class ChunkClassification {
+        final Set<Long> realChunks;
+        final Set<Long> fakeChunks;
+
+        ChunkClassification(Set<Long> realChunks, Set<Long> fakeChunks) {
+            this.realChunks = realChunks;
+            this.fakeChunks = fakeChunks;
         }
+    }
+
+    public PlayerView getPlayerView(UUID uuid) {
+        return playerViews.get(uuid);
     }
 }

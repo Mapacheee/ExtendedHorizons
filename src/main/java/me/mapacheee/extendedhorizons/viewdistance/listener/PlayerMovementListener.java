@@ -1,128 +1,48 @@
 package me.mapacheee.extendedhorizons.viewdistance.listener;
 
-import com.destroystokyo.paper.event.player.PlayerClientOptionsChangeEvent;
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
-import me.mapacheee.extendedhorizons.shared.config.ConfigService;
-import me.mapacheee.extendedhorizons.shared.util.MessageUtil;
-import me.mapacheee.extendedhorizons.viewdistance.service.IViewDistanceService;
-import org.bukkit.entity.Player;
+import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerChangedWorldEvent;
-import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
-import org.slf4j.Logger;
 
-/**
- * Listener for player events related to view distance management
- * Handles player join/quit, movement, and world changes
- */
+/*
+ *   Listens player movement and triggers view updates
+ *   Uses fast prefetch for large jumps (elytra) to avoid gaps
+ *   Schedules a normal update shortly after for reconciliation
+*/
 @ListenerComponent
 public class PlayerMovementListener implements Listener {
 
-    private final Logger logger;
-    private final ConfigService configService;
-    private final IViewDistanceService viewDistanceService;
-    private final MessageUtil messageUtil;
+    private final ViewDistanceService viewDistanceService;
 
     @Inject
-    public PlayerMovementListener(
-        Logger logger,
-        ConfigService configService,
-        IViewDistanceService viewDistanceService,
-        MessageUtil messageUtil
-    ) {
-        this.logger = logger;
-        this.configService = configService;
+    public PlayerMovementListener(ViewDistanceService viewDistanceService) {
         this.viewDistanceService = viewDistanceService;
-        this.messageUtil = messageUtil;
-    }
-
-    @EventHandler(priority = EventPriority.HIGH)
-    public void onPlayerJoin(PlayerJoinEvent event) {
-        Player player = event.getPlayer();
-
-        if (!configService.isEnabled()) {
-            return;
-        }
-
-        try {
-            viewDistanceService.initializePlayerView(player);
-
-            int effectiveDistance = viewDistanceService.getEffectiveViewDistance(player);
-
-            logger.debug("Initialized view distance for player {} with distance {}",
-                player.getName(), effectiveDistance);
-
-            if (configService.isWelcomeMessageEnabled()) {
-                messageUtil.sendWelcomeMessage(player, effectiveDistance);
-            }
-
-        } catch (Exception e) {
-            logger.error("Error initializing view distance for player {}", player.getName(), e);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerQuit(PlayerQuitEvent event) {
-        Player player = event.getPlayer();
-
-        try {
-            viewDistanceService.getPlayerView(player.getUniqueId());
-            logger.debug("Cleaned view distance data for player {}", player.getName());
-
-        } catch (Exception e) {
-            logger.error("Error cleaning view distance for player {}", player.getName(), e);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onPlayerMove(PlayerMoveEvent event) {
-        Player player = event.getPlayer();
-
-        if (event.getFrom().getBlockX() == event.getTo().getBlockX() &&
-            event.getFrom().getBlockZ() == event.getTo().getBlockZ()) {
-            return;
-        }
-
-        try {
-            viewDistanceService.updatePlayerView(player);
-
-        } catch (Exception e) {
-            logger.error("Error updating view distance for moving player {}", player.getName(), e);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGH)
-    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
-        Player player = event.getPlayer();
-
-        if (!configService.isEnabled()) {
-            return;
-        }
-
-        if (!configService.isWorldEnabled(player.getWorld().getName())) {
-            return;
-        }
-
-        try {
-            int defaultDistance = configService.getDefaultViewDistance();
-            viewDistanceService.setViewDistance(player, defaultDistance);
-
-            logger.debug("Reset view distance for player {} in world {}",
-                player.getName(), player.getWorld().getName());
-
-        } catch (Exception e) {
-            logger.error("Error resetting view distance for player {} in world {}",
-                player.getName(), player.getWorld().getName(), e);
-        }
     }
 
     @EventHandler
-    public void onPlayerChangeSettings(PlayerClientOptionsChangeEvent e) {
-        viewDistanceService.getPlayerView(e.getPlayer().getUniqueId()).setClientViewDistance(e.getViewDistance());
+    public void onMove(PlayerMoveEvent event) {
+        if (event.getTo() == null) return;
+        int fromChunkX = event.getFrom().getBlockX() >> 4;
+        int fromChunkZ = event.getFrom().getBlockZ() >> 4;
+        int toChunkX = event.getTo().getBlockX() >> 4;
+        int toChunkZ = event.getTo().getBlockZ() >> 4;
+        if (fromChunkX == toChunkX && fromChunkZ == toChunkZ) return;
+
+        int dX = Math.abs(toChunkX - fromChunkX);
+        int dZ = Math.abs(toChunkZ - fromChunkZ);
+        int cheb = Math.max(dX, dZ);
+
+        if (cheb >= 3) {
+            viewDistanceService.updatePlayerViewFast(event.getPlayer());
+            Bukkit.getScheduler().runTaskLater(me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getPlugin(me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.class), () -> {
+                if (event.getPlayer().isOnline()) viewDistanceService.updatePlayerView(event.getPlayer());
+            }, 5L);
+        } else {
+            viewDistanceService.updatePlayerView(event.getPlayer());
+        }
     }
 }

@@ -1,55 +1,46 @@
-###############################################################
-#                                                             #
-#             ExtendedHorizons Configuration                  #
-#                                                             #
-#   Star the project: github.com/Mapacheee/ExtendedHorizons   #
-#    Join our Discord:  https://discord.gg/yA3vD2S8Zj         #
-#                                                             #
-###############################################################
-
-# Plugin toggles
-general:
-  enabled: true
-  debug: false
+########################################################
+#                                                      #
+#         ExtendedHorizons V2 Configuration            #
+#                                                      #
+#          Support the project starring it!            #
+#        github.com/Mapacheee/ExtendedHorizons         #
+#                                                      #
+#   Join our Discord:  https://discord.gg/yA3vD2S8Zj   #
+#                                                      #
+########################################################
 
 # Global view distance limits and defaults
 view-distance:
-  max-distance: 64       # Global hard cap
-  min-distance: 2        # Global minimum
-  default-distance: 16   # Default for new players
-  enable-fake-chunks: true           # Allow sending client-only (fake) chunks
-  fake-chunks-start-distance: 10     # Start using fake chunks above this distance
+  max-distance: 64
+  min-distance: 2
+  default-distance: 32
 
 # Throughput / pacing
 performance:
-  max-chunks-per-tick: 5   # Per-tick cap used by sender
+  max-chunks-per-tick: 20
+  # Maximum chunks to keep in cache (LRU system)
+  max-cached-chunks: 2000
+  # Chunks outside this margin from player will be unloaded
+  unload-margin: 8
+  # Cleanup interval in ticks (20 ticks = 1 second)
+  cleanup-interval: 100
 
-# Network limits
-network:
-  max-bytes-per-second-per-player: 1048576  # 1 MB/s, 0 = unlimited
-
-# Per-world overrides (add blocks named exactly as your world names)
-worlds:
-  default:
+  # Fake chunks system (packets cache)
+  fake-chunks:
+    # Enable packet cache system (reduces RAM by 90%)
     enabled: true
-    max-distance: 64
-    fake-chunks-enabled: true
-  # Example world override (uncomment and adjust):
-  # world:               # exact world name
-  #   enabled: true
-  #   max-distance: 48
-  #   fake-chunks-enabled: true
-
-# Fake chunks cache settings
-fake-chunks:
-  cache-size: 64
+    # Maximum cached packets (5000 = ~150MB)
+    max-cached-packets: 5000
+    # Enable GZIP compression for packets (slower but saves ~50% RAM)
+    use-compression: false
+    # Cache cleanup interval in seconds
+    cache-cleanup-interval: 300
 
 # Database (SQLite) used for player view persistence
 database:
   enabled: true
   file-name: "extendedhorizons"
 
-# Integrations
 integrations:
   placeholderapi:
     enabled: true
@@ -57,7 +48,6 @@ integrations:
     enabled: true
     check-interval: 60 # seconds
     use-group-permissions: true
-
 
 # Message toggles (actual texts live in messages.yml)
 messages:
