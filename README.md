@@ -22,9 +22,9 @@
 ---
 
 ## Installation
-1. Download **ExtendedHorizons.jar**  
-2. Download dependencies  
-3. Put all of them inside your `/plugins` folder  
+1. Download **ExtendedHorizons.jar**
+2. Download dependencies
+3. Put all of them inside your `/plugins` folder
 4. Start your server — done
 
 ---
@@ -32,49 +32,38 @@
 ## Config
 
 ```yml
-# Plugin toggles
-general:
-  enabled: true
-  debug: false
-
 # Global view distance limits and defaults
 view-distance:
-  max-distance: 64       # Global hard cap
-  min-distance: 2        # Global minimum
-  default-distance: 16   # Default for new players
-  enable-fake-chunks: true           # Allow sending client-only (fake) chunks
-  fake-chunks-start-distance: 10     # Start using fake chunks above this distance
+  max-distance: 64
+  min-distance: 2
+  default-distance: 32
 
 # Throughput / pacing
 performance:
-  max-chunks-per-tick: 5   # Per-tick cap used by sender
+  max-chunks-per-tick: 20
+  # Maximum chunks to keep in cache (LRU system)
+  max-cached-chunks: 2000
+  # Chunks outside this margin from player will be unloaded
+  unload-margin: 8
+  # Cleanup interval in ticks (20 ticks = 1 second)
+  cleanup-interval: 100
 
-# Network limits
-network:
-  max-bytes-per-second-per-player: 1048576  # 1 MB/s, 0 = unlimited
-
-# Per-world overrides (add blocks named exactly as your world names)
-worlds:
-  default:
+  # Fake chunks system (packets cache)
+  fake-chunks:
+    # Enable packet cache system (reduces RAM by 90%)
     enabled: true
-    max-distance: 64
-    fake-chunks-enabled: true
-  # Example world override (uncomment and adjust):
-  # world:               # exact world name
-  #   enabled: true
-  #   max-distance: 48
-  #   fake-chunks-enabled: true
-
-# Fake chunks cache settings
-fake-chunks:
-  cache-size: 64
+    # Maximum cached packets (5000 = ~150MB)
+    max-cached-packets: 5000
+    # Enable GZIP compression for packets (slower but saves ~50% RAM)
+    use-compression: false
+    # Cache cleanup interval in seconds
+    cache-cleanup-interval: 300
 
 # Database (SQLite) used for player view persistence
 database:
   enabled: true
   file-name: "extendedhorizons"
 
-# Integrations
 integrations:
   placeholderapi:
     enabled: true
@@ -83,14 +72,13 @@ integrations:
     check-interval: 60 # seconds
     use-group-permissions: true
 
-
 # Message toggles (actual texts live in messages.yml)
 messages:
   welcome-message:
     enabled: true
 ```
 ## Messages
-- All texts are in **messages.yml**, with HEX color support: ``&#RRGGBB``  
+- All texts are in **messages.yml**, with MiniMessage support.
 - The welcome message is controlled by `messages.welcome-message.enabled` in **config.yml**, and its text is in **messages.yml**.
 
 ---
@@ -110,16 +98,13 @@ Alias base: `/eh` (also: `extendedhorizons`, `horizons`, `viewdistance`, `vd`)
 | `/eh resetplayer <player>` | Resets another player's distance | `extendedhorizons.admin` |
 | `/eh reload` | Reloads settings | `extendedhorizons.admin` |
 | `/eh stats` | Displays statistics | `extendedhorizons.admin` |
-| `/eh debug` | Toggles/checks debug mode | `extendedhorizons.admin` |
-| `/eh worldinfo <world>` | Displays the maximum configured for a world | `extendedhorizons.admin` |
-| `/eh worldhelp` | Configuration help per world | `extendedhorizons.admin` |
 
 ---
 
 ## Permissions
-- `extendedhorizons.use` — player commands  
-- `extendedhorizons.admin` — admin commands  
-- `extendedhorizons.bypass.limits` — ignores boundaries when setting distances  
+- `extendedhorizons.use` — player commands
+- `extendedhorizons.admin` — admin commands
+- `extendedhorizons.bypass.limits` — ignores boundaries when setting distances
 
 ### LuckPerms Integration
 If `integrations.luckperms.enabled` is true, the plugin will check limits per group/player.  
@@ -128,25 +113,20 @@ You can combine it with `use-group-permissions` and your group policies.
 ---
 
 ## Placeholders (PlaceholderAPI)
-- `%extendedhorizons_distance%` — current effective distance  
-- `%extendedhorizons_max_distance%` — maximum allowed (world/permission dependent)  
-- `%extendedhorizons_target_distance%` — target distance  
+- `%extendedhorizons_view_distance%` — current effective distance
 
 ---
 
 ## Operation
-- Distance is managed per player, with global and per-world limits.  
-- Fake chunks are sent to the client when the target distance exceeds `fake-chunks-start-distance` and if enabled globally and per world.  
-- PacketEvents is **required** (not included in the JAR).  
-- Fully compatible with **Paper** and **Folia**; Folia detection can be disabled.  
-
----
-
-## Build
-```bat
-./gradlew.bat clean shadowJar
-```
-The JAR is generated in `build/libs/`.
+- Distance is managed per player with global limits configured in `config.yml`
+- **Dual chunk system:**
+    - **Real chunks** (within server view-distance): Managed naturally by the server
+    - **Fake chunks** (beyond server view-distance): Sent via packet cache when `fake-chunks.enabled: true`
+- The server's view-distance (from `server.properties`) acts as the boundary between real and fake chunks
+- All chunk processing is done **100% asynchronously** to maintain server performance
+- **LRU cache system** automatically manages memory with configurable limits
+- PacketEvents is **required**
+- Fully compatible with **Paper 1.21+**
 
 ---
 # Support
@@ -156,5 +136,3 @@ The JAR is generated in `build/libs/`.
 <div align="center">
   <img width="1920" height="578" alt="photo-collage png(1)(1)" src="https://github.com/user-attachments/assets/db8c8477-4964-4466-8b01-9c4ed3a6d0a2" />
 </div>
-
-
