@@ -50,11 +50,11 @@ performance:
 
   # Fake chunks system (packets cache)
   fake-chunks:
-    # Enable packet cache system (reduces RAM by 90%)
+    # Enable packet cache system
     enabled: true
     # Maximum cached packets (5000 = ~150MB)
     max-cached-packets: 5000
-    # Enable GZIP compression for packets (slower but saves ~50% RAM)
+    # Enable GZIP compression for packets (slower but saves RAM)
     use-compression: false
     # Cache cleanup interval in seconds
     cache-cleanup-interval: 300
