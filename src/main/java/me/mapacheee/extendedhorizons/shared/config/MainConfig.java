@@ -22,9 +22,6 @@ public record MainConfig(
     @ConfigSerializable
     public record PerformanceConfig(
             int maxChunksPerTick,
-            int maxCachedChunks,
-            int unloadMargin,
-            int cleanupInterval,
             FakeChunksConfig fakeChunks
     ) {
         @ConfigSerializable

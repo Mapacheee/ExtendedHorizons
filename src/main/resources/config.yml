@@ -15,15 +15,10 @@ view-distance:
   min-distance: 2
   default-distance: 32
 
-# Throughput / pacing
+# Performance settings
 performance:
+  # Maximum chunks to load per tick (for async loading)
   max-chunks-per-tick: 20
-  # Maximum chunks to keep in cache (LRU system)
-  max-cached-chunks: 2000
-  # Chunks outside this margin from player will be unloaded
-  unload-margin: 8
-  # Cleanup interval in ticks (20 ticks = 1 second)
-  cleanup-interval: 100
 
   # Fake chunks system (packets cache)
   fake-chunks:
@@ -34,7 +29,7 @@ performance:
     # Enable GZIP compression for packets (slower but saves RAM)
     use-compression: false
     # Cache cleanup interval in seconds
-    cache-cleanup-interval: 300
+    cache-cleanup-interval: 20
 
 # Database (SQLite) used for player view persistence
 database:

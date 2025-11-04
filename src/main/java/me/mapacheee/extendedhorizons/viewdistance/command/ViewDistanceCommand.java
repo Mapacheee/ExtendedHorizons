@@ -192,15 +192,9 @@ public class ViewDistanceCommand {
         }
         int avg = countWithView == 0 ? 0 : (sum / countWithView);
 
-        // Real chunks statistics
-        int cachedRealChunks = chunkService.getCachedChunkCount();
-        int maxCached = configService.get().performance().maxCachedChunks();
-
-        // Fake chunks statistics
         int cachedFakePackets = fakeChunkService.getCacheSize();
         double fakeMemoryMB = fakeChunkService.getEstimatedMemoryUsageMB();
 
-        // Legacy cache
         int cacheEntries = cacheService.size();
 
         sender.sendMessage("§3========= §6ExtendedHorizons Stats §3=========");
@@ -208,8 +202,7 @@ public class ViewDistanceCommand {
         sender.sendMessage("§3Average Distance: §6" + avg + " §3chunks");
         sender.sendMessage("§3Server View Distance: §6" + fakeChunkService.getServerViewDistance() + " §3chunks");
         sender.sendMessage("§3");
-        sender.sendMessage("§3Real Chunks: §d" + cachedRealChunks + "§3/§d" + maxCached);
-        sender.sendMessage("§3Fake Chunks (Packets): §d" + cachedFakePackets);
+        sender.sendMessage("§3Fake Chunks Cache: §d" + cachedFakePackets + " §3packets");
         sender.sendMessage("§3Fake Memory Usage: §6" + String.format("%.2f", fakeMemoryMB) + " MB");
         sender.sendMessage("§3Cache Hit Rate: §6" + String.format("%.1f%%", fakeChunkService.getCacheHitRate()));
         sender.sendMessage("§3Legacy Cache: §d" + cacheEntries);

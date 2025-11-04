@@ -89,7 +89,6 @@ public class ViewDistanceService {
             storageService.savePlayerData(new me.mapacheee.extendedhorizons.shared.storage.PlayerData(player.getUniqueId(), playerView.getTargetDistance()));
         }
 
-        chunkService.clearPlayerChunks(player);
         fakeChunkService.clearPlayerFakeChunks(player);
     }
 
@@ -142,16 +141,6 @@ public class ViewDistanceService {
         Set<Long> allNeededChunks = chunkService.computeSquareKeys(player, playerView.getTargetDistance());
         ChunkClassification classification = classifyChunks(player, allNeededChunks);
 
-        Set<Long> currentRealChunks = chunkService.getPlayerChunks(player.getUniqueId());
-        Set<Long> toUnload = new HashSet<>(currentRealChunks);
-        toUnload.removeAll(classification.realChunks);
-
-        if (!toUnload.isEmpty()) {
-            chunkService.unloadPlayerChunks(player, toUnload);
-        }
-
-        chunkService.loadAndKeepChunks(player, classification.realChunks);
-
         if (configService.get().performance().fakeChunks().enabled() && !classification.fakeChunks.isEmpty()) {
             fakeChunkService.sendFakeChunks(player, classification.fakeChunks);
         }
@@ -170,8 +159,6 @@ public class ViewDistanceService {
 
         Set<Long> allNeededChunks = chunkService.computeSquareKeys(player, baseTarget);
         ChunkClassification classification = classifyChunks(player, allNeededChunks);
-
-        chunkService.loadAndKeepChunks(player, classification.realChunks);
 
         if (configService.get().performance().fakeChunks().enabled() && !classification.fakeChunks.isEmpty()) {
             fakeChunkService.sendFakeChunks(player, classification.fakeChunks);
