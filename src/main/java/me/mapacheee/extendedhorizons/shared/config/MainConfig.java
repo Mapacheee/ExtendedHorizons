@@ -37,11 +37,13 @@ public record MainConfig(
     public record DatabaseConfig(boolean enabled, String fileName) {}
 
     @ConfigSerializable
-    public record IntegrationsConfig(PlaceholderIntegration placeholderapi, LuckPermsIntegration luckperms) {
+    public record IntegrationsConfig(PlaceholderIntegration placeholderapi, LuckPermsIntegration luckperms, CraftEngineIntegration craftEngine) {
         @ConfigSerializable
         public record PlaceholderIntegration(boolean enabled) {}
         @ConfigSerializable
         public record LuckPermsIntegration(boolean enabled, int checkInterval, boolean useGroupPermissions) {}
+        @ConfigSerializable
+        public record CraftEngineIntegration(boolean enabled) {}
     }
 
     @ConfigSerializable

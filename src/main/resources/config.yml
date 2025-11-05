@@ -43,6 +43,8 @@ integrations:
     enabled: true
     check-interval: 60 # seconds
     use-group-permissions: true
+  craft-engine:
+    enabled: false
 
 # Message toggles (actual texts live in messages.yml)
 messages:

@@ -6,6 +6,7 @@ import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerCh
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import me.mapacheee.extendedhorizons.integration.craftengine.CraftEngineService;
 import me.mapacheee.extendedhorizons.integration.packetevents.PacketChunkCacheService;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import org.slf4j.Logger;
@@ -29,9 +30,12 @@ import java.util.concurrent.Executors;
 @Service
 public class FakeChunkService {
 
+    @Inject
     private Logger logger;
+
     private final ConfigService configService;
     private final PacketChunkCacheService columnCache;
+    private final CraftEngineService craftEngineService;
     private final Plugin plugin = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
     private final Map<UUID, Set<Long>> playerFakeChunks = new ConcurrentHashMap<>();
     private final Set<Long> generatingChunks = ConcurrentHashMap.newKeySet();
@@ -39,9 +43,10 @@ public class FakeChunkService {
     private static final boolean DEBUG = false;
 
     @Inject
-    public FakeChunkService(ConfigService configService, PacketChunkCacheService columnCache) {
+    public FakeChunkService(ConfigService configService, PacketChunkCacheService columnCache, CraftEngineService craftEngineService) {
         this.configService = configService;
         this.columnCache = columnCache;
+        this.craftEngineService = craftEngineService;
     }
 
     /**
@@ -100,6 +105,7 @@ public class FakeChunkService {
      */
     private int sendCachedChunks(Player player, List<Long> keys, Set<Long> sentTracker) {
         int sent = 0;
+        World world = player.getWorld();
 
         for (long key : keys) {
             int chunkX = (int) (key & 0xFFFFFFFFL);
@@ -107,12 +113,33 @@ public class FakeChunkService {
 
             Column column = columnCache.get(chunkX, chunkZ);
             if (column != null) {
-                if (sendColumnToPlayer(player, column)) {
+                try {
+                    org.bukkit.Chunk chunk = world.getChunkAt(chunkX, chunkZ);
+                    org.bukkit.craftbukkit.CraftChunk craftChunk = (org.bukkit.craftbukkit.CraftChunk) chunk;
+                    net.minecraft.world.level.chunk.LevelChunk nmsChunk =
+                            (net.minecraft.world.level.chunk.LevelChunk) craftChunk.getHandle(net.minecraft.world.level.chunk.status.ChunkStatus.FULL);
+
+                    net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket nmsPacket =
+                            new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
+                                    nmsChunk,
+                                    nmsChunk.getLevel().getLightEngine(),
+                                    null,
+                                    null
+                            );
+
+                    org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer = (org.bukkit.craftbukkit.entity.CraftPlayer) player;
+                    net.minecraft.server.level.ServerPlayer nmsPlayer = craftPlayer.getHandle();
+                    nmsPlayer.connection.send(nmsPacket);
+
                     sentTracker.add(key);
                     sent++;
-                } else {
+
                     if (DEBUG) {
-                        logger.warn("[EH] Column null or invalid for {},{}, will regenerate", chunkX, chunkZ);
+                        logger.info("[EH] Sent cached chunk " + chunkX + "," + chunkZ + " to " + player.getName() + " (via NMS)");
+                    }
+                } catch (Exception e) {
+                    if (DEBUG) {
+                        logger.warn("[EH] Failed to send cached chunk {},{}: {}", chunkX, chunkZ, e.getMessage());
                     }
                     List<Long> toRegenerate = new ArrayList<>();
                     toRegenerate.add(key);
@@ -152,51 +179,42 @@ public class FakeChunkService {
                     return;
                 }
 
-                try {
-                    org.bukkit.craftbukkit.CraftChunk craftChunk = (org.bukkit.craftbukkit.CraftChunk) chunk;
-                    net.minecraft.world.level.chunk.LevelChunk nmsChunk =
-                            (net.minecraft.world.level.chunk.LevelChunk) craftChunk.getHandle(net.minecraft.world.level.chunk.status.ChunkStatus.FULL);
-
-                    net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet =
-                            new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
-                                    nmsChunk,
-                                    nmsChunk.getLevel().getLightEngine(),
-                                    null,
-                                    null
-                            );
-
-                    Bukkit.getScheduler().runTask(plugin, () -> {
-                        if (!player.isOnline()) {
-                            generatingChunks.remove(key);
-                            return;
-                        }
-
-                        try {
-                            org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer = (org.bukkit.craftbukkit.entity.CraftPlayer) player;
-                            net.minecraft.server.level.ServerPlayer nmsPlayer = craftPlayer.getHandle();
-
-                            nmsPlayer.connection.send(packet);
-
-                            sentTracker.add(key);
-                            generatingChunks.remove(key);
-
-                            if (DEBUG) {
-                                logger.info("[EH] Sent fake chunk " + chunkX + "," + chunkZ + " to " + player.getName());
-                            }
-                        } catch (Exception e) {
-                            generatingChunks.remove(key);
-                            if (DEBUG) {
-                                logger.warn("[EH] Failed to send chunk packet: " + e.getMessage());
-                            }
-                        }
-                    });
-
-                } catch (Exception e) {
-                    generatingChunks.remove(key);
-                    if (DEBUG) {
-                        logger.warn("[EH] Failed to create chunk packet " + chunkX + "," + chunkZ + ": " + e.getMessage());
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) {
+                        generatingChunks.remove(key);
+                        return;
                     }
-                }
+
+                    try {
+                        org.bukkit.craftbukkit.CraftChunk craftChunk = (org.bukkit.craftbukkit.CraftChunk) chunk;
+                        net.minecraft.world.level.chunk.LevelChunk nmsChunk =
+                                (net.minecraft.world.level.chunk.LevelChunk) craftChunk.getHandle(net.minecraft.world.level.chunk.status.ChunkStatus.FULL);
+
+                        net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket nmsPacket =
+                                new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
+                                        nmsChunk,
+                                        nmsChunk.getLevel().getLightEngine(),
+                                        null,
+                                        null
+                                );
+
+                        org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer = (org.bukkit.craftbukkit.entity.CraftPlayer) player;
+                        net.minecraft.server.level.ServerPlayer nmsPlayer = craftPlayer.getHandle();
+                        nmsPlayer.connection.send(nmsPacket);
+
+                        sentTracker.add(key);
+                        generatingChunks.remove(key);
+
+                        if (DEBUG) {
+                            logger.info("[EH] Sent fake chunk " + chunkX + "," + chunkZ + " to " + player.getName() + " (via NMS)");
+                        }
+                    } catch (Exception e) {
+                        generatingChunks.remove(key);
+                        if (DEBUG) {
+                            logger.warn("[EH] Failed to send chunk packet: " + e.getMessage());
+                        }
+                    }
+                });
             }, chunkProcessor)
             .exceptionally(throwable -> {
                 generatingChunks.remove(key);
