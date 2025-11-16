@@ -30,7 +30,9 @@ public record MainConfig(
                 boolean enabled,
                 int maxCachedPackets,
                 boolean useCompression,
-                int cacheCleanupInterval
+                int cacheCleanupInterval,
+                boolean enableMemoryCache,
+                int maxMemoryCacheSize
         ) {}
     }
 

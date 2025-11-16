@@ -34,6 +34,12 @@ performance:
     use-compression: false
     # Cache cleanup interval in seconds
     cache-cleanup-interval: 20
+    # Enable NMS chunk memory cache (reuses loaded chunks, saves CPU but uses RAM)
+    # Recommended: true for <50 players, false for >100 players or low RAM servers
+    enable-memory-cache: true
+    # Maximum chunks to cache in memory (1000 = ~40-80MB depending on chunk complexity)
+    # Increase for more players in same area, decrease for dispersed players or low RAM
+    max-memory-cache-size: 1000
 
 # Database (SQLite) used for player view persistence
 database:

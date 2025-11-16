@@ -81,6 +81,16 @@ public class FakeChunkService {
         this.configService = configService;
         this.columnCache = columnCache;
         
+        int maxCacheSize = configService.get().performance().fakeChunks().maxMemoryCacheSize();
+        this.chunkMemoryCache = Collections.synchronizedMap(
+                new LinkedHashMap<Long, LevelChunk>(16, 0.75f, true) {
+                    @Override
+                    protected boolean removeEldestEntry(Map.Entry<Long, LevelChunk> eldest) {
+                        return size() > maxCacheSize;
+                    }
+                }
+        );
+        
         int configuredThreads = configService.get().performance().chunkProcessorThreads();
         int threadCount = configuredThreads > 0 
             ? configuredThreads 
@@ -457,12 +467,17 @@ public class FakeChunkService {
      * Attempts to get a chunk from the servers memory cache or our own cache
      */
     private LevelChunk getChunkFromMemoryCache(World world, int chunkX, int chunkZ) {
+        if (!configService.get().performance().fakeChunks().enableMemoryCache()) {
+            return null;
+        }
+        
         long chunkKey = packChunkKey(chunkX, chunkZ);
         
-        // First check our own memory cache
-        LevelChunk cached = chunkMemoryCache.get(chunkKey);
-        if (cached != null) {
-            return cached;
+        synchronized (chunkMemoryCache) {
+            LevelChunk cached = chunkMemoryCache.get(chunkKey);
+            if (cached != null) {
+                return cached;
+            }
         }
         
         // Then check servers memory cache
@@ -491,17 +506,13 @@ public class FakeChunkService {
      * Caches a chunk in memory for reuse
      */
     private void cacheChunkInMemory(long chunkKey, LevelChunk chunk) {
-        if (chunkMemoryCache.size() >= MAX_MEMORY_CACHE_SIZE) {
-            if (chunkMemoryCache.size() >= MAX_MEMORY_CACHE_SIZE * 1.2) {
-                int toRemove = MAX_MEMORY_CACHE_SIZE / 5;
-                Iterator<Long> it = chunkMemoryCache.keySet().iterator();
-                for (int i = 0; i < toRemove && it.hasNext(); i++) {
-                    it.next();
-                    it.remove();
-                }
-            }
+        if (!configService.get().performance().fakeChunks().enableMemoryCache()) {
+            return;
         }
-        chunkMemoryCache.put(chunkKey, chunk);
+        
+        synchronized (chunkMemoryCache) {
+            chunkMemoryCache.put(chunkKey, chunk);
+        }
     }
     
     /**
@@ -771,6 +782,5 @@ public class FakeChunkService {
      * Cache for NMS chunks already loaded in memory
      * Reuses chunks without regenerating them
      */
-    private final Map<Long, LevelChunk> chunkMemoryCache = new ConcurrentHashMap<>();
-    private static final int MAX_MEMORY_CACHE_SIZE = 1000;
+    private final Map<Long, LevelChunk> chunkMemoryCache;
 }
