@@ -23,12 +23,43 @@ public class PlayerTeleportWorldListener implements Listener {
 
     @EventHandler
     public void onTeleport(PlayerTeleportEvent event) {
-        viewDistanceService.updatePlayerViewFast(event.getPlayer());
+
+        org.bukkit.Bukkit.getScheduler().runTask(
+            me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getPlugin(
+                me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.class
+            ),
+            () -> {
+                if (event.getPlayer().isOnline()) {
+                    viewDistanceService.updatePlayerView(event.getPlayer());
+                    
+                    org.bukkit.Bukkit.getScheduler().runTaskLater(
+                        me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getPlugin(
+                            me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.class
+                        ),
+                        () -> {
+                            if (event.getPlayer().isOnline()) {
+                                viewDistanceService.updatePlayerView(event.getPlayer());
+                            }
+                        },
+                        5L
+                    );
+                }
+            }
+        );
     }
 
     @EventHandler
     public void onWorldChange(PlayerChangedWorldEvent event) {
-        viewDistanceService.updatePlayerViewFast(event.getPlayer());
+        org.bukkit.Bukkit.getScheduler().runTask(
+            me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getPlugin(
+                me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.class
+            ),
+            () -> {
+                if (event.getPlayer().isOnline()) {
+                    viewDistanceService.updatePlayerView(event.getPlayer());
+                }
+            }
+        );
     }
 }
 

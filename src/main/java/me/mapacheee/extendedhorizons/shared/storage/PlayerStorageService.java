@@ -3,7 +3,10 @@ package me.mapacheee.extendedhorizons.shared.storage;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
+import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.slf4j.Logger;
 
 import java.io.File;
@@ -22,12 +25,14 @@ public class PlayerStorageService {
 
     private final ConfigService configService;
     private final Logger logger;
+    private final Plugin plugin;
     private String databaseUrl;
 
     @Inject
     public PlayerStorageService(ConfigService configService, Logger logger) {
         this.configService = configService;
         this.logger = logger;
+        this.plugin = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
     }
 
     @OnEnable
@@ -37,7 +42,7 @@ public class PlayerStorageService {
             return;
         }
 
-        File dbFile = new File("plugins/ExtendedHorizons/" + configService.get().database().fileName() + ".db");
+        File dbFile = new File(plugin.getDataFolder(), configService.get().database().fileName() + ".db");
         if (!dbFile.getParentFile().exists()) {
             dbFile.getParentFile().mkdirs();
         }
@@ -56,7 +61,7 @@ public class PlayerStorageService {
     }
 
     /**
-     * Retrieves a player's data from the database asynchronously.
+     * Retrieves a players data from the database asynchronously.
      * @param uuid The UUID of the player to retrieve.
      * @return A CompletableFuture containing an Optional of PlayerData.
      */
@@ -81,7 +86,7 @@ public class PlayerStorageService {
     }
 
     /**
-     * Saves or updates a player's data in the database asynchronously.
+     * Saves or updates a players data in the database asynchronously.
      * @param playerData The PlayerData object to save.
      * @return A CompletableFuture that completes when the operation is finished.
      */

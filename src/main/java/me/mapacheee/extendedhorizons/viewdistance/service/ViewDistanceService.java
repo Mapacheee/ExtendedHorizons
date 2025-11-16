@@ -94,8 +94,16 @@ public class ViewDistanceService {
 
     /**
      * Sets player target distance with clamp and triggers update.
+     * 
+     * @param player The player to set view distance for (must not be null and must be online)
+     * @param requestedDistance The requested view distance
+     * @throws IllegalArgumentException if player is null or not online
      */
     public void setPlayerDistance(Player player, int requestedDistance) {
+        if (player == null || !player.isOnline()) {
+            throw new IllegalArgumentException("Player must not be null and must be online");
+        }
+        
         PlayerView view = playerViews.computeIfAbsent(player.getUniqueId(), id -> new PlayerView(player, clampDistance(player, requestedDistance)));
         int clamped = clampDistance(player, requestedDistance);
         view.setTargetDistance(clamped);
@@ -138,7 +146,7 @@ public class ViewDistanceService {
         packetService.ensureClientCenter(player);
         packetService.ensureClientRadius(player, playerView.getTargetDistance());
 
-        Set<Long> allNeededChunks = chunkService.computeSquareKeys(player, playerView.getTargetDistance());
+        Set<Long> allNeededChunks = chunkService.computeCircularKeys(player, playerView.getTargetDistance());
         ChunkClassification classification = classifyChunks(player, allNeededChunks);
 
         if (configService.get().performance().fakeChunks().enabled() && !classification.fakeChunks.isEmpty()) {
@@ -157,7 +165,7 @@ public class ViewDistanceService {
         packetService.ensureClientCenter(player);
         packetService.ensureClientRadius(player, baseTarget);
 
-        Set<Long> allNeededChunks = chunkService.computeSquareKeys(player, baseTarget);
+        Set<Long> allNeededChunks = chunkService.computeCircularKeys(player, baseTarget);
         ChunkClassification classification = classifyChunks(player, allNeededChunks);
 
         if (configService.get().performance().fakeChunks().enabled() && !classification.fakeChunks.isEmpty()) {
@@ -176,12 +184,17 @@ public class ViewDistanceService {
         Set<Long> realChunks = new HashSet<>();
         Set<Long> fakeChunks = new HashSet<>();
 
+        double serverRadiusSquared = (serverViewDistance + 0.5) * (serverViewDistance + 0.5);
+
         for (long key : allChunks) {
             int chunkX = (int) (key & 0xFFFFFFFFL);
             int chunkZ = (int) (key >> 32);
-            int distance = Math.max(Math.abs(chunkX - playerChunkX), Math.abs(chunkZ - playerChunkZ));
+            
+            int dx = chunkX - playerChunkX;
+            int dz = chunkZ - playerChunkZ;
+            double distanceSquared = dx * dx + dz * dz;
 
-            if (distance <= serverViewDistance) {
+            if (distanceSquared <= serverRadiusSquared) {
                 realChunks.add(key);
             } else {
                 fakeChunks.add(key);
@@ -193,8 +206,10 @@ public class ViewDistanceService {
 
     /**
      * Simple container for chunk classification result
+     * realChunks are kept for potential future use (e.g., debugging, statistics)
      */
     private static class ChunkClassification {
+        @SuppressWarnings("unused")
         final Set<Long> realChunks;
         final Set<Long> fakeChunks;
 

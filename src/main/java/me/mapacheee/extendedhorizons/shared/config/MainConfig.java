@@ -22,7 +22,8 @@ public record MainConfig(
     @ConfigSerializable
     public record PerformanceConfig(
             int maxChunksPerTick,
-            FakeChunksConfig fakeChunks
+            FakeChunksConfig fakeChunks,
+            int chunkProcessorThreads
     ) {
         @ConfigSerializable
         public record FakeChunksConfig(

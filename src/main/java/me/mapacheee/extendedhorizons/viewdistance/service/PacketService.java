@@ -3,7 +3,6 @@ package me.mapacheee.extendedhorizons.viewdistance.service;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.craftbukkit.CraftChunk;
@@ -12,6 +11,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -26,16 +26,13 @@ import java.util.concurrent.CompletableFuture;
 @Service
 public class PacketService {
 
-    private Logger logger;
-    private final ConfigService configService;
+    private static final Logger logger = LoggerFactory.getLogger(PacketService.class);
     private final Plugin plugin = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
 
     private static final boolean DEBUG = false;
 
     @Inject
-    public PacketService(ConfigService configService) {
-        this.configService = configService;
-    }
+    public PacketService() {}
 
     /**
      * Ensures client has correct chunk cache radius
@@ -59,7 +56,6 @@ public class PacketService {
 
     /**
      * Sends a chunk directly to the player using NMS
-     * This is the CRITICAL method that actually makes chunks visible
      */
     public CompletableFuture<Void> sendChunk(Player player, Chunk chunk) {
         CompletableFuture<Void> future = new CompletableFuture<>();
@@ -81,6 +77,7 @@ public class PacketService {
 
                 LevelChunk nmsChunk = (LevelChunk) chunkAccess;
 
+                @SuppressWarnings("deprecation")
                 ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
                     nmsChunk,
                     nmsChunk.getLevel().getLightEngine(),
@@ -130,6 +127,8 @@ public class PacketService {
 
                     LevelChunk nmsChunk = (LevelChunk) chunkAccess;
 
+                    // Note: Constructor is deprecated but no alternative available in current Paper version
+                    @SuppressWarnings("deprecation")
                     ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
                         nmsChunk,
                         nmsChunk.getLevel().getLightEngine(),
@@ -147,7 +146,7 @@ public class PacketService {
                 }
             }
 
-            if (DEBUG && sent > 0) {
+            if (DEBUG) {
                 logger.info("[EH] Sent {} chunks to {}", sent, player.getName());
             }
 
@@ -155,20 +154,6 @@ public class PacketService {
         });
 
         return result;
-    }
-
-    /**
-     * Returns 0 - no longer tracking manual chunk sends
-     */
-    public long getTotalChunksSent() {
-        return 0;
-    }
-
-    /**
-     * Returns 0 - no longer tracking manual chunk sends
-     */
-    public long getFakeChunksSent() {
-        return 0;
     }
 
     /**
@@ -192,6 +177,8 @@ public class PacketService {
                 if (chunkAccess instanceof LevelChunk) {
                     LevelChunk nmsChunk = (LevelChunk) chunkAccess;
 
+                    // Note: Constructor is deprecated but no alternative available in current Paper version
+                    @SuppressWarnings("deprecation")
                     ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
                         nmsChunk,
                         nmsChunk.getLevel().getLightEngine(),

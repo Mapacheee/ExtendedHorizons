@@ -19,6 +19,10 @@ view-distance:
 performance:
   # Maximum chunks to load per tick (for async loading)
   max-chunks-per-tick: 20
+  
+  # Number of threads for parallel chunk processing (0 = auto-detect based on CPU cores)
+  # Recommended: 0 (auto) or 4-8 for most servers
+  chunk-processor-threads: 0
 
   # Fake chunks system (packets cache)
   fake-chunks:

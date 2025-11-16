@@ -58,7 +58,11 @@ public class PacketChunkCacheService {
 
                     long key = getKey(column.getX(), column.getZ());
                     cache.put(key, new Entry(column));
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    // Silently ignore packet processing errors to avoid spam
+                    // These are typically version compatibility issues or malformed packets
+                    // Logging would create excessive noise in production
+                }
             }
         });
 

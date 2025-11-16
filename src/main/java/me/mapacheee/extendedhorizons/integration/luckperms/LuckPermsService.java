@@ -107,7 +107,10 @@ public class LuckPermsService {
                 if (best > 0) return best;
             }
             return fallback;
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            // LuckPerms API calls can fail due to async loading or permission system issues
+            // Return fallback value to ensure plugin continues functioning
+            // Logging would create noise for expected async timing issues
             return fallback;
         }
     }

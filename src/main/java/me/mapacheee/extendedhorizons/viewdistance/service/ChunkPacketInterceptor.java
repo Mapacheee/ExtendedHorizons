@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 public class ChunkPacketInterceptor extends PacketListenerAbstract {
 
     private Logger logger;
+    @SuppressWarnings("unused")
     private final ChunkPacketCache packetCache;
     private final ConfigService configService;
 

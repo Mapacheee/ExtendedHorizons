@@ -7,7 +7,6 @@ import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.integration.packetevents.PacketChunkCacheService;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import me.mapacheee.extendedhorizons.shared.service.MessageService;
-import me.mapacheee.extendedhorizons.viewdistance.service.PacketService;
 import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -29,9 +28,7 @@ public class ViewDistanceCommand {
     private final MessageService messageService;
     private final ConfigService configService;
     private final ReloadServiceManager reloadServiceManager;
-    private final PacketService packetService;
     private final PacketChunkCacheService cacheService;
-    private final me.mapacheee.extendedhorizons.viewdistance.service.ChunkService chunkService;
     private final me.mapacheee.extendedhorizons.viewdistance.service.FakeChunkService fakeChunkService;
 
     @Inject
@@ -40,18 +37,14 @@ public class ViewDistanceCommand {
             MessageService messageService,
             ConfigService configService,
             ReloadServiceManager reloadServiceManager,
-            PacketService packetService,
             PacketChunkCacheService cacheService,
-            me.mapacheee.extendedhorizons.viewdistance.service.ChunkService chunkService,
             me.mapacheee.extendedhorizons.viewdistance.service.FakeChunkService fakeChunkService
     ) {
         this.viewDistanceService = viewDistanceService;
         this.messageService = messageService;
         this.configService = configService;
         this.reloadServiceManager = reloadServiceManager;
-        this.packetService = packetService;
         this.cacheService = cacheService;
-        this.chunkService = chunkService;
         this.fakeChunkService = fakeChunkService;
     }
 

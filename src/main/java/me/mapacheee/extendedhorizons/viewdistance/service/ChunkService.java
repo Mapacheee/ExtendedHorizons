@@ -2,11 +2,14 @@ package me.mapacheee.extendedhorizons.viewdistance.service;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
+import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,10 +26,12 @@ public class ChunkService {
 
     private static final Logger logger = LoggerFactory.getLogger(ChunkService.class);
     private final ConfigService configService;
+    private final Plugin plugin;
 
     @Inject
     public ChunkService(ConfigService configService) {
         this.configService = configService;
+        this.plugin = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
     }
 
     /**
@@ -78,12 +83,12 @@ public class ChunkService {
                         return null;
                     })
                     .thenCompose(ignored2 -> {
-                        CompletableFuture<Void> delay = new CompletableFuture<>();
-                        Bukkit.getScheduler().runTaskLater(
-                            Bukkit.getPluginManager().getPlugin("ExtendedHorizons"),
-                            () -> delay.complete(null),
-                            2L
-                        );
+                    CompletableFuture<Void> delay = new CompletableFuture<>();
+                    Bukkit.getScheduler().runTaskLater(
+                        plugin,
+                        () -> delay.complete(null),
+                        2L
+                    );
                         return delay;
                     });
             });
@@ -93,19 +98,36 @@ public class ChunkService {
     }
 
     /**
-     * Computes chunk keys in a square pattern around the player
+     * Computes chunk keys in a circular pattern around the player
      */
-    public Set<Long> computeSquareKeys(Player player, int radius) {
+    public Set<Long> computeCircularKeys(Player player, int radius) {
         int cx = player.getLocation().getBlockX() >> 4;
         int cz = player.getLocation().getBlockZ() >> 4;
 
         Set<Long> keys = new HashSet<>();
+        double radiusSquared = (radius + 0.5) * (radius + 0.5);
+        
         for (int x = cx - radius; x <= cx + radius; x++) {
             for (int z = cz - radius; z <= cz + radius; z++) {
-                keys.add(packChunkKey(x, z));
+                int dx = x - cx;
+                int dz = z - cz;
+                double distanceSquared = dx * dx + dz * dz;
+                
+                if (distanceSquared <= radiusSquared) {
+                    keys.add(packChunkKey(x, z));
+                }
             }
         }
         return keys;
+    }
+
+    /**
+     * Computes chunk keys in a square pattern around the player
+     * @deprecated Use computeCircularKeys instead to match server behavior
+     */
+    @Deprecated
+    public Set<Long> computeSquareKeys(Player player, int radius) {
+        return computeCircularKeys(player, radius);
     }
 
     /**

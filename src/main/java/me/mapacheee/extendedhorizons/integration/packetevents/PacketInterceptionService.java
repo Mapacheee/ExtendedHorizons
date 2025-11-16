@@ -34,6 +34,7 @@ public class PacketInterceptionService {
     private Logger logger;
     private final ViewDistanceService viewDistanceService;
     private final PacketChunkCacheService chunkCache;
+    @SuppressWarnings("unused") // Reserved for future use
     private final ChunkPacketInterceptor chunkPacketInterceptor;
     private static final boolean DEBUG = false;
 
