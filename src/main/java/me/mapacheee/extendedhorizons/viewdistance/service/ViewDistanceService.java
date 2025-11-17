@@ -8,6 +8,7 @@ import me.mapacheee.extendedhorizons.shared.service.MessageService;
 import me.mapacheee.extendedhorizons.shared.storage.PlayerStorageService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import org.bukkit.Bukkit;
+import org.bukkit.WorldBorder;
 import org.bukkit.entity.Player;
 
 import java.util.*;
@@ -124,9 +125,51 @@ public class ViewDistanceService {
                 : configMax;
     }
 
+    /**
+     * Calculates the maximum view distance allowed based on the world border.
+     * Returns the distance from the players position to the nearest border edge.
+     * 
+     * @param player The player to check
+     * @return Maximum view distance in chunks, or Integer.MAX_VALUE if no border restriction
+     */
+    private int getWorldBorderMaxDistance(Player player) {
+        WorldBorder border = player.getWorld().getWorldBorder();
+        if (border == null) {
+            return Integer.MAX_VALUE;
+        }
+
+        double borderSize = border.getSize();
+        double borderRadius = borderSize / 2.0;
+        
+        if (borderSize >= 5.9999968E7) { // mc max world size
+            return Integer.MAX_VALUE;
+        }
+
+        double borderCenterX = border.getCenter().getX();
+        double borderCenterZ = border.getCenter().getZ();
+        
+        double playerX = player.getLocation().getX();
+        double playerZ = player.getLocation().getZ();
+        
+        double dx = playerX - borderCenterX;
+        double dz = playerZ - borderCenterZ;
+        double distanceToCenter = Math.sqrt(dx * dx + dz * dz);
+        
+        double distanceToEdge = borderRadius - distanceToCenter;
+        
+        int maxChunks = (int) Math.floor((distanceToEdge + 16) / 16.0);
+        
+        int min = configService.get().viewDistance().minDistance();
+        return Math.max(min, maxChunks);
+    }
+
     private int clampDistance(Player player, int value) {
         int min = configService.get().viewDistance().minDistance();
         int max = getAllowedMax(player);
+        
+        int worldBorderMax = getWorldBorderMaxDistance(player);
+        max = Math.min(max, worldBorderMax);
+        
         if (value < min) return min;
         return Math.min(value, max);
     }
@@ -174,7 +217,43 @@ public class ViewDistanceService {
     }
 
     /**
+     * Checks if a chunk is within the world border.
+     * 
+     * @param player The player whose world to check
+     * @param chunkX Chunk X coordinate
+     * @param chunkZ Chunk Z coordinate
+     * @return true if the chunk is within the world border
+     */
+    private boolean isChunkWithinWorldBorder(Player player, int chunkX, int chunkZ) {
+        WorldBorder border = player.getWorld().getWorldBorder();
+        if (border == null) {
+            return true; 
+        }
+
+        double borderSize = border.getSize();
+        
+        if (borderSize >= 5.9999968E7) { // mc max world size
+            return true;
+        }
+
+        double borderCenterX = border.getCenter().getX();
+        double borderCenterZ = border.getCenter().getZ();
+        double borderRadius = borderSize / 2.0;
+        
+        double chunkBlockX = (chunkX << 4) + 8;
+        double chunkBlockZ = (chunkZ << 4) + 8;
+        
+        double dx = chunkBlockX - borderCenterX;
+        double dz = chunkBlockZ - borderCenterZ;
+        double distanceSquared = dx * dx + dz * dz;
+        
+        double maxDistanceSquared = (borderRadius + 8) * (borderRadius + 8);
+        return distanceSquared <= maxDistanceSquared;
+    }
+
+    /**
      * Classifies chunks into real (within server view-distance) and fake (beyond server view-distance)
+     * Also filters out chunks outside the world border.
      */
     private ChunkClassification classifyChunks(Player player, Set<Long> allChunks) {
         int serverViewDistance = fakeChunkService.getServerViewDistance();
@@ -189,6 +268,10 @@ public class ViewDistanceService {
         for (long key : allChunks) {
             int chunkX = (int) (key & 0xFFFFFFFFL);
             int chunkZ = (int) (key >> 32);
+            
+            if (!isChunkWithinWorldBorder(player, chunkX, chunkZ)) {
+                continue;
+            }
             
             int dx = chunkX - playerChunkX;
             int dz = chunkZ - playerChunkZ;

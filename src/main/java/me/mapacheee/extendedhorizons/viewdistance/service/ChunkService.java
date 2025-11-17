@@ -7,6 +7,7 @@ import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.World;
+import org.bukkit.WorldBorder;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -98,7 +99,43 @@ public class ChunkService {
     }
 
     /**
-     * Computes chunk keys in a circular pattern around the player
+     * Checks if a chunk is within the world border.
+     * 
+     * @param player The player whose world to check
+     * @param chunkX Chunk X coordinate
+     * @param chunkZ Chunk Z coordinate
+     * @return true if the chunk is within the world border
+     */
+    private boolean isChunkWithinWorldBorder(Player player, int chunkX, int chunkZ) {
+        WorldBorder border = player.getWorld().getWorldBorder();
+        if (border == null) {
+            return true; 
+        }
+
+        double borderSize = border.getSize();
+        
+        if (borderSize >= 5.9999968E7) { // mc max world size
+            return true;
+        }
+
+        double borderCenterX = border.getCenter().getX();
+        double borderCenterZ = border.getCenter().getZ();
+        double borderRadius = borderSize / 2.0;
+        
+        double chunkBlockX = (chunkX << 4) + 8;
+        double chunkBlockZ = (chunkZ << 4) + 8;
+        
+        double dx = chunkBlockX - borderCenterX;
+        double dz = chunkBlockZ - borderCenterZ;
+        double distanceSquared = dx * dx + dz * dz;
+        
+        double maxDistanceSquared = (borderRadius + 8) * (borderRadius + 8);
+        return distanceSquared <= maxDistanceSquared;
+    }
+
+    /**
+     * Computes chunk keys in a circular pattern around the player.
+     * Only includes chunks that are within the world border.
      */
     public Set<Long> computeCircularKeys(Player player, int radius) {
         int cx = player.getLocation().getBlockX() >> 4;
@@ -114,7 +151,9 @@ public class ChunkService {
                 double distanceSquared = dx * dx + dz * dz;
                 
                 if (distanceSquared <= radiusSquared) {
-                    keys.add(packChunkKey(x, z));
+                    if (isChunkWithinWorldBorder(player, x, z)) {
+                        keys.add(packChunkKey(x, z));
+                    }
                 }
             }
         }
