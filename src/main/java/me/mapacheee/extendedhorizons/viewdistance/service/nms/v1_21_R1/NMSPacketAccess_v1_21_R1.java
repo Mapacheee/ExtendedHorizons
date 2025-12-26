@@ -8,7 +8,9 @@ import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetSimulationDistancePacket;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.lighting.LevelLightEngine;
+import net.minecraft.network.protocol.Packet;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 import com.thewinterframework.service.annotation.Service;
@@ -24,8 +26,7 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
 
         LevelChunk nmsChunk = (LevelChunk) chunk;
         LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
-        int sectionCount = nmsChunk.getSections().length;
-        BitSet[] lightMasks = getLightMasks(sectionCount);
+        BitSet[] lightMasks = getLightMasks(nmsChunk);
 
         @SuppressWarnings("deprecation")
         ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
@@ -36,6 +37,22 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
         return packet;
     }
 
+    private BitSet[] getLightMasks(LevelChunk chunk) {
+        int sectionCount = chunk.getSections().length;
+        BitSet skyLight = new BitSet(sectionCount + 2);
+        BitSet blockLight = new BitSet(sectionCount + 2);
+
+        LevelChunkSection[] sections = chunk.getSections();
+        for (int i = 0; i < sectionCount; i++) {
+            LevelChunkSection section = sections[i];
+            if (section != null && !section.hasOnlyAir()) {
+                skyLight.set(i + 1);
+                blockLight.set(i + 1);
+            }
+        }
+        return new BitSet[] { skyLight, blockLight };
+    }
+
     @Override
     public Object createUnloadPacket(int x, int z) {
         return new ClientboundForgetLevelChunkPacket(new ChunkPos(x, z));
@@ -43,8 +60,8 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
 
     @Override
     public void sendPacket(Player player, Object packet) {
-        if (packet instanceof net.minecraft.network.protocol.Packet) {
-            ((CraftPlayer) player).getHandle().connection.send((net.minecraft.network.protocol.Packet<?>) packet);
+        if (packet instanceof Packet) {
+            ((CraftPlayer) player).getHandle().connection.send((Packet<?>) packet);
         }
     }
 
@@ -71,13 +88,4 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
         return new ClientboundSetSimulationDistancePacket(distance);
     }
 
-    private BitSet[] getLightMasks(int sectionCount) {
-        BitSet skyLight = new BitSet(sectionCount + 2);
-        BitSet blockLight = new BitSet(sectionCount + 2);
-        for (int i = 0; i < sectionCount + 2; i++) {
-            skyLight.set(i);
-            blockLight.set(i);
-        }
-        return new BitSet[] { skyLight, blockLight };
-    }
 }

@@ -63,7 +63,7 @@ performance:
     cache-cleanup-interval: 10
     # Enable chunk memory cache (reuses loaded chunks, saves CPU but uses RAM)
     # Recommended: true for <50 players, false for >100 players or low RAM servers
-    enable-memory-cache: true
+    enable-memory-cache: false
     # Maximum chunks to cache in memory (1000 = ~40-80MB depending on chunk complexity)
     # Increase for more players in same area, decrease for dispersed players or low RAM
     max-memory-cache-size: 1000
@@ -96,7 +96,7 @@ bandwidth-saver:
   # Skips redundant entity movement/rotation packets (ESU-inspired)
   skip-redundant-packets: true
   # Limits the rate of fake chunk sending to prevent network saturation
-  max-fake-chunks-per-tick: 3
+  max-fake-chunks-per-tick: 20
   # Maximum bandwidth per player in KB/s (512 KB/s = ~4 Mbps)
   # Set to 0 to disable bandwidth limiting
   max-bandwidth-per-player: 10000

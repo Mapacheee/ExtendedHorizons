@@ -5,8 +5,6 @@ import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
 import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
-import com.github.retrooper.packetevents.protocol.world.chunk.Column;
-import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerChunkData;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUnloadChunk;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUpdateViewDistance;
 
@@ -33,17 +31,14 @@ public class PacketInterceptionService {
 
     private static final Logger logger = org.slf4j.LoggerFactory.getLogger(PacketInterceptionService.class);
     private final Provider<ViewDistanceService> viewDistanceServiceProvider;
-    private final PacketChunkCacheService chunkCache;
     private final NMSPacketAccess nmsPacketAccess;
     private static final boolean DEBUG = false;
 
     @Inject
     public PacketInterceptionService(
             Provider<ViewDistanceService> viewDistanceServiceProvider,
-            PacketChunkCacheService chunkCache,
             NMSPacketAccess nmsPacketAccess) {
         this.viewDistanceServiceProvider = viewDistanceServiceProvider;
-        this.chunkCache = chunkCache;
         this.nmsPacketAccess = nmsPacketAccess;
     }
 
@@ -100,22 +95,6 @@ public class PacketInterceptionService {
                                             nmsPacketAccess.sendPacket(player, packet);
                                         }, null);
                             }
-                        } else if (event.getPacketType() == PacketType.Play.Server.CHUNK_DATA) {
-                            try {
-                                WrapperPlayServerChunkData wrapper = new WrapperPlayServerChunkData(event);
-                                Column column = wrapper.getColumn();
-
-                                if (column == null)
-                                    return;
-
-                                chunkCache.put(column.getX(), column.getZ(), column);
-
-                                if (DEBUG && chunkCache.size() % 100 == 0) {
-                                    logger.info("[EH] Cached {} real chunks", chunkCache.size());
-                                }
-                            } catch (Exception ex) {
-                                logger.warn("[EH] Error intercepting chunk: {}", ex.getMessage());
-                            }
                         }
                     }
                 });
@@ -125,26 +104,4 @@ public class PacketInterceptionService {
         }
     }
 
-    /**
-     * Sends a cached chunk (Column) to the player using PacketEvents.
-     * This method abstracts the PacketEvents usage from FakeChunkService.
-     */
-    public boolean sendCachedChunk(Player player, int chunkX, int chunkZ) {
-        Column column = chunkCache.get(chunkX, chunkZ);
-        if (column == null) {
-            return false;
-        }
-
-        try {
-            WrapperPlayServerChunkData packet = new WrapperPlayServerChunkData(column);
-            PacketEvents.getAPI().getPlayerManager().sendPacket(player, packet);
-            return true;
-        } catch (Exception e) {
-            if (DEBUG) {
-                logger.warn("[EH] Failed to send cached chunk {},{} to {}: {}", chunkX, chunkZ, player.getName(),
-                        e.getMessage());
-            }
-            return false;
-        }
-    }
 }

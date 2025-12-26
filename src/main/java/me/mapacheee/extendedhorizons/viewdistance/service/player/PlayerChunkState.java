@@ -1,10 +1,10 @@
 package me.mapacheee.extendedhorizons.viewdistance.service.player;
 
-import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.Deque;
 
 /**
  * Encapsulates all chunk-related state for a single player.
@@ -31,7 +31,7 @@ public class PlayerChunkState {
      * Queue of chunks pending to be loaded progressively.
      * Chunks are added sorted by distance from player.
      */
-    private final Queue<Long> chunkQueue = new ConcurrentLinkedQueue<>();
+    private final Deque<Long> chunkQueue = new ConcurrentLinkedDeque<>();
 
     /**
      * Last known chunk position for teleport detection.
@@ -44,7 +44,7 @@ public class PlayerChunkState {
     /**
      * Queue of packets waiting to be sent to this player (batched).
      */
-    private final Queue<Object> pendingPackets = new ConcurrentLinkedQueue<>();
+    private final Deque<Object> pendingPackets = new ConcurrentLinkedDeque<>();
 
     // === Bandwidth Tracking ===
 
@@ -126,7 +126,7 @@ public class PlayerChunkState {
         return fakeChunks;
     }
 
-    public Queue<Long> getChunkQueue() {
+    public Deque<Long> getChunkQueue() {
         return chunkQueue;
     }
 
@@ -140,7 +140,7 @@ public class PlayerChunkState {
 
     // --- Packet Management ---
 
-    public Queue<Object> getPendingPackets() {
+    public Deque<Object> getPendingPackets() {
         return pendingPackets;
     }
 

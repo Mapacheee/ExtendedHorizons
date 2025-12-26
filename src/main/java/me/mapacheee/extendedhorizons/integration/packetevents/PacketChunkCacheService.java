@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import java.util.concurrent.atomic.AtomicLong;
 
 import java.util.*;
 
@@ -28,9 +29,9 @@ public class PacketChunkCacheService {
     private final long ttlMillis;
 
     // Metrics
-    private final java.util.concurrent.atomic.AtomicLong hits = new java.util.concurrent.atomic.AtomicLong(0);
-    private final java.util.concurrent.atomic.AtomicLong misses = new java.util.concurrent.atomic.AtomicLong(0);
-    private final java.util.concurrent.atomic.AtomicLong evictions = new java.util.concurrent.atomic.AtomicLong(0);
+    private final AtomicLong hits = new AtomicLong(0);
+    private final AtomicLong misses = new AtomicLong(0);
+    private final AtomicLong evictions = new AtomicLong(0);
 
     private static final class Entry {
         final Column column;
