@@ -31,7 +31,17 @@ public class PlayerChunkState {
      * Queue of chunks pending to be loaded progressively.
      * Chunks are added sorted by distance from player.
      */
+    /**
+     * Queue of chunks pending to be loaded progressively.
+     * Chunks are added sorted by distance from the player.
+     */
     private final Deque<Long> chunkQueue = new ConcurrentLinkedDeque<>();
+
+    /**
+     * Set of chunks currently in the queue (for O(1) lookup).
+     * Must be kept in sync with chunkQueue.
+     */
+    private final Set<Long> queuedChunksSet = ConcurrentHashMap.newKeySet();
 
     /**
      * Last known chunk position for teleport detection.
@@ -128,6 +138,10 @@ public class PlayerChunkState {
 
     public Deque<Long> getChunkQueue() {
         return chunkQueue;
+    }
+
+    public Set<Long> getQueuedChunksSet() {
+        return queuedChunksSet;
     }
 
     public long getLastChunkPosition() {
@@ -305,6 +319,7 @@ public class PlayerChunkState {
     public void clear() {
         fakeChunks.clear();
         chunkQueue.clear();
+        queuedChunksSet.clear();
         pendingPackets.clear();
         lastChunkPosition = 0;
         bytesThisTick = 0;

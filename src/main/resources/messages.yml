@@ -34,10 +34,8 @@ stats:
   - "<#3498DB>Average Distance: <#F39C12>{distance} <#3498DB>chunks"
   - "<#3498DB>Server View Distance: <#F39C12>{server_distance} <#3498DB>chunks"
   - ""
-  - "<#3498DB>Fake Chunks Cache: <#C935F2>{cached_packets} <#3498DB>packets"
-  - "<#3498DB>Fake Memory Usage: <#F39C12>{memory_usage} <#3498DB>MB"
-  - "<#3498DB>Cache Hit Rate: <#F39C12>{hit_rate}"
-  - "<#3498DB>Legacy Cache: <#C935F2>{legacy_cache}"
+  - "<#3498DB>Disk/Gen: <#F39C12>{disk_loads}<#3498DB>/<#F39C12>{generations}"
+  - "<#3498DB>Mem Cache (H/M): <#F39C12>{memory_hits}<#3498DB>/<#F39C12>{memory_misses}"
   - "<#3498DB>==========================================="
 
 # Error messages

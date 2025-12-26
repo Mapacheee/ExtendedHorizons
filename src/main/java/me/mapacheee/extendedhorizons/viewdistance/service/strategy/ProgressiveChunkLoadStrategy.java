@@ -73,9 +73,12 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
         sortedKeys.sort((key1, key2) -> compareDistance(key1, key2, playerChunkX, playerChunkZ));
 
         Queue<Long> queue = state.getChunkQueue();
+        Set<Long> queuedSet = state.getQueuedChunksSet();
+
         for (long key : sortedKeys) {
-            if (!queue.contains(key)) {
+            if (!queuedSet.contains(key)) {
                 queue.add(key);
+                queuedSet.add(key);
             }
         }
 
@@ -106,6 +109,7 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
                             player.getName(), queue.size());
                 }
                 queue.clear();
+                state.getQueuedChunksSet().clear();
 
                 globalGeneratingSet.removeIf(key -> {
                     int chunkX = ChunkUtils.unpackX(key);
@@ -121,7 +125,13 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
             }
         }
 
-        queue.addAll(newChunksToLoad);
+        Set<Long> queuedSet = state.getQueuedChunksSet();
+        for (Long key : newChunksToLoad) {
+            if (!queuedSet.contains(key)) {
+                queue.add(key);
+                queuedSet.add(key);
+            }
+        }
     }
 
     /**

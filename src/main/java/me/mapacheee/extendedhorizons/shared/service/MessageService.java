@@ -7,6 +7,7 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.command.CommandSender;
 
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /*
@@ -117,8 +118,9 @@ public class MessageService {
     }
 
     public void sendStats(CommandSender sender, int online, int maxPlayers, int averageDistance, int serverViewDistance,
-            int cachedFakePackets, double fakeMemoryMB, double hitRate, int legacyCache) {
-        java.util.List<String> lines = configService.messages().stats();
+            int cachedFakePackets, double fakeMemoryMB, double hitRate,
+            Map<String, Long> extraStats) {
+        List<String> lines = configService.messages().stats();
         if (lines == null)
             return;
 
@@ -131,7 +133,10 @@ public class MessageService {
                     .replace("{cached_packets}", String.valueOf(cachedFakePackets))
                     .replace("{memory_usage}", String.format("%.2f", fakeMemoryMB))
                     .replace("{hit_rate}", String.format("%.1f%%", hitRate))
-                    .replace("{legacy_cache}", String.valueOf(legacyCache));
+                    .replace("{disk_loads}", String.valueOf(extraStats.getOrDefault("disk_loads", 0L)))
+                    .replace("{generations}", String.valueOf(extraStats.getOrDefault("generations", 0L)))
+                    .replace("{memory_hits}", String.valueOf(extraStats.getOrDefault("memory_hits", 0L)))
+                    .replace("{memory_misses}", String.valueOf(extraStats.getOrDefault("memory_misses", 0L)));
             sendRaw(sender, out);
         }
     }

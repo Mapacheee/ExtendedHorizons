@@ -4,7 +4,6 @@ import com.google.inject.Inject;
 import com.thewinterframework.command.CommandComponent;
 import com.thewinterframework.service.ReloadServiceManager;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import me.mapacheee.extendedhorizons.integration.packetevents.PacketChunkCacheService;
 
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import me.mapacheee.extendedhorizons.shared.service.MessageService;
@@ -30,7 +29,6 @@ public class ViewDistanceCommand {
     private final MessageService messageService;
     private final ConfigService configService;
     private final ReloadServiceManager reloadServiceManager;
-    private final PacketChunkCacheService cacheService;
     private final FakeChunkService fakeChunkService;
 
     @Inject
@@ -39,13 +37,11 @@ public class ViewDistanceCommand {
             MessageService messageService,
             ConfigService configService,
             ReloadServiceManager reloadServiceManager,
-            PacketChunkCacheService cacheService,
             FakeChunkService fakeChunkService) {
         this.viewDistanceService = viewDistanceService;
         this.messageService = messageService;
         this.configService = configService;
         this.reloadServiceManager = reloadServiceManager;
-        this.cacheService = cacheService;
         this.fakeChunkService = fakeChunkService;
     }
 
@@ -189,10 +185,9 @@ public class ViewDistanceCommand {
         int cachedFakePackets = fakeChunkService.getCacheSize();
         double fakeMemoryMB = fakeChunkService.getEstimatedMemoryUsageMB();
 
-        int cacheEntries = cacheService.size();
-
         messageService.sendStats(sender, online, max, avg, fakeChunkService.getServerViewDistance(),
-                cachedFakePackets, fakeMemoryMB, fakeChunkService.getCacheHitRate(), cacheEntries);
+                cachedFakePackets, fakeMemoryMB, fakeChunkService.getCacheHitRate(),
+                fakeChunkService.getStats());
     }
 
     @Command("eh|extendedhorizons|horizons|viewdistance|vd worldinfo <world>")

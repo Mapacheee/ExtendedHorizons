@@ -1,7 +1,5 @@
 package me.mapacheee.extendedhorizons.viewdistance.service;
 
-import me.mapacheee.extendedhorizons.integration.packetevents.PacketChunkCacheService;
-
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
@@ -83,11 +81,8 @@ public class FakeChunkService {
     private final AtomicLong diskLoads = new AtomicLong(0);
     private final AtomicLong chunkGenerations = new AtomicLong(0);
 
-    private final PacketChunkCacheService packetChunkCacheService;
-
     @Inject
     public FakeChunkService(
-            PacketChunkCacheService packetChunkCacheService,
             ConfigService configService,
             ChunkLoadStrategy chunkLoadStrategy,
             ChunkEventDispatcher chunkEventDispatcher,
@@ -96,7 +91,6 @@ public class FakeChunkService {
             NMSChunkAccess nmsChunkAccess,
             NMSPacketAccess nmsPacketAccess,
             WarmupManager warmupManager) {
-        this.packetChunkCacheService = packetChunkCacheService;
         this.configService = configService;
         this.chunkLoadStrategy = chunkLoadStrategy;
         this.chunkEventDispatcher = chunkEventDispatcher;
@@ -189,6 +183,7 @@ public class FakeChunkService {
                 .runAtFixedRate(ExtendedHorizonsPlugin.getInstance(), (task) -> {
                     try {
                         chunksGeneratedThisTick.set(0);
+                        chunksLoadedFromDiskThisTick.set(0);
                         playerStateManager.resetTickCounters();
 
                         maxGenerationsPerTick = configService.get().performance().maxGenerationsPerTick();
@@ -292,8 +287,11 @@ public class FakeChunkService {
         List<Long> batch = new ArrayList<>();
         while (!queue.isEmpty() && batch.size() < maxChunks) {
             Long key = queue.poll();
-            if (key != null && !generatingChunks.contains(key)) {
-                batch.add(key);
+            if (key != null) {
+                state.getQueuedChunksSet().remove(key);
+                if (!generatingChunks.contains(key)) {
+                    batch.add(key);
+                }
             }
         }
 
@@ -353,7 +351,7 @@ public class FakeChunkService {
                         return;
                     }
 
-                    // Strategy 2: Try to load chunk from disk
+                    // Strategy 3: Try to load chunk from disk
                     loadChunkFromDiskAndSend(player, world, chunkX, chunkZ, key, sentTracker);
 
                 } catch (Exception e) {
@@ -368,11 +366,27 @@ public class FakeChunkService {
 
     }
 
+    private final AtomicInteger chunksLoadedFromDiskThisTick = new AtomicInteger(0);
+    private int maxDiskLoadsPerTick = 20;
+
     /**
      * Attempts to load chunk from disk without generating
      */
     private void loadChunkFromDiskAndSend(Player player, World world, int chunkX, int chunkZ,
             long key, Set<Long> sentTracker) {
+
+        if (chunksLoadedFromDiskThisTick.get() >= maxDiskLoadsPerTick) {
+            if (DEBUG)
+                logger.debug("[EH] Disk load limit hit, deferring chunk {},{}", chunkX, chunkZ);
+            generatingChunks.remove(key);
+            PlayerChunkState limitState = playerStateManager.getOrCreate(player.getUniqueId());
+            limitState.getChunkQueue().addFirst(key);
+            limitState.getQueuedChunksSet().add(key);
+            return;
+        }
+
+        chunksLoadedFromDiskThisTick.incrementAndGet();
+
         world.getChunkAtAsync(chunkX, chunkZ, false).thenAcceptAsync(chunk -> {
             if (!player.isOnline()) {
                 generatingChunks.remove(key);
@@ -386,6 +400,7 @@ public class FakeChunkService {
                     generatingChunks.remove(key);
                     PlayerChunkState limitState = playerStateManager.getOrCreate(player.getUniqueId());
                     limitState.getChunkQueue().addFirst(key); // Retry immediately next tick
+                    limitState.getQueuedChunksSet().add(key);
                     return;
                 }
 
@@ -417,14 +432,11 @@ public class FakeChunkService {
                 generatingChunks.remove(key);
                 PlayerChunkState playerState = playerStateManager.getOrCreate(player.getUniqueId());
                 playerState.getChunkQueue().add(key);
+                playerState.getQueuedChunksSet().add(key);
                 return null;
             }
             chunksGeneratedThisTick.incrementAndGet();
 
-            if (DEBUG) {
-                logger.warn("[EH] Failed to process disk chunk {},{}, falling back to generation: {}",
-                        chunkX, chunkZ, throwable.getMessage());
-            }
             if (DEBUG) {
                 logger.warn("[EH] Failed to process disk chunk {},{}, falling back to generation: {}",
                         chunkX, chunkZ, throwable.getMessage());
@@ -473,10 +485,19 @@ public class FakeChunkService {
         PlayerChunkState state = playerStateManager.getOrCreate(uuid);
         Set<Long> playerSentChunks = state.getFakeChunks();
 
-        // Remove chunks that are no longer in range from the sent set
         Set<Long> toRemove = new HashSet<>(playerSentChunks);
         toRemove.removeAll(chunkKeys);
-        playerSentChunks.removeAll(toRemove);
+
+        if (!toRemove.isEmpty()) {
+            for (Long key : toRemove) {
+                int chunkX = ChunkUtils.unpackX(key);
+                int chunkZ = ChunkUtils.unpackZ(key);
+                sendUnloadPacket(player, chunkX, chunkZ);
+                chunkEventDispatcher.fireUnloadEvent(player, chunkX, chunkZ, player.getWorld(),
+                        FakeChunkUnloadEvent.UnloadReason.DISTANCE);
+            }
+            playerSentChunks.removeAll(toRemove);
+        }
 
         chunkLoadStrategy.onPlayerUpdate(player, state);
 
@@ -500,9 +521,6 @@ public class FakeChunkService {
                 continue;
             }
 
-            // Directly add to generate queue.
-            // Packet cache check removed.
-            // Throttling logic in processChunkQueue will handle rate limiting (OOM Fix).
             if (!generatingChunks.contains(key)) {
                 toGenerate.add(key);
             }
@@ -749,32 +767,15 @@ public class FakeChunkService {
     }
 
     public int getCacheSize() {
-        return packetChunkCacheService.size();
+        return 0;
     }
 
     public double getCacheHitRate() {
-        long hits = 0;
-        long total = 0;
-        for (UUID playerId : playerStateManager.getAllPlayerIds()) {
-            PlayerChunkState state = playerStateManager.get(playerId).orElse(null);
-            if (state == null)
-                continue;
-
-            Set<Long> chunks = state.getFakeChunks();
-            total += chunks.size();
-            for (long key : chunks) {
-                int chunkX = ChunkUtils.unpackX(key);
-                int chunkZ = ChunkUtils.unpackZ(key);
-                if (packetChunkCacheService.get(chunkX, chunkZ) != null) {
-                    hits++;
-                }
-            }
-        }
-        return total > 0 ? (hits * 100.0 / total) : 0.0;
+        return 0.0;
     }
 
     public double getEstimatedMemoryUsageMB() {
-        return packetChunkCacheService.size() * 0.04;
+        return 0.0;
     }
 
     /**
