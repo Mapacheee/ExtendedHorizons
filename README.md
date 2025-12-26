@@ -68,12 +68,15 @@ performance:
   # Number of threads for parallel chunk processing (0 = auto-detect based on CPU cores)
   # Recommended: 0 (auto) or 4-8 for most servers
   chunk-processor-threads: 0
+  # Interval in ticks between chunk validation/process cycles
+  # Higher values reduce CPU usage but make loading "stuttery"
+  chunk-process-interval: 1
   
   # Teleport warmup delay in milliseconds to load fake chunks
-  teleport-warmup-delay: 1600 # in milliseconds
+  teleport-warmup-delay: 10
 
   # MSPT Protection: Pause fake chunk loading if server is lagging
-  max-mspt-for-loading: 45.0
+  max-mspt-for-loading: 40.0
 
   # Async Task Throttling: Limit concurrent chunk loading tasks
   max-async-load-tasks: 4
@@ -98,11 +101,11 @@ performance:
     # Maximum chunks to cache in memory (1000 = ~40-80MB depending on chunk complexity)
     # Increase for more players in same area, decrease for dispersed players or low RAM
     max-memory-cache-size: 1000
-    
-    # Anti-X-Ray for fake chunks
+    # Packet cache TTL in seconds
+    packet-cache-ttl-seconds: 30
 
     # Enable this feature will affect the speed to load fake chunks
-    # Enable this only if its necessary
+    # enable this only if its necessary
     anti-xray:
       # Enable anti-xray obfuscation for fake chunks
       enabled: false
@@ -113,10 +116,16 @@ performance:
       # Density of fake ores (0.0-1.0, higher = more fakes)
       fake-ore-density: 0.15
   
+  # Occlusion Culling: Prevents sending hidden chunks to save bandwidth/FpS
   occlusion-culling:
+    # Enable occlusion culling (recommended: true)
     enabled: true
+    # Chunks below this sky light level may be culled (hidden)
+    # 0 = nothing culled based on light, 15 = strict
     sky-light-threshold: 14
+    # Maximum Y level to cull (usually matches server max height)
     max-y-level: 320
+    # Minimum Y level to cull (usually matches server min height)
     min-y-level: -64
 
 # Bandwidth Saver settings
@@ -125,7 +134,7 @@ bandwidth-saver:
   # Skips redundant entity movement/rotation packets (ESU-inspired)
   skip-redundant-packets: true
   # Limits the rate of fake chunk sending to prevent network saturation
-  max-fake-chunks-per-tick: 22
+  max-fake-chunks-per-tick: 20
   # Maximum bandwidth per player in KB/s (512 KB/s = ~4 Mbps)
   # Set to 0 to disable bandwidth limiting
   max-bandwidth-per-player: 10000
@@ -185,6 +194,7 @@ Alias base: `/eh` (also: `extendedhorizons`, `horizons`, `viewdistance`, `vd`)
 - `extendedhorizons.use` — player commands
 - `extendedhorizons.admin` — admin commands
 - `extendedhorizons.bypass.limits` — ignores boundaries when setting distances
+- `extendedhorizons.max.<distance>` — set max distance for a player
 
 ### LuckPerms Integration
 If `integrations.luckperms.enabled` is true, the plugin will check limits per group/player.  
@@ -199,14 +209,16 @@ You can combine it with `use-group-permissions` and your group policies.
 
 ## Operation
 - Distance is managed per player with global limits configured in `config.yml`
-- **Dual chunk system:**
-    - **Real chunks** (within server view-distance): Managed naturally by the server
-    - **Fake chunks** (beyond server view-distance): Sent via packet cache when `fake-chunks.enabled: true`
-- The server's view-distance (from `server.properties`) acts as the boundary between real and fake chunks
-- All chunk processing is done **100% asynchronously** to maintain server performance
-- **LRU cache system** automatically manages memory with configurable limits
-- PacketEvents is **required**
-- Fully compatible with **Paper 1.21+**
+- **Hybrid Chunk System:**
+    - **Real chunks** (within server view-distance): Managed naturally by the server.
+    - **Extended chunks** (beyond server view-distance): Retrieved directly from NMS memory (Zero-Latency) and sent via a custom async pipeline.
+- **Crash Prevention Architecture**:
+    - **Main-Thread Packet Creation**: Eliminates race conditions.
+    - **Strict Throttling**: `max-fake-chunks-per-tick` prevents OOM and bandwidth saturation.
+    - **World-Switch Safety**: Prevents protocol errors when teleporting between dimensions.
+- All chunk processing is done **100% asynchronously** (except critical NMS access) to maintain server performance.
+- PacketEvents is **required** for packet injection.
+- Fully compatible with **Paper, Folia, and ViaVersion**.
 
 ---
 # Support
