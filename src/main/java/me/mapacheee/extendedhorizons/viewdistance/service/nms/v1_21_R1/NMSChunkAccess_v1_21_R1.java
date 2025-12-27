@@ -13,12 +13,15 @@ import java.lang.reflect.Constructor;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.EmptyLevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import java.util.Random;
+import org.bukkit.Chunk;
 import org.bukkit.World;
+import org.bukkit.craftbukkit.CraftChunk;
 import org.bukkit.craftbukkit.CraftWorld;
 import com.thewinterframework.service.annotation.Service;
 
@@ -50,10 +53,10 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
     }
 
     @Override
-    public Object getNMSChunk(org.bukkit.Chunk chunk) {
-        if (chunk instanceof org.bukkit.craftbukkit.CraftChunk) {
-            return ((org.bukkit.craftbukkit.CraftChunk) chunk)
-                    .getHandle(net.minecraft.world.level.chunk.status.ChunkStatus.FULL);
+    public Object getNMSChunk(Chunk chunk) {
+        if (chunk instanceof CraftChunk) {
+            return ((CraftChunk) chunk)
+                    .getHandle(ChunkStatus.FULL);
         }
         return null;
     }

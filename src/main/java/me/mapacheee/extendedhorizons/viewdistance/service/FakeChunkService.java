@@ -9,6 +9,7 @@ import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -415,17 +416,45 @@ public class FakeChunkService {
                 if (DEBUG) {
                     logger.info("[EH] Chunk {},{} loaded from disk", chunkX, chunkZ);
                 }
-                if (DEBUG) {
-                    logger.info("[EH] Chunk {},{} loaded from disk", chunkX, chunkZ);
-                }
                 diskLoads.incrementAndGet();
-                try {
-                    Object nmsChunk = nmsChunkAccess.getNMSChunk(chunk);
-                    sendChunkPacket(player, nmsChunk, key,
-                            sentTracker, FakeChunkLoadEvent.LoadSource.DISK);
-                } catch (Exception e) {
-                    logger.warn("[EH] Failed to get NMS chunk from Bukkit chunk: {}", e.getMessage());
-                }
+                Location chunkLocation = new Location(world,
+                        chunkX * 16 + 8, 64, chunkZ * 16 + 8);
+
+                Bukkit.getRegionScheduler().execute(ExtendedHorizonsPlugin.getInstance(),
+                        chunkLocation, () -> {
+
+                            if (!player.isOnline()) {
+                                generatingChunks.remove(key);
+                                return;
+                            }
+
+                            try {
+                                Object nmsChunk = nmsChunkAccess.getNMSChunk(chunk);
+                                if (nmsChunk != null) {
+                                    sendChunkPacket(player, nmsChunk, key,
+                                            sentTracker, FakeChunkLoadEvent.LoadSource.DISK);
+                                } else {
+                                    if (DEBUG) {
+                                        logger.warn("[EH] NMS chunk is null for {},{}, attempting generation",
+                                                chunkX, chunkZ);
+                                    }
+                                    if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
+                                        chunksGeneratedThisTick.incrementAndGet();
+                                        chunkGenerations.incrementAndGet();
+                                        generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                                    } else {
+                                        generatingChunks.remove(key);
+                                        PlayerChunkState limitState = playerStateManager
+                                                .getOrCreate(player.getUniqueId());
+                                        limitState.getChunkQueue().addFirst(key);
+                                        limitState.getQueuedChunksSet().add(key);
+                                    }
+                                }
+                            } catch (Exception e) {
+                                logger.warn("[EH] Failed to get NMS chunk from Bukkit chunk: {}", e.getMessage());
+                                generatingChunks.remove(key);
+                            }
+                        });
             }
         }, chunkProcessor).exceptionally(throwable -> {
             if (chunksGeneratedThisTick.get() >= maxGenerationsPerTick) {
