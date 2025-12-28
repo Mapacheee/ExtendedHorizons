@@ -12,10 +12,14 @@ import java.util.concurrent.TimeUnit;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
+
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 
 /*
  *   LRU Cache for chunk packets (serialized data)
@@ -35,6 +39,8 @@ public class ChunkPacketCache {
     private long cacheMisses = 0;
     private long totalPacketsSaved = 0;
 
+    private ScheduledTask cleanupTask;
+
     @Inject
     public ChunkPacketCache(ConfigService configService) {
         this.configService = configService;
@@ -47,6 +53,10 @@ public class ChunkPacketCache {
 
     @OnDisable
     public void cleanup() {
+        if (cleanupTask != null) {
+            cleanupTask.cancel();
+            cleanupTask = null;
+        }
         packetCache.clear();
         accessTimes.clear();
     }
@@ -68,14 +78,16 @@ public class ChunkPacketCache {
                 dataToStore = compress(packetData);
             }
 
-            int maxCached = configService.get().performance().fakeChunks().maxCachedPackets();
-            if (packetCache.size() >= maxCached) {
-                evictOldest();
-            }
+            synchronized (packetCache) {
+                int maxCached = configService.get().performance().fakeChunks().maxCachedPackets();
+                if (packetCache.size() >= maxCached) {
+                    evictOldest();
+                }
 
-            packetCache.put(key, dataToStore);
-            accessTimes.put(key, System.currentTimeMillis());
-            totalPacketsSaved++;
+                packetCache.put(key, dataToStore);
+                accessTimes.put(key, System.currentTimeMillis());
+                totalPacketsSaved++;
+            }
 
         } catch (Exception e) {
             logger.warn("[EH] Failed to cache packet for chunk {},{}: {}", chunkX, chunkZ, e.getMessage());
@@ -156,7 +168,7 @@ public class ChunkPacketCache {
         int intervalSeconds = configService.get().performance().fakeChunks().cacheCleanupInterval();
         long intervalMs = intervalSeconds * 1000L;
 
-        Bukkit.getAsyncScheduler().runAtFixedRate(
+        this.cleanupTask = Bukkit.getAsyncScheduler().runAtFixedRate(
                 me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getInstance(),
                 (task) -> performCleanup(),
                 intervalMs,

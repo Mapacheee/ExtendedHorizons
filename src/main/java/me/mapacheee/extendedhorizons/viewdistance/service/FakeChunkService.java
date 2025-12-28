@@ -400,7 +400,7 @@ public class FakeChunkService {
                         logger.debug("[EH] Generation limit hit, deferring chunk {},{}", chunkX, chunkZ);
                     generatingChunks.remove(key);
                     PlayerChunkState limitState = playerStateManager.getOrCreate(player.getUniqueId());
-                    limitState.getChunkQueue().addFirst(key); // Retry immediately next tick
+                    limitState.getChunkQueue().addFirst(key);
                     limitState.getQueuedChunksSet().add(key);
                     return;
                 }
@@ -796,15 +796,25 @@ public class FakeChunkService {
     }
 
     public int getCacheSize() {
-        return 0;
+        return chunkMemoryCache.size();
     }
 
     public double getCacheHitRate() {
-        return 0.0;
+        long hits = memoryCacheHits.get();
+        long misses = memoryCacheMisses.get();
+        long total = hits + misses;
+
+        if (total == 0) {
+            return 0.0;
+        }
+
+        return (hits * 100.0) / total;
     }
 
     public double getEstimatedMemoryUsageMB() {
-        return 0.0;
+        int cacheSize = chunkMemoryCache.size();
+        double estimatedBytes = cacheSize * 50_000.0;
+        return estimatedBytes / (1024.0 * 1024.0);
     }
 
     /**

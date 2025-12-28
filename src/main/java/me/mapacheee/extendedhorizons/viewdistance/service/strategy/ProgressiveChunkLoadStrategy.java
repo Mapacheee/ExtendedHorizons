@@ -32,7 +32,6 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
     private static final Logger logger = LoggerFactory.getLogger(ProgressiveChunkLoadStrategy.class);
     private static final boolean DEBUG = false;
 
-    // Logic constants extracted from FakeChunkService
     private static final int QUEUE_CLEAR_DISTANCE_THRESHOLD = 8;
     private static final int QUEUE_CLEAR_FAR_DISTANCE = 15;
 

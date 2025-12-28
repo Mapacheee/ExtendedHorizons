@@ -12,8 +12,10 @@ import me.mapacheee.extendedhorizons.viewdistance.listener.PlayerMovementListene
 import org.bukkit.entity.Player;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
 
-import java.util.*;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import me.mapacheee.extendedhorizons.shared.storage.PlayerData;
 import me.mapacheee.extendedhorizons.shared.config.MainConfig.WorldConfig;

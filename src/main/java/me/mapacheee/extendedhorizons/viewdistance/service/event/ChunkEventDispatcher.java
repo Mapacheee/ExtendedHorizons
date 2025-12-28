@@ -42,7 +42,6 @@ public class ChunkEventDispatcher {
      */
     public boolean fireLoadEvent(Player player, int chunkX, int chunkZ, World world,
             FakeChunkLoadEvent.LoadSource loadSource) {
-        AtomicBoolean cancelled = new AtomicBoolean(false);
         try {
             if (Bukkit.isPrimaryThread()) {
                 FakeChunkLoadEvent event = new FakeChunkLoadEvent(player, chunkX, chunkZ, world, loadSource);
@@ -50,18 +49,18 @@ public class ChunkEventDispatcher {
                 return event.isCancelled();
             }
 
-            Bukkit.getScheduler().callSyncMethod(ExtendedHorizonsPlugin.getInstance(), () -> {
+            boolean cancelled = Bukkit.getScheduler().callSyncMethod(ExtendedHorizonsPlugin.getInstance(), () -> {
                 FakeChunkLoadEvent event = new FakeChunkLoadEvent(player, chunkX, chunkZ, world, loadSource);
                 Bukkit.getPluginManager().callEvent(event);
                 return event.isCancelled();
             }).get();
 
+            return cancelled;
+
         } catch (Exception e) {
             logger.error("[EH] Error firing FakeChunkLoadEvent for {},{}", chunkX, chunkZ, e);
             return false;
         }
-
-        return cancelled.get();
     }
 
     /**
