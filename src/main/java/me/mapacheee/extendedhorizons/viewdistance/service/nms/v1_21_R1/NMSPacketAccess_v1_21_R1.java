@@ -61,7 +61,10 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
     @Override
     public void sendPacket(Player player, Object packet) {
         if (packet instanceof Packet) {
-            ((CraftPlayer) player).getHandle().connection.send((Packet<?>) packet);
+            var connection = ((CraftPlayer) player).getHandle().connection;
+            if (connection != null) {
+                connection.send((Packet<?>) packet);
+            }
         }
     }
 
