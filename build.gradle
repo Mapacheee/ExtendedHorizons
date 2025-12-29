@@ -15,46 +15,48 @@ java {
 
 repositories {
     mavenCentral()
-    maven {
-        url = uri("https://repo.papermc.io/repository/maven-public/")
-    }
-    maven {
-    name = 'papermc'
-    url = 'https://repo.papermc.io/repository/maven-public/'
-  }
+    
+    // PaperMC
     maven {
         name = 'papermc-repo'
         url = 'https://repo.papermc.io/repository/maven-public/'
     }
+    
+    // Sonatype
     maven {
         name = 'sonatype'
         url = 'https://oss.sonatype.org/content/groups/public/'
     }
+    
+    // PlaceholderAPI
     maven {
         name = 'placeholderapi'
         url = 'https://repo.extendedclip.com/content/repositories/placeholderapi/'
     }
+    
+    // CodeMC
     maven {
         name = 'codemc-repo'
         url = 'https://repo.codemc.org/repository/maven-public/'
     }
     maven {
+        name = 'codemc-snapshots'
+        url = 'https://repo.codemc.io/repository/maven-snapshots/'
+    }
+
+    // LuckPerms
+    maven {
         name = 'luckperms'
         url = 'https://repo.luckperms.net/'
     }
-    maven {
-        name = 'winter-framework'
-        url = 'https://repo.maven.apache.org/maven2/'
-    }
-    maven { url = uri("https://repo.codemc.io/repository/maven-releases/") }
-
-    maven { url = uri("https://repo.codemc.io/repository/maven-snapshots/") }
 }
 
 dependencies {
     // Winter Framework
     api("com.thewinterframework:paper:1.0.4") {
         exclude group: 'io.papermc.paper', module: 'paper-api'
+        exclude group: 'com.google.guava', module: 'guava'
+        exclude group: 'com.google.code.gson', module: 'gson'
     }
     annotationProcessor("com.thewinterframework:paper:1.0.4")
     
@@ -63,7 +65,7 @@ dependencies {
     }
     annotationProcessor('com.thewinterframework:configuration:1.0.2')
     
-    
+    // Winter Command
     api('com.thewinterframework:command:1.0.1') {
         exclude group: 'io.papermc.paper', module: 'paper-api'
         exclude group: 'org.incendo', module: 'cloud-paper'
@@ -73,11 +75,11 @@ dependencies {
     }
     annotationProcessor('com.thewinterframework:command:1.0.1')
     
+    // Cloud Command Framework
     api('org.incendo:cloud-paper:2.0.0-beta.10')
     api('org.incendo:cloud-annotations:2.0.0')
     
     // Paper API
-    //compileOnly('io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT')
     paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
 
     // PacketEvents
@@ -99,13 +101,24 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 shadowJar {
-    relocate 'org.h2', 'me.mapacheee.extendedhorizons.libs.h2'
+    minimize {
+        exclude(dependency('com.thewinterframework:.*'))
+        exclude(dependency('com.google.inject:.*'))
+        exclude(dependency('com.thewinterframework:configuration:.*'))
+        exclude(dependency('org.incendo:.*'))
+    }
+    
     relocate 'com.thewinterframework', 'me.mapacheee.extendedhorizons.libs.winter'
     relocate 'com.google.inject', 'me.mapacheee.extendedhorizons.libs.guice'
-    relocate 'com.google.common', 'me.mapacheee.extendedhorizons.libs.guava'
-    relocate 'org.checkerframework', 'me.mapacheee.extendedhorizons.libs.checkerframework'
+    relocate 'org.incendo', 'me.mapacheee.extendedhorizons.libs.cloud'
+
     relocate 'javax.inject', 'me.mapacheee.extendedhorizons.libs.inject'
     relocate 'aopalliance', 'me.mapacheee.extendedhorizons.libs.aopalliance'
+
+    exclude 'org/checkerframework/**'
+    exclude 'META-INF/maven/org.checkerframework/**'
+    exclude 'com/google/errorprone/**'
+    exclude 'com/google/j2objc/**'
 
     exclude 'META-INF/MANIFEST.MF'
     exclude 'META-INF/*.SF'
@@ -155,4 +168,3 @@ checkstyle {
     configFile = file('checkstyle.xml')
     ignoreFailures = true
 }
-
