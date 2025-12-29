@@ -88,7 +88,12 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 shadowJar {
-    minimize()
+    minimize {
+        exclude(dependency('com.thewinterframework:.*'))
+        exclude(dependency('com.google.inject:.*'))
+        exclude(dependency('com.thewinterframework:configuration:.*'))
+    }
+    
     relocate 'com.thewinterframework', 'me.mapacheee.extendedhorizons.libs.winter'
     relocate 'com.google.inject', 'me.mapacheee.extendedhorizons.libs.guice'
 
