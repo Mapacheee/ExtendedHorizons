@@ -1,6 +1,8 @@
 package me.mapacheee.extendedhorizons;
 
 import com.github.retrooper.packetevents.PacketEvents;
+import com.google.inject.Injector;
+import com.google.inject.Stage;
 import com.thewinterframework.paper.PaperWinterPlugin;
 import com.thewinterframework.plugin.WinterBootPlugin;
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
@@ -26,6 +28,11 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
     public static <T> T getService(Class<T> type) {
         return instance.injector.getInstance(type);
+    }
+
+    @Override
+    protected Injector createInjector() {
+        return com.google.inject.Guice.createInjector(Stage.DEVELOPMENT, getGuiceModules());
     }
 
     @Override
