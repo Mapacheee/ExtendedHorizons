@@ -19,10 +19,6 @@ repositories {
         url = uri("https://repo.papermc.io/repository/maven-public/")
     }
     maven {
-    name = 'papermc'
-    url = 'https://repo.papermc.io/repository/maven-public/'
-  }
-    maven {
         name = 'papermc-repo'
         url = 'https://repo.papermc.io/repository/maven-public/'
     }
@@ -55,6 +51,8 @@ dependencies {
     // Winter Framework
     api("com.thewinterframework:paper:1.0.4") {
         exclude group: 'io.papermc.paper', module: 'paper-api'
+        exclude group: 'com.google.guava', module: 'guava'
+        exclude group: 'com.google.code.gson', module: 'gson'
     }
     annotationProcessor("com.thewinterframework:paper:1.0.4")
     
@@ -91,14 +89,16 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 shadowJar {
+    minimize()
+
     relocate 'org.h2', 'me.mapacheee.extendedhorizons.libs.h2'
     relocate 'com.thewinterframework', 'me.mapacheee.extendedhorizons.libs.winter'
     relocate 'com.google.inject', 'me.mapacheee.extendedhorizons.libs.guice'
-    relocate 'com.google.common', 'me.mapacheee.extendedhorizons.libs.guava'
-    relocate 'org.checkerframework', 'me.mapacheee.extendedhorizons.libs.checkerframework'
     relocate 'javax.inject', 'me.mapacheee.extendedhorizons.libs.inject'
     relocate 'aopalliance', 'me.mapacheee.extendedhorizons.libs.aopalliance'
-
+    
+    exclude 'org/checkerframework/**'
+    exclude 'META-INF/maven/org.checkerframework/**'
     exclude 'META-INF/MANIFEST.MF'
     exclude 'META-INF/*.SF'
     exclude 'META-INF/*.DSA'
@@ -147,4 +147,3 @@ checkstyle {
     configFile = file('checkstyle.xml')
     ignoreFailures = true
 }
-
