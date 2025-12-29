@@ -1,7 +1,6 @@
 package me.mapacheee.extendedhorizons.api;
 
 import com.google.inject.Inject;
-import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.api.event.FakeChunkBatchLoadEvent.ChunkCoordinate;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
 import me.mapacheee.extendedhorizons.viewdistance.service.FakeChunkService;
@@ -17,9 +16,8 @@ import java.util.stream.Collectors;
 /**
  * Implementation of the ExtendedHorizons public API.
  * This service is registered as a singleton and can be accessed by other
- * plugins.
+ * plugins via APIModule's @Provides binding.
  */
-@Service
 public class ExtendedHorizonsAPIImpl implements ExtendedHorizonsAPI {
 
     private final FakeChunkService fakeChunkService;
