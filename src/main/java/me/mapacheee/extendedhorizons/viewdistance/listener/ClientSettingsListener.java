@@ -6,6 +6,8 @@ import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import com.destroystokyo.paper.event.player.PlayerClientOptionsChangeEvent;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
+import org.bukkit.entity.Player;
 
 @ListenerComponent
 public class ClientSettingsListener implements Listener {
@@ -19,13 +21,23 @@ public class ClientSettingsListener implements Listener {
 
     @EventHandler
     public void onClientOptionsChange(PlayerClientOptionsChangeEvent event) {
-        if (event.getPlayer() == null)
+        Player player = event.getPlayer();
+        if (player == null || !player.isOnline()) {
             return;
+        }
+
+        try {
+            if (((CraftPlayer) player).getHandle().connection == null) {
+                return;
+            }
+        } catch (Exception e) {
+            return;
+        }
 
         if (event.hasViewDistanceChanged()) {
             int newDistance = event.getViewDistance();
             try {
-                viewDistanceService.setPlayerDistance(event.getPlayer(), newDistance);
+                viewDistanceService.setPlayerDistance(player, newDistance);
             } catch (IllegalArgumentException ignored) {
             }
         }
