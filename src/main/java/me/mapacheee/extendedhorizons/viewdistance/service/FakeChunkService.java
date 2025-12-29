@@ -572,8 +572,7 @@ public class FakeChunkService {
      * Attempts to get a chunk from the servers memory cache or our own cache
      */
     private Object getChunkFromMemoryCache(World world, int chunkX, int chunkZ) {
-        boolean antiXrayEnabled = configService.get().performance().fakeChunks().antiXray().enabled();
-        if (!configService.get().performance().fakeChunks().enableMemoryCache() || antiXrayEnabled) {
+        if (!configService.get().performance().fakeChunks().enableMemoryCache()) {
             return null;
         }
 
@@ -670,7 +669,24 @@ public class FakeChunkService {
                 if (!player.isOnline())
                     return null;
 
-                return nmsPacketAccess.createChunkPacket(chunk);
+                Object chunkToSend = chunk;
+                MainConfig.PerformanceConfig.FakeChunksConfig.AntiXrayConfig antiXray = configService.get().performance().fakeChunks().antiXray();
+
+                if (antiXray != null && antiXray.enabled()) {
+                    // Clone chunk to avoid modifying original server chunk
+                    chunkToSend = nmsChunkAccess.cloneChunk(chunk);
+                    if (chunkToSend != null) {
+                        nmsChunkAccess.obfuscateChunk(
+                                chunkToSend,
+                                antiXray.hideOres(),
+                                antiXray.addFakeOres(),
+                                antiXray.fakeOreDensity());
+                    } else {
+                        chunkToSend = chunk; // Fallback to original if clone fails
+                    }
+                }
+
+                return nmsPacketAccess.createChunkPacket(chunkToSend);
             } catch (Exception e) {
                 if (DEBUG)
                     logger.warn("[EH] Failed to create packet: {}", e.getMessage());

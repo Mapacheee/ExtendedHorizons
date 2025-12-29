@@ -5,16 +5,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.core.BlockPos;
-import java.util.Map;
-import java.lang.reflect.Field;
-import java.lang.reflect.Constructor;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.EmptyLevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -38,7 +31,7 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
 
             if (chunkHolder != null) {
                 LevelChunk chunk = chunkHolder.getFullChunkNow();
-                if (chunk != null && !(chunk instanceof EmptyLevelChunk)) {
+                if (!(chunk instanceof EmptyLevelChunk)) {
                     return chunk;
                 }
             }
@@ -63,93 +56,21 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
 
     @Override
     public Object cloneChunk(Object chunk) {
-        if (!(chunk instanceof LevelChunk))
+        if (!(chunk instanceof LevelChunk original)) {
             return null;
-        LevelChunk original = (LevelChunk) chunk;
+        }
 
-        final LevelChunkSection[] originalSections = original.getSections();
-        final LevelChunkSection[] newSections = new LevelChunkSection[originalSections.length];
-
-        LevelChunk newChunk = new LevelChunk(original.getLevel(), original.getPos()) {
-            @Override
-            public Map<BlockPos, BlockEntity> getBlockEntities() {
-                return original.getBlockEntities();
-            }
-
-            @Override
-            public LevelChunkSection[] getSections() {
-                return newSections;
-            }
-        };
-
-        // Copy critical data
+        LevelChunk newChunk = new LevelChunk(original.getLevel(), original.getPos());
         newChunk.setInhabitedTime(original.getInhabitedTime());
 
-        for (int i = 0; i < originalSections.length; i++) {
+        final LevelChunkSection[] originalSections = original.getSections();
+        final LevelChunkSection[] newSections = newChunk.getSections();
+
+        for (int i = 0; i < originalSections.length && i < newSections.length; i++) {
             LevelChunkSection oldSection = originalSections[i];
+
             if (oldSection != null && !oldSection.hasOnlyAir()) {
-                try {
-                    // get section Y using reflection if method is missing
-                    Field bottomYField = LevelChunkSection.class.getDeclaredField("bottomBlockY");
-                    bottomYField.setAccessible(true);
-                    int bottomY = bottomYField.getInt(oldSection);
-                    int sectionY = bottomY >> 4;
-                    LevelChunkSection newSection = null;
-                    Object biomeRegistryOrContainer = null;
-
-                    for (Constructor<?> c : LevelChunkSection.class.getDeclaredConstructors()) {
-                        if (c.getParameterCount() == 2 && c.getParameterTypes()[0] == int.class) {
-                            c.setAccessible(true);
-                            Class<?> argType = c.getParameterTypes()[1];
-
-                            if (net.minecraft.core.Registry.class.isAssignableFrom(argType)) {
-                                biomeRegistryOrContainer = original.getLevel().registryAccess()
-                                        .lookupOrThrow(Registries.BIOME);
-                                newSection = (LevelChunkSection) c.newInstance(sectionY, biomeRegistryOrContainer);
-                                break;
-                            } else if (PalettedContainer.class.isAssignableFrom(argType)) {
-                                biomeRegistryOrContainer = oldSection.getBiomes(); // already a container
-                                newSection = (LevelChunkSection) c.newInstance(sectionY, biomeRegistryOrContainer);
-                                break;
-                            }
-                        }
-                    }
-
-                    if (newSection == null) {
-                        throw new RuntimeException("Could not find suitable LevelChunkSection constructor");
-                    }
-
-                    // Reflective copy fields
-
-                    // 1. Biomes
-                    Field biomesField = LevelChunkSection.class.getDeclaredField("biomes");
-                    biomesField.setAccessible(true);
-                    biomesField.set(newSection, oldSection.getBiomes().copy());
-
-                    // 2. States (BlockStates)
-                    Field statesField = LevelChunkSection.class.getDeclaredField("states");
-                    statesField.setAccessible(true);
-                    statesField.set(newSection, oldSection.getStates().copy());
-
-                    // 3. Non-empty block count
-                    Field nonEmptyCountField = LevelChunkSection.class
-                            .getDeclaredField("nonEmptyBlockCount");
-                    nonEmptyCountField.setAccessible(true);
-                    short count = (short) nonEmptyCountField.getShort(oldSection);
-                    nonEmptyCountField.setShort(newSection, count);
-
-                    // 4. Ticking block count
-                    Field tickingCountField = LevelChunkSection.class
-                            .getDeclaredField("tickingBlockCount");
-                    tickingCountField.setAccessible(true);
-                    tickingCountField.setShort(newSection, (short) tickingCountField.getShort(oldSection));
-
-                    newSections[i] = newSection;
-
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    newSections[i] = oldSection;
-                }
+                newSections[i] = oldSection.copy();
             }
         }
 
@@ -158,14 +79,21 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
 
     @Override
     public void obfuscateChunk(Object chunkObj, boolean hideOres, boolean addFakeOres, double density) {
-        if (!(chunkObj instanceof LevelChunk))
+        if (!(chunkObj instanceof LevelChunk chunk))
             return;
-        LevelChunk chunk = (LevelChunk) chunkObj;
+
+        if (!hideOres && !addFakeOres)
+            return;
+
         Random random = new Random();
 
         for (LevelChunkSection section : chunk.getSections()) {
-            if (section == null || section.hasOnlyAir())
+            if (section.hasOnlyAir())
                 continue;
+
+            BlockState stone = null;
+            BlockState deepslate = null;
+            BlockState netherrack = null;
 
             for (int x = 0; x < 16; x++) {
                 for (int y = 0; y < 16; y++) {
@@ -173,11 +101,31 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
                         BlockState state = section.getBlockState(x, y, z);
                         Block block = state.getBlock();
 
-                        if (hideOres && isValuableOre(block)) {
-                            section.setBlockState(x, y, z, getReplacement(block).defaultBlockState(), false);
-                        } else if (addFakeOres && shouldFakeOre(block)) {
-                            if (random.nextDouble() < density) {
-                                section.setBlockState(x, y, z, getRandomOre(block, random).defaultBlockState(), false);
+                        if (hideOres) {
+                            if (isValuableOre(block)) {
+                                Block replacement = getReplacement(block);
+                                BlockState replacementState;
+
+                                if (replacement == Blocks.STONE) {
+                                    if (stone == null) stone = Blocks.STONE.defaultBlockState();
+                                    replacementState = stone;
+                                } else if (replacement == Blocks.DEEPSLATE) {
+                                    if (deepslate == null) deepslate = Blocks.DEEPSLATE.defaultBlockState();
+                                    replacementState = deepslate;
+                                } else {
+                                    if (netherrack == null) netherrack = Blocks.NETHERRACK.defaultBlockState();
+                                    replacementState = netherrack;
+                                }
+
+                                section.setBlockState(x, y, z, replacementState, false);
+                                continue;
+                            }
+                        }
+
+                        if (addFakeOres) {
+                            if (shouldFakeOre(block) && random.nextDouble() < density) {
+                                Block fakeOre = getRandomOre(block, random);
+                                section.setBlockState(x, y, z, fakeOre.defaultBlockState(), false);
                             }
                         }
                     }
