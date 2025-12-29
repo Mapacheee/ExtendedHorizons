@@ -63,10 +63,18 @@ dependencies {
     }
     annotationProcessor('com.thewinterframework:configuration:1.0.2')
     
+    
     api('com.thewinterframework:command:1.0.1') {
         exclude group: 'io.papermc.paper', module: 'paper-api'
+        exclude group: 'org.incendo', module: 'cloud-paper'
+        exclude group: 'org.incendo', module: 'cloud-annotations'
+        exclude group: 'org.incendo', module: 'cloud-bukkit'
+        exclude group: 'org.incendo', module: 'cloud-core'
     }
     annotationProcessor('com.thewinterframework:command:1.0.1')
+    
+    api('org.incendo:cloud-paper:2.0.0-beta.10')
+    api('org.incendo:cloud-annotations:2.0.0')
     
     // Paper API
     //compileOnly('io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT')
