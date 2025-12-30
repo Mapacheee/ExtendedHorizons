@@ -47,10 +47,29 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
 
     @Override
     public Object getNMSChunk(Chunk chunk) {
-        if (chunk instanceof CraftChunk) {
-            return ((CraftChunk) chunk)
-                    .getHandle(ChunkStatus.FULL);
+        if (!(chunk instanceof CraftChunk craftChunk)) {
+            return null;
         }
+
+        try {
+            var chunkAccess = craftChunk.getHandle(ChunkStatus.FULL);
+            if (chunkAccess instanceof LevelChunk levelChunk && !(levelChunk instanceof EmptyLevelChunk)) {
+                return levelChunk;
+            }
+
+            ServerLevel serverLevel = craftChunk.getCraftWorld().getHandle();
+            ChunkPos chunkPos = new ChunkPos(chunk.getX(), chunk.getZ());
+            long chunkKey = chunkPos.toLong();
+
+            ChunkHolder chunkHolder = serverLevel.getChunkSource().chunkMap.getVisibleChunkIfPresent(chunkKey);
+            if (chunkHolder != null) {
+                LevelChunk fullChunk = chunkHolder.getFullChunkNow();
+                if (!(fullChunk instanceof EmptyLevelChunk)) {
+                    return fullChunk;
+                }
+            }
+        } catch (Exception ignored) {}
+
         return null;
     }
 
