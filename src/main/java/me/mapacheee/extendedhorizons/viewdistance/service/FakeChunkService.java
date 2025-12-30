@@ -357,10 +357,7 @@ public class FakeChunkService {
 
                 } catch (Exception e) {
                     generatingChunks.remove(key);
-                    logger.warn("[EH] Error loading chunk {},{}: {}", chunkX, chunkZ, e.getMessage());
-                    if (DEBUG) {
-                        e.printStackTrace();
-                    }
+                    logger.warn("[EH] Error loading chunk {},{}: {}", chunkX, chunkZ, e.getMessage(), e);
                 }
             });
         }
@@ -417,27 +414,63 @@ public class FakeChunkService {
                     logger.info("[EH] Chunk {},{} loaded from disk", chunkX, chunkZ);
                 }
                 diskLoads.incrementAndGet();
-                Location chunkLocation = new Location(world,
-                        chunkX * 16 + 8, 64, chunkZ * 16 + 8);
+                Location chunkLocation = new Location(world, chunkX * 16 + 8, 64, chunkZ * 16 + 8);
 
-                Bukkit.getRegionScheduler().execute(ExtendedHorizonsPlugin.getInstance(),
-                        chunkLocation, () -> {
-
+                Bukkit.getRegionScheduler().run(ExtendedHorizonsPlugin.getInstance(),
+                        chunkLocation, (task) -> {
                             if (!player.isOnline()) {
                                 generatingChunks.remove(key);
                                 return;
                             }
 
-                            try {
-                                Object nmsChunk = nmsChunkAccess.getNMSChunk(chunk);
-                                if (nmsChunk != null) {
-                                    sendChunkPacket(player, nmsChunk, key,
-                                            sentTracker, FakeChunkLoadEvent.LoadSource.DISK);
-                                } else {
-                                    if (DEBUG) {
-                                        logger.warn("[EH] NMS chunk is null for {},{}, attempting generation",
-                                                chunkX, chunkZ);
+                            world.getChunkAtAsync(chunkX, chunkZ, false).thenAccept(regionChunk -> {
+                                if (!player.isOnline()) {
+                                    generatingChunks.remove(key);
+                                    return;
+                                }
+
+                                try {
+                                    if (regionChunk != null && regionChunk.isLoaded()) {
+                                        Object nmsChunk = nmsChunkAccess.getNMSChunk(regionChunk);
+                                        if (nmsChunk != null) {
+                                            sendChunkPacket(player, nmsChunk, key,
+                                                    sentTracker, FakeChunkLoadEvent.LoadSource.DISK);
+                                        } else {
+                                            // If still null, fallback to generation
+                                            if (DEBUG) {
+                                                logger.warn("[EH] NMS chunk is null for {},{} even after loading", chunkX, chunkZ);
+                                            }
+                                            if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
+                                                chunksGeneratedThisTick.incrementAndGet();
+                                                chunkGenerations.incrementAndGet();
+                                                generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                                            } else {
+                                                generatingChunks.remove(key);
+                                                PlayerChunkState limitState = playerStateManager
+                                                        .getOrCreate(player.getUniqueId());
+                                                limitState.getChunkQueue().addFirst(key);
+                                                limitState.getQueuedChunksSet().add(key);
+                                            }
+                                        }
+                                    } else {
+                                        if (DEBUG) {
+                                            logger.warn("[EH] Chunk {},{} not loaded after async load", chunkX, chunkZ);
+                                        }
+                                        if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
+                                            chunksGeneratedThisTick.incrementAndGet();
+                                            chunkGenerations.incrementAndGet();
+                                            generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                                        } else {
+                                            generatingChunks.remove(key);
+                                            PlayerChunkState limitState = playerStateManager
+                                                    .getOrCreate(player.getUniqueId());
+                                            limitState.getChunkQueue().addFirst(key);
+                                            limitState.getQueuedChunksSet().add(key);
+                                        }
                                     }
+                                } catch (Exception e) {
+                                    logger.warn("[EH] Exception getting NMS chunk for {},{}: {}",
+                                            chunkX, chunkZ, e.getMessage(), e);
                                     if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
                                         chunksGeneratedThisTick.incrementAndGet();
                                         chunkGenerations.incrementAndGet();
@@ -450,10 +483,22 @@ public class FakeChunkService {
                                         limitState.getQueuedChunksSet().add(key);
                                     }
                                 }
-                            } catch (Exception e) {
-                                logger.warn("[EH] Failed to get NMS chunk from Bukkit chunk: {}", e.getMessage());
-                                generatingChunks.remove(key);
-                            }
+                            }).exceptionally(ex -> {
+                                logger.warn("[EH] Failed to load chunk {},{} in region context: {}",
+                                        chunkX, chunkZ, ex.getMessage(), ex);
+                                if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
+                                    chunksGeneratedThisTick.incrementAndGet();
+                                    chunkGenerations.incrementAndGet();
+                                    generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                                } else {
+                                    generatingChunks.remove(key);
+                                    PlayerChunkState limitState = playerStateManager
+                                            .getOrCreate(player.getUniqueId());
+                                    limitState.getChunkQueue().addFirst(key);
+                                    limitState.getQueuedChunksSet().add(key);
+                                }
+                                return null;
+                            });
                         });
             }
         }, chunkProcessor).exceptionally(throwable -> {
@@ -490,20 +535,19 @@ public class FakeChunkService {
      */
     public CompletableFuture<Integer> sendFakeChunks(Player player, Set<Long> chunkKeys, double borderCenterX,
             double borderCenterZ, double borderSize) {
+
         if (!configService.get().performance().fakeChunks().enabled()) {
             return CompletableFuture.completedFuture(0);
         }
 
         if (chunkKeys.isEmpty()) {
-            if (DEBUG) {
+            if (DEBUG)
                 logger.info("[EH] No fake chunks to send for {}", player.getName());
-            }
             return CompletableFuture.completedFuture(0);
         }
 
-        if (DEBUG) {
+        if (DEBUG)
             logger.info("[EH] sendFakeChunks called for {} with {} chunks", player.getName(), chunkKeys.size());
-        }
 
         if (!isFakeChunksEnabledForWorld(player.getWorld())) {
             return CompletableFuture.completedFuture(0);
@@ -692,9 +736,9 @@ public class FakeChunkService {
                     logger.warn("[EH] Failed to create packet: {}", e.getMessage());
                 return null;
             }
-        }, (r) -> Bukkit.getScheduler().runTask(ExtendedHorizonsPlugin.getInstance(), r));
+        }, chunkProcessor);
 
-        packetFuture.thenAcceptAsync(packet -> {
+        packetFuture.thenAccept(packet -> {
             if (packet == null || !player.isOnline()) {
                 generatingChunks.remove(key);
                 return;
@@ -713,23 +757,30 @@ public class FakeChunkService {
                 return;
             }
 
-            int size = nmsPacketAccess.getPacketSize(packet);
-            bandwidthController.recordDataSent(player.getUniqueId(), size);
+            player.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (task) -> {
+                if (!player.isOnline()) {
+                    generatingChunks.remove(key);
+                    return;
+                }
 
-            PlayerChunkState state = playerStateManager.getOrCreate(player.getUniqueId());
-            state.addBytesThisSecond(size);
-            state.addActualBytesSent(size);
-            state.getFakeChunks().add(key);
-            sentTracker.add(key);
-            generatingChunks.remove(key);
+                int size = nmsPacketAccess.getPacketSize(packet);
+                bandwidthController.recordDataSent(player.getUniqueId(), size);
 
-            nmsPacketAccess.sendPacket(player, packet);
+                PlayerChunkState state = playerStateManager.getOrCreate(player.getUniqueId());
+                state.addBytesThisSecond(size);
+                state.addActualBytesSent(size);
+                state.getFakeChunks().add(key);
+                sentTracker.add(key);
+                generatingChunks.remove(key);
 
-            chunkEventDispatcher.fireLoadEvent(player, chunkX, chunkZ, currentWorld, source);
+                nmsPacketAccess.sendPacket(player, packet);
 
-            if (DEBUG)
-                logger.info("[EH] Packet sent for {},{} (Size: {}b)", chunkX, chunkZ, size);
-        }, chunkProcessor);
+                chunkEventDispatcher.fireLoadEvent(player, chunkX, chunkZ, currentWorld, source);
+
+                if (DEBUG)
+                    logger.info("[EH] Packet sent for {},{} (Size: {}b)", chunkX, chunkZ, size);
+            }, null);
+        });
 
     }
 

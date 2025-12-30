@@ -24,17 +24,22 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
         if (!(chunk instanceof LevelChunk))
             return null;
 
-        LevelChunk nmsChunk = (LevelChunk) chunk;
-        LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
-        BitSet[] lightMasks = getLightMasks(nmsChunk);
+        try {
+            LevelChunk nmsChunk = (LevelChunk) chunk;
+            LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
+            BitSet[] lightMasks = getLightMasks(nmsChunk);
 
-        @SuppressWarnings("deprecation")
-        ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
-                nmsChunk,
-                lightEngine,
-                lightMasks[0],
-                lightMasks[1]);
-        return packet;
+            ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
+                    nmsChunk,
+                    lightEngine,
+                    lightMasks[0],
+                    lightMasks[1],
+                    false);
+
+            return packet;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private BitSet[] getLightMasks(LevelChunk chunk) {
