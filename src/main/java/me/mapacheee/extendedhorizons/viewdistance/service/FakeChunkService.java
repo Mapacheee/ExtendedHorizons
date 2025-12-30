@@ -76,7 +76,7 @@ public class FakeChunkService {
     private final AtomicInteger chunksGeneratedThisTick = new AtomicInteger(0);
     private int maxGenerationsPerTick = 1;
     private ScheduledTask progressiveLoadingTask;
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
     private final AtomicLong memoryCacheHits = new AtomicLong(0);
     private final AtomicLong memoryCacheMisses = new AtomicLong(0);
     private final AtomicLong diskLoads = new AtomicLong(0);
@@ -607,9 +607,6 @@ public class FakeChunkService {
             }
         }
 
-        logger.info("[EH-QUEUE] Player {} | Total chunks: {} | Already sent: {} | Currently generating: {} | To process: {}",
-            player.getName(), chunkKeys.size(), alreadySent, generating, toProcess);
-
         if (!toSend.isEmpty()) {
             toGenerate.addAll(toSend);
         }
@@ -617,8 +614,6 @@ public class FakeChunkService {
         if (!toGenerate.isEmpty()) {
             chunkLoadStrategy.processQueue(player, state, toGenerate, generatingChunks);
             processChunkQueue(player, state.getChunkQueue());
-        } else {
-            logger.info("[EH-QUEUE] No chunks to process for {} - all chunks already sent or generating", player.getName());
         }
 
         result.complete(0);

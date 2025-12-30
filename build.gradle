@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'me.mapacheee'
-version = '2.3.2'
+version = '2.3.3'
 description = 'ExtendedHorizons - Advanced view distance extension plugin'
 
 java {
@@ -89,7 +89,7 @@ dependencies {
     compileOnly("org.xerial:sqlite-jdbc:3.51.1.0")
 
     // PlaceholderAPI
-    compileOnly("me.clip:placeholderapi:2.11.6")
+    compileOnly("me.clip:placeholderapi:2.11.7")
 
     // LuckPerms API
     compileOnly("net.luckperms:api:5.4")    
