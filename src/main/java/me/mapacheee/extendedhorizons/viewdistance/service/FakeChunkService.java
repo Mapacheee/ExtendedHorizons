@@ -76,7 +76,7 @@ public class FakeChunkService {
     private final AtomicInteger chunksGeneratedThisTick = new AtomicInteger(0);
     private int maxGenerationsPerTick = 1;
     private ScheduledTask progressiveLoadingTask;
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
     private final AtomicLong memoryCacheHits = new AtomicLong(0);
     private final AtomicLong memoryCacheMisses = new AtomicLong(0);
     private final AtomicLong diskLoads = new AtomicLong(0);
@@ -320,14 +320,18 @@ public class FakeChunkService {
     private void processChunkBatch(Player player, List<Long> batch, Set<Long> sentTracker) {
         World world = player.getWorld();
 
+        UUID uuid = player.getUniqueId();
+        PlayerChunkState state = playerStateManager.getOrCreate(uuid);
+
+        double borderCenterX = state.getBorderCenterX();
+        double borderCenterZ = state.getBorderCenterZ();
+        double borderSize = state.getBorderSize();
+
         for (long key : batch) {
             if (!player.isOnline())
                 break;
 
             generatingChunks.add(key);
-
-            UUID uuid = player.getUniqueId();
-            PlayerChunkState state = playerStateManager.getOrCreate(uuid);
 
             long estimatedChunkSize = configService.get().bandwidthSaver().estimatedPacketSize();
             if (!bandwidthController.canSendData(uuid, estimatedChunkSize)) {
@@ -348,12 +352,12 @@ public class FakeChunkService {
                             logger.info("[EH] Loaded chunk {},{} from memory cache", chunkX, chunkZ);
                         }
                         sendChunkPacket(player, memoryChunk, key, sentTracker,
-                                FakeChunkLoadEvent.LoadSource.MEMORY_CACHE);
+                                FakeChunkLoadEvent.LoadSource.MEMORY_CACHE, borderCenterX, borderCenterZ, borderSize);
                         return;
                     }
 
                     // Strategy 3: Try to load chunk from disk
-                    loadChunkFromDiskAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                    loadChunkFromDiskAndSend(player, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ, borderSize);
 
                 } catch (Exception e) {
                     generatingChunks.remove(key);
@@ -371,7 +375,7 @@ public class FakeChunkService {
      * Attempts to load chunk from disk without generating
      */
     private void loadChunkFromDiskAndSend(Player player, World world, int chunkX, int chunkZ,
-            long key, Set<Long> sentTracker) {
+            long key, Set<Long> sentTracker, final double borderCenterX, final double borderCenterZ, final double borderSize) {
 
         if (chunksLoadedFromDiskThisTick.get() >= maxDiskLoadsPerTick) {
             if (DEBUG)
@@ -408,7 +412,7 @@ public class FakeChunkService {
                     logger.info("[EH] Chunk {},{} not found on disk, generating", chunkX, chunkZ);
                 }
                 chunkGenerations.incrementAndGet();
-                generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ, borderSize);
             } else {
                 if (DEBUG) {
                     logger.info("[EH] Chunk {},{} loaded from disk", chunkX, chunkZ);
@@ -434,7 +438,7 @@ public class FakeChunkService {
                                         Object nmsChunk = nmsChunkAccess.getNMSChunk(regionChunk);
                                         if (nmsChunk != null) {
                                             sendChunkPacket(player, nmsChunk, key,
-                                                    sentTracker, FakeChunkLoadEvent.LoadSource.DISK);
+                                                    sentTracker, FakeChunkLoadEvent.LoadSource.DISK, borderCenterX, borderCenterZ, borderSize);
                                         } else {
                                             // If still null, fallback to generation
                                             if (DEBUG) {
@@ -443,7 +447,7 @@ public class FakeChunkService {
                                             if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
                                                 chunksGeneratedThisTick.incrementAndGet();
                                                 chunkGenerations.incrementAndGet();
-                                                generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                                                generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ, borderSize);
                                             } else {
                                                 generatingChunks.remove(key);
                                                 PlayerChunkState limitState = playerStateManager
@@ -459,7 +463,7 @@ public class FakeChunkService {
                                         if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
                                             chunksGeneratedThisTick.incrementAndGet();
                                             chunkGenerations.incrementAndGet();
-                                            generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                                            generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ, borderSize);
                                         } else {
                                             generatingChunks.remove(key);
                                             PlayerChunkState limitState = playerStateManager
@@ -474,7 +478,7 @@ public class FakeChunkService {
                                     if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
                                         chunksGeneratedThisTick.incrementAndGet();
                                         chunkGenerations.incrementAndGet();
-                                        generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                                        generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ, borderSize);
                                     } else {
                                         generatingChunks.remove(key);
                                         PlayerChunkState limitState = playerStateManager
@@ -489,7 +493,7 @@ public class FakeChunkService {
                                 if (chunksGeneratedThisTick.get() < maxGenerationsPerTick) {
                                     chunksGeneratedThisTick.incrementAndGet();
                                     chunkGenerations.incrementAndGet();
-                                    generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+                                    generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ, borderSize);
                                 } else {
                                     generatingChunks.remove(key);
                                     PlayerChunkState limitState = playerStateManager
@@ -516,7 +520,7 @@ public class FakeChunkService {
                         chunkX, chunkZ, throwable.getMessage());
             }
             chunkGenerations.incrementAndGet();
-            generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker);
+            generateChunkAndSend(player, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ, borderSize);
             return null;
         });
     }
@@ -556,6 +560,9 @@ public class FakeChunkService {
         CompletableFuture<Integer> result = new CompletableFuture<>();
         UUID uuid = player.getUniqueId();
         PlayerChunkState state = playerStateManager.getOrCreate(uuid);
+
+        state.updateWorldBorder(borderCenterX, borderCenterZ, borderSize);
+
         Set<Long> playerSentChunks = state.getFakeChunks();
 
         Set<Long> toRemove = new HashSet<>(playerSentChunks);
@@ -582,22 +589,26 @@ public class FakeChunkService {
         Set<Long> toSend = new HashSet<>();
         List<Long> toGenerate = new ArrayList<>();
 
+        int alreadySent = 0;
+        int generating = 0;
+        int toProcess = 0;
+
         for (long key : chunkKeys) {
             if (playerSentChunks.contains(key)) {
-                continue;
-            }
-
-            int chunkX = ChunkUtils.unpackX(key);
-            int chunkZ = ChunkUtils.unpackZ(key);
-
-            if (!ChunkUtils.isChunkWithinWorldBorder(borderCenterX, borderCenterZ, borderSize, chunkX, chunkZ)) {
+                alreadySent++;
                 continue;
             }
 
             if (!generatingChunks.contains(key)) {
                 toGenerate.add(key);
+                toProcess++;
+            } else {
+                generating++;
             }
         }
+
+        logger.info("[EH-QUEUE] Player {} | Total chunks: {} | Already sent: {} | Currently generating: {} | To process: {}",
+            player.getName(), chunkKeys.size(), alreadySent, generating, toProcess);
 
         if (!toSend.isEmpty()) {
             toGenerate.addAll(toSend);
@@ -606,6 +617,8 @@ public class FakeChunkService {
         if (!toGenerate.isEmpty()) {
             chunkLoadStrategy.processQueue(player, state, toGenerate, generatingChunks);
             processChunkQueue(player, state.getChunkQueue());
+        } else {
+            logger.info("[EH-QUEUE] No chunks to process for {} - all chunks already sent or generating", player.getName());
         }
 
         result.complete(0);
@@ -662,10 +675,10 @@ public class FakeChunkService {
 
     /**
      * Generates a new chunk and sends it to the player
-     * This is the slowest method and should be the last resort
+     * This is the slowest loading method and should only be used as a last resort
      */
     private void generateChunkAndSend(Player player, World world, int chunkX, int chunkZ,
-            long key, Set<Long> sentTracker) {
+            long key, Set<Long> sentTracker, final double borderCenterX, final double borderCenterZ, final double borderSize) {
         world.getChunkAtAsync(chunkX, chunkZ, true).thenAcceptAsync(chunk -> {
             if (!player.isOnline()) {
                 generatingChunks.remove(key);
@@ -682,7 +695,7 @@ public class FakeChunkService {
                     long chunkKey = ChunkUtils.packChunkKey(chunkX, chunkZ);
                     cacheChunkInMemory(chunkKey, nmsChunk);
                     sendChunkPacket(player, nmsChunk, key, sentTracker,
-                            FakeChunkLoadEvent.LoadSource.GENERATED);
+                            FakeChunkLoadEvent.LoadSource.GENERATED, borderCenterX, borderCenterZ, borderSize);
                 } else {
                     generatingChunks.remove(key);
                     if (DEBUG) {
@@ -703,10 +716,27 @@ public class FakeChunkService {
     }
 
     /**
-     * Enqueues a chunk packet to be sent to the player
+     * Sends a chunk packet to a player
      */
     private void sendChunkPacket(Player player, Object chunk, long key, Set<Long> sentTracker,
-            FakeChunkLoadEvent.LoadSource source) {
+            FakeChunkLoadEvent.LoadSource source, final double borderCenterX, final double borderCenterZ, final double borderSize) {
+
+        int chunkX = ChunkUtils.unpackX(key);
+        int chunkZ = ChunkUtils.unpackZ(key);
+
+        boolean isWithinBorder = ChunkUtils.isChunkWithinWorldBorder(borderCenterX, borderCenterZ, borderSize, chunkX, chunkZ);
+
+        if (DEBUG) {
+            logger.info("[EH-BORDER] Chunk {},{} | Within border: {} | Border: center=({},{}), size={}",
+                chunkX, chunkZ, isWithinBorder, borderCenterX, borderCenterZ, borderSize);
+        }
+
+        if (!isWithinBorder) {
+            generatingChunks.remove(key);
+            sentTracker.add(key); // Mark as processed so it won't be queued again
+            logger.info("[EH-BORDER] Skipped chunk {},{} - outside world border (marked as sent)", chunkX, chunkZ);
+            return;
+        }
 
         CompletableFuture<Object> packetFuture = CompletableFuture.supplyAsync(() -> {
             try {
@@ -726,7 +756,7 @@ public class FakeChunkService {
                                 antiXray.addFakeOres(),
                                 antiXray.fakeOreDensity());
                     } else {
-                        chunkToSend = chunk; // Fallback to original if clone fails
+                        chunkToSend = chunk;
                     }
                 }
 
@@ -744,8 +774,6 @@ public class FakeChunkService {
                 return;
             }
 
-            int chunkX = ChunkUtils.unpackX(key);
-            int chunkZ = ChunkUtils.unpackZ(key);
             World currentWorld = player.getWorld();
             World chunkWorld = ((LevelChunk) chunk).getLevel().getWorld();
 

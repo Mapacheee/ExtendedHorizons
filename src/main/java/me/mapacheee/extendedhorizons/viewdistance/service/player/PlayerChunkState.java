@@ -108,6 +108,23 @@ public class PlayerChunkState {
      */
     private volatile boolean inWarmup;
 
+    // === World Border ===
+
+    /**
+     * World border center X coordinate (for filtering chunks)
+     */
+    private volatile double borderCenterX;
+
+    /**
+     * World border center Z coordinate (for filtering chunks)
+     */
+    private volatile double borderCenterZ;
+
+    /**
+     * World border size (for filtering chunks)
+     */
+    private volatile double borderSize;
+
     // === Constructor ===
 
     public PlayerChunkState(UUID playerId) {
@@ -283,7 +300,39 @@ public class PlayerChunkState {
         return System.currentTimeMillis() - warmupStartTime >= warmupDelayMs;
     }
 
-    // === Utility Methods ===
+    // --- World Border ---
+
+    public double getBorderCenterX() {
+        return borderCenterX;
+    }
+
+    public void setBorderCenterX(double borderCenterX) {
+        this.borderCenterX = borderCenterX;
+    }
+
+    public double getBorderCenterZ() {
+        return borderCenterZ;
+    }
+
+    public void setBorderCenterZ(double borderCenterZ) {
+        this.borderCenterZ = borderCenterZ;
+    }
+
+    public double getBorderSize() {
+        return borderSize;
+    }
+
+    public void setBorderSize(double borderSize) {
+        this.borderSize = borderSize;
+    }
+
+    public void updateWorldBorder(double centerX, double centerZ, double size) {
+        this.borderCenterX = centerX;
+        this.borderCenterZ = centerZ;
+        this.borderSize = size;
+    }
+
+    // === State Management ===
 
     /**
      * Resets per-tick counters.

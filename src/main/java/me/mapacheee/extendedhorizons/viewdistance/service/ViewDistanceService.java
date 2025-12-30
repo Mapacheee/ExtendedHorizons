@@ -236,13 +236,6 @@ public class ViewDistanceService {
                     }
                 }, null, 20L);
 
-        int serverViewDistance = fakeChunkService.getServerViewDistance();
-        if (playerView.getTargetDistance() <= serverViewDistance) {
-            fakeChunkService.clearPlayerFakeChunks(player, true,
-                    FakeChunkUnloadEvent.UnloadReason.DISTANCE);
-            return;
-        }
-
         org.bukkit.WorldBorder border = player.getWorld().getWorldBorder();
         double borderCenterX = border.getCenter().getX();
         double borderCenterZ = border.getCenter().getZ();
@@ -318,7 +311,7 @@ public class ViewDistanceService {
     /**
      * Classifies chunks into real (within server view-distance) and fake (beyond
      * server view-distance)
-     * Also filters out chunks outside the world border.
+     * World border filtering is done later in FakeChunkService.sendFakeChunks()
      */
     private ChunkClassification classifyChunks(Player player, Set<Long> allChunks, double borderCenterX,
             double borderCenterZ, double borderSize) {
@@ -334,10 +327,6 @@ public class ViewDistanceService {
         for (long key : allChunks) {
             int chunkX = ChunkUtils.unpackX(key);
             int chunkZ = ChunkUtils.unpackZ(key);
-
-            if (!ChunkUtils.isChunkWithinWorldBorder(borderCenterX, borderCenterZ, borderSize, chunkX, chunkZ)) {
-                continue;
-            }
 
             int dx = chunkX - playerChunkX;
             int dz = chunkZ - playerChunkZ;
