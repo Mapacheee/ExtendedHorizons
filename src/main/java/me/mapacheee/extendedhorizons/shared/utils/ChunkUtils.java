@@ -59,12 +59,9 @@ public class ChunkUtils {
         double chunkBlockX = (chunkX << 4) + 8;
         double chunkBlockZ = (chunkZ << 4) + 8;
 
-        double dx = chunkBlockX - borderCenterX;
-        double dz = chunkBlockZ - borderCenterZ;
-        double distanceSquared = dx * dx + dz * dz;
-
-        double maxDistanceSquared = (borderRadius + 8) * (borderRadius + 8);
-        return distanceSquared <= maxDistanceSquared;
+        double maxAxisDistance = borderRadius + 8;
+        return Math.abs(chunkBlockX - borderCenterX) <= maxAxisDistance
+                && Math.abs(chunkBlockZ - borderCenterZ) <= maxAxisDistance;
     }
 
     /**
