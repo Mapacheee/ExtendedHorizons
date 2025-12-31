@@ -66,7 +66,7 @@ public class PlayerStorageService {
      * @return A CompletableFuture containing an Optional of PlayerData.
      */
     public CompletableFuture<Optional<PlayerData>> getPlayerData(UUID uuid) {
-        if (!configService.get().database().enabled()) {
+        if (!configService.get().database().enabled() || databaseUrl == null) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
@@ -91,7 +91,7 @@ public class PlayerStorageService {
      * @return A CompletableFuture that completes when the operation is finished.
      */
     public CompletableFuture<Void> savePlayerData(PlayerData playerData) {
-        if (!configService.get().database().enabled()) {
+        if (!configService.get().database().enabled() || databaseUrl == null) {
             return CompletableFuture.completedFuture(null);
         }
 
