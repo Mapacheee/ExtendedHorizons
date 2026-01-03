@@ -34,7 +34,7 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
                     lightEngine,
                     lightMasks[0],
                     lightMasks[1],
-                    false);
+                    true);
 
             return packet;
         } catch (Exception e) {
