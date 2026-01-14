@@ -18,7 +18,7 @@ import org.jetbrains.annotations.Nullable;
  * Registers the expansion only if enabled in config and PAPI is present.
  */
 @Service
-public class PlaceholderService extends PlaceholderExpansion {
+public class PlaceholderService {
 
     private final ViewDistanceService viewDistanceService;
     private final ConfigService configService;
@@ -33,46 +33,60 @@ public class PlaceholderService extends PlaceholderExpansion {
     public void registerPAPI() {
         var cfg = configService.get().integrations().placeholderapi();
         boolean enabled = cfg != null && cfg.enabled();
-        if (!enabled) return;
-        if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return;
-        this.register();
+        if (!enabled)
+            return;
+        if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
+            return;
+
+        new InternalExpansion(viewDistanceService).register();
     }
 
-    @Override
-    public @NotNull String getIdentifier() {
-        return ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class).getPluginMeta().getName().toLowerCase();
-    }
+    private static class InternalExpansion extends PlaceholderExpansion {
 
-    @Override
-    public @NotNull String getAuthor() {
-        return ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class).getPluginMeta().getAuthors().toString();
-    }
+        private final ViewDistanceService viewDistanceService;
 
-    @Override
-    public @NotNull String getVersion() {
-        return ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class).getPluginMeta().getVersion();
-    }
+        public InternalExpansion(ViewDistanceService viewDistanceService) {
+            this.viewDistanceService = viewDistanceService;
+        }
 
-    @Override
-    public boolean persist() {
-        return true;
-    }
+        @Override
+        public @NotNull String getIdentifier() {
+            return ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class).getPluginMeta().getName()
+                    .toLowerCase();
+        }
 
-    @Override
-    public @Nullable String onRequest(OfflinePlayer player, @NotNull String params) {
-        if (player == null) {
+        @Override
+        public @NotNull String getAuthor() {
+            return ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class).getPluginMeta().getAuthors()
+                    .toString();
+        }
+
+        @Override
+        public @NotNull String getVersion() {
+            return ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class).getPluginMeta().getVersion();
+        }
+
+        @Override
+        public boolean persist() {
+            return true;
+        }
+
+        @Override
+        public @Nullable String onRequest(OfflinePlayer player, @NotNull String params) {
+            if (player == null) {
+                return null;
+            }
+
+            PlayerView view = viewDistanceService.getPlayerView(player.getUniqueId());
+            if (view == null) {
+                return "N/A";
+            }
+
+            if ("view_distance".equalsIgnoreCase(params)) {
+                return String.valueOf(view.getTargetDistance());
+            }
+
             return null;
         }
-
-        PlayerView view = viewDistanceService.getPlayerView(player.getUniqueId());
-        if (view == null) {
-            return "N/A";
-        }
-
-        if ("view_distance".equalsIgnoreCase(params)) {
-            return String.valueOf(view.getTargetDistance());
-        }
-
-        return null;
     }
 }

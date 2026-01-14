@@ -59,7 +59,6 @@ public class PacketService {
         }
 
         lastSentChunkRadius.put(uuid, radius);
-        lastSentChunkRadius.put(uuid, radius);
 
         Object packet = nmsPacketAccess.createChunkCacheRadiusPacket(radius);
         nmsPacketAccess.sendPacket(player, packet);
@@ -90,7 +89,6 @@ public class PacketService {
             return;
         }
 
-        lastSentSimulationDistance.put(uuid, distance);
         lastSentSimulationDistance.put(uuid, distance);
 
         Object packet = nmsPacketAccess.createSimulationDistancePacket(distance);

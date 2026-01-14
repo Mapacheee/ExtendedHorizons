@@ -51,10 +51,6 @@ public class PlayerChunkState {
 
     // === Packet Management ===
 
-    /**
-     * Queue of packets waiting to be sent to this player (batched).
-     */
-    private final Deque<Object> pendingPackets = new ConcurrentLinkedDeque<>();
 
     // === Bandwidth Tracking ===
 
@@ -170,10 +166,6 @@ public class PlayerChunkState {
     }
 
     // --- Packet Management ---
-
-    public Deque<Object> getPendingPackets() {
-        return pendingPackets;
-    }
 
     // --- Bandwidth Tracking ---
 
@@ -369,7 +361,8 @@ public class PlayerChunkState {
         fakeChunks.clear();
         chunkQueue.clear();
         queuedChunksSet.clear();
-        pendingPackets.clear();
+        queuedChunksSet.clear();
+
         lastChunkPosition = 0;
         bytesThisTick = 0;
         bytesThisSecond = 0;
@@ -393,11 +386,8 @@ public class PlayerChunkState {
         return chunkQueue.size();
     }
 
-    /**
-     * Gets the number of packets waiting to be sent.
-     */
     public int getPendingPacketCount() {
-        return pendingPackets.size();
+        return 0;
     }
 
     @Override
@@ -406,7 +396,7 @@ public class PlayerChunkState {
                 "playerId=" + playerId +
                 ", fakeChunks=" + fakeChunks.size() +
                 ", queuedChunks=" + chunkQueue.size() +
-                ", pendingPackets=" + pendingPackets.size() +
+                ", queuedChunks=" + chunkQueue.size() +
                 ", bytesThisSecond=" + bytesThisSecond +
                 ", avgPing=" + avgPing +
                 ", inWarmup=" + inWarmup +

@@ -9,6 +9,7 @@ import me.mapacheee.extendedhorizons.shared.storage.PlayerStorageService;
 import me.mapacheee.extendedhorizons.viewdistance.entity.PlayerView;
 import me.mapacheee.extendedhorizons.viewdistance.listener.PlayerMovementListener;
 
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
 
@@ -72,47 +73,63 @@ public class ViewDistanceService {
             return;
         }
 
-        storageService.getPlayerData(player.getUniqueId()).thenAccept(playerData -> {
+        UUID playerId = player.getUniqueId();
+
+        storageService.getPlayerData(playerId).thenAccept(playerData -> {
+            Player p = Bukkit.getPlayer(playerId);
+            if (p == null || !p.isOnline()) {
+                return;
+            }
+
             int fallbackDefault = configService.get().viewDistance().defaultDistance();
-            int clientDistance = player.getClientViewDistance();
-            int initialDistance = (clientDistance > 0) ? clientDistance
-                    : playerData
-                            .map(PlayerData::getViewDistance)
-                            .orElse(fallbackDefault);
+            int dbDistance = playerData.map(PlayerData::getViewDistance).orElse(-1);
+            int clientDistance = p.getClientViewDistance();
 
-            int clamped = clampDistance(player, initialDistance);
-            PlayerView playerView = new PlayerView(player, clamped);
-            playerViews.put(player.getUniqueId(), playerView);
+            int initialDistance;
+            if (dbDistance > 0) {
+                initialDistance = dbDistance;
+            } else if (clientDistance > 0) {
+                initialDistance = clientDistance;
+            } else {
+                initialDistance = fallbackDefault;
+            }
 
-            packetService.ensureClientRadius(player, clamped);
-            packetService.ensureClientSimulationDistance(player, clamped);
+            int clamped = clampDistance(p, initialDistance);
+            PlayerView playerView = new PlayerView(p, clamped, initialDistance);
+            playerViews.put(p.getUniqueId(), playerView);
 
-            player.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
+            packetService.ensureClientRadius(p, clamped);
+            packetService.ensureClientSimulationDistance(p, clamped);
+
+            p.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
                     (task) -> {
-                        if (!player.isOnline())
+                        Player player2 = Bukkit.getPlayer(playerId);
+                        if (player2 == null || !player2.isOnline())
                             return;
 
-                        packetService.ensureClientRadius(player, clamped);
-                        packetService.ensureClientSimulationDistance(player, clamped);
+                        packetService.ensureClientRadius(player2, clamped);
+                        packetService.ensureClientSimulationDistance(player2, clamped);
                     }, null, 5L);
 
             var msgCfg = configService.get().messages();
             if (msgCfg != null && msgCfg.welcomeMessage() != null && msgCfg.welcomeMessage().enabled()) {
-                player.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
+                p.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
                         (task) -> {
-                            if (player.isOnline())
-                                messageService.sendWelcome(player, clamped);
+                            Player player2 = Bukkit.getPlayer(playerId);
+                            if (player2 != null && player2.isOnline())
+                                messageService.sendWelcome(player2, clamped);
                         }, null, 15L);
             }
 
-            player.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
+            p.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
                     (task) -> {
-                        if (!player.isOnline())
+                        Player player2 = Bukkit.getPlayer(playerId);
+                        if (player2 == null || !player2.isOnline())
                             return;
 
-                        packetService.ensureClientRadius(player, clamped);
-                        packetService.ensureClientSimulationDistance(player, clamped);
-                        updatePlayerView(player);
+                        packetService.ensureClientRadius(player2, clamped);
+                        packetService.ensureClientSimulationDistance(player2, clamped);
+                        updatePlayerView(player2);
                     }, null, 70L);
         });
     }
@@ -124,13 +141,17 @@ public class ViewDistanceService {
         PlayerView playerView = playerViews.remove(player.getUniqueId());
         if (playerView != null) {
             storageService.savePlayerData(new PlayerData(
-                    player.getUniqueId(), playerView.getTargetDistance()));
+                    player.getUniqueId(), playerView.getPreferredDistance()));
         }
 
         fakeChunkService.clearPlayerFakeChunks(player, true,
                 FakeChunkUnloadEvent.UnloadReason.PLAYER_QUIT);
         packetService.cleanupPlayer(player);
         movementListener.cleanupPlayer(player.getUniqueId());
+
+        if (luckPermsService != null && luckPermsService.isEnabled()) {
+            luckPermsService.cleanupPlayer(player.getUniqueId());
+        }
     }
 
     /**
@@ -150,13 +171,19 @@ public class ViewDistanceService {
             throw new IllegalStateException("ExtendedHorizons is disabled in this world");
         }
 
-        PlayerView view = playerViews.computeIfAbsent(player.getUniqueId(),
-                id -> new PlayerView(player, clampDistance(player, requestedDistance)));
         int clamped = clampDistance(player, requestedDistance);
-        view.setTargetDistance(clamped);
+
+        PlayerView view = playerViews.compute(player.getUniqueId(), (uuid, existing) -> {
+            if (existing == null) {
+                return new PlayerView(player, clamped, requestedDistance);
+            }
+            existing.setTargetDistance(clamped);
+            existing.setPreferredDistance(requestedDistance);
+            return existing;
+        });
 
         storageService.savePlayerData(
-                new PlayerData(player.getUniqueId(), clamped));
+                new PlayerData(player.getUniqueId(), requestedDistance));
 
         packetService.ensureClientRadius(player, clamped);
         packetService.ensureClientSimulationDistance(player, clamped);
@@ -220,7 +247,7 @@ public class ViewDistanceService {
         if (playerView == null)
             return;
 
-        int clampedTarget = clampDistance(player, playerView.getTargetDistance());
+        int clampedTarget = clampDistance(player, playerView.getPreferredDistance());
         if (clampedTarget != playerView.getTargetDistance()) {
             playerView.setTargetDistance(clampedTarget);
         }
@@ -229,10 +256,16 @@ public class ViewDistanceService {
 
         packetService.ensureClientRadius(player, playerView.getTargetDistance());
         packetService.ensureClientSimulationDistance(player, playerView.getTargetDistance());
+
+        // Store values to prevent memory leak
+        UUID playerId = player.getUniqueId();
+        int distance = playerView.getTargetDistance();
+
         player.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
                 (task) -> {
-                    if (player.isOnline()) {
-                        packetService.ensureClientSimulationDistance(player, playerView.getTargetDistance());
+                    Player p = Bukkit.getPlayer(playerId);
+                    if (p != null && p.isOnline()) {
+                        packetService.ensureClientSimulationDistance(p, distance);
                     }
                 }, null, 20L);
 
@@ -242,19 +275,26 @@ public class ViewDistanceService {
         double borderSize = border.getSize();
         int targetDistance = playerView.getTargetDistance();
 
+        // Store UUID to prevent memory leak
+        UUID playerId2 = player.getUniqueId();
+
         org.bukkit.Bukkit.getAsyncScheduler().runNow(ExtendedHorizonsPlugin.getInstance(),
                 (task) -> {
-                    if (!player.isOnline())
+                    Player p = Bukkit.getPlayer(playerId2);
+                    if (p == null || !p.isOnline())
                         return;
 
-                    Set<Long> allNeededChunks = chunkService.computeCircularKeys(player, targetDistance);
-                    ChunkClassification classification = classifyChunks(player, allNeededChunks, borderCenterX,
+                    if (p == null || !p.isOnline())
+                        return;
+
+                    Set<Long> allNeededChunks = chunkService.computeCircularKeys(p, targetDistance + 1);
+                    ChunkClassification classification = classifyChunks(p, allNeededChunks, borderCenterX,
                             borderCenterZ, borderSize);
 
                     if (configService.get().performance().fakeChunks().enabled()
-                            && fakeChunkService.isFakeChunksEnabledForWorld(player.getWorld())
+                            && fakeChunkService.isFakeChunksEnabledForWorld(p.getWorld())
                             && !classification.fakeChunks.isEmpty()) {
-                        fakeChunkService.sendFakeChunks(player, classification.fakeChunks, borderCenterX, borderCenterZ,
+                        fakeChunkService.sendFakeChunks(p, classification.fakeChunks, borderCenterX, borderCenterZ,
                                 borderSize);
                     }
                 });
@@ -279,7 +319,7 @@ public class ViewDistanceService {
         if (playerView == null)
             return;
 
-        int baseTarget = clampDistance(player, playerView.getTargetDistance());
+        int baseTarget = clampDistance(player, playerView.getPreferredDistance());
 
         packetService.ensureClientCenter(player);
         packetService.ensureClientRadius(player, baseTarget);
@@ -290,19 +330,22 @@ public class ViewDistanceService {
         double borderCenterZ = border.getCenter().getZ();
         double borderSize = border.getSize();
 
+        UUID playerId = player.getUniqueId();
+
         org.bukkit.Bukkit.getAsyncScheduler().runNow(ExtendedHorizonsPlugin.getInstance(),
                 (task) -> {
-                    if (!player.isOnline())
+                    Player p = Bukkit.getPlayer(playerId);
+                    if (p == null || !p.isOnline())
                         return;
 
-                    Set<Long> allNeededChunks = chunkService.computeCircularKeys(player, baseTarget);
-                    ChunkClassification classification = classifyChunks(player, allNeededChunks, borderCenterX,
+                    Set<Long> allNeededChunks = chunkService.computeCircularKeys(p, baseTarget + 1);
+                    ChunkClassification classification = classifyChunks(p, allNeededChunks, borderCenterX,
                             borderCenterZ, borderSize);
 
                     if (configService.get().performance().fakeChunks().enabled()
-                            && fakeChunkService.isFakeChunksEnabledForWorld(player.getWorld())
+                            && fakeChunkService.isFakeChunksEnabledForWorld(p.getWorld())
                             && !classification.fakeChunks.isEmpty()) {
-                        fakeChunkService.sendFakeChunks(player, classification.fakeChunks, borderCenterX, borderCenterZ,
+                        fakeChunkService.sendFakeChunks(p, classification.fakeChunks, borderCenterX, borderCenterZ,
                                 borderSize);
                     }
                 });

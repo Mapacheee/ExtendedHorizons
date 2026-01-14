@@ -50,6 +50,8 @@ performance:
 
   # Generation Limiter: Strict limit on chunks generated per tick
   max-generations-per-tick: 1
+  # Disk Load Limiter: Strict limit on chunks loaded from disk per tick to prevent I/O lag
+  max-disk-loads-per-tick: 20
 
   # Fake chunks system (packets cache)
   fake-chunks:
@@ -67,8 +69,7 @@ performance:
     # Maximum chunks to cache in memory (1000 = ~40-80MB depending on chunk complexity)
     # Increase for more players in same area, decrease for dispersed players or low RAM
     max-memory-cache-size: 1000
-    # Packet cache TTL in seconds
-    packet-cache-ttl-seconds: 30
+
     
     # Anti-X-Ray for fake chunks
 
@@ -103,9 +104,7 @@ bandwidth-saver:
   # Enable adaptive rate limiting based on player ping
   # Reduces packet rate for high-ping players to prevent packet loss
   adaptive-rate-limiting: true
-  # Use real packet size measurement (slightly more CPU, very accurate)
-  # Recommended: true for accurate bandwidth tracking
-  measure-actual-packet-size: true
+
   # Fallback estimate if measurement disabled (in bytes)
   # Average chunk packet is ~50KB (mountains can be 100KB+)
   estimated-packet-size: 50000

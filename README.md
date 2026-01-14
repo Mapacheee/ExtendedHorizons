@@ -64,6 +64,40 @@ You can combine it with `use-group-permissions` and your group policies.
 - `%extendedhorizons_view_distance%` — current effective distance
 
 ---
+
+## API for Developers
+
+ExtendedHorizons provides a comprehensive API for other plugins to interact with fake chunks.
+
+### Documentation
+- **[Full API Documentation](API-USAGE.md)** - Complete guide with examples
+- **[Example Plugin](examples/)** - Working example showing all API features
+
+### Quick Example
+```java
+// Access the API
+ExtendedHorizonsAPI api = ExtendedHorizonsPlugin.getService(ExtendedHorizonsAPI.class);
+
+// Check if player is looking at a fake chunk
+int chunkX = player.getLocation().getBlockX() >> 4;
+int chunkZ = player.getLocation().getBlockZ() >> 4;
+if (api.isFakeChunk(player, chunkX, chunkZ)) {
+    player.sendMessage("You're in a fake chunk!");
+}
+
+// Get all fake chunks for a player
+Set<ChunkCoordinate> chunks = api.getFakeChunksForPlayer(player);
+player.sendMessage("Loaded: " + chunks.size() + " fake chunks");
+```
+
+### Available Events
+- `FakeChunkLoadEvent` - When a fake chunk is loaded (cancellable)
+- `FakeChunkUnloadEvent` - When a fake chunk is unloaded
+- `FakeChunkBatchLoadEvent` - When multiple chunks are loaded at once
+
+See **[API-USAGE.md](API-USAGE.md)** for complete documentation.
+
+---
 # Support
 - Report issues and suggestions in the repository’s Issues section.
 - Join our **Discord**: [discord.gg/yA3vD2S8Zj](https://discord.gg/yA3vD2S8Zj)

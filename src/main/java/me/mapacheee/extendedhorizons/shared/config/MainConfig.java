@@ -38,6 +38,7 @@ public record MainConfig(
                         @Setting("max-async-load-tasks") int maxAsyncLoadTasks,
                         @Setting("max-async-load-queue") int maxAsyncLoadQueue,
                         @Setting("max-generations-per-tick") int maxGenerationsPerTick,
+                        @Setting("max-disk-loads-per-tick") int maxDiskLoadsPerTick,
                         @Setting("fake-chunks") FakeChunksConfig fakeChunks,
                         @Setting("occlusion-culling") OcclusionCullingConfig occlusionCulling) {
                 @ConfigSerializable
@@ -48,7 +49,6 @@ public record MainConfig(
                                 @Setting("cache-cleanup-interval") int cacheCleanupInterval,
                                 @Setting("enable-memory-cache") boolean enableMemoryCache,
                                 @Setting("max-memory-cache-size") int maxMemoryCacheSize,
-                                @Setting("packet-cache-ttl-seconds") int packetCacheTtlSeconds,
                                 @Setting("anti-xray") AntiXrayConfig antiXray) {
 
                         @ConfigSerializable
@@ -99,7 +99,7 @@ public record MainConfig(
                         @Setting("max-fake-chunks-per-tick") int maxFakeChunksPerTick,
                         @Setting("max-bandwidth-per-player") int maxBandwidthPerPlayer,
                         @Setting("adaptive-rate-limiting") boolean adaptiveRateLimiting,
-                        @Setting("measure-actual-packet-size") boolean measureActualPacketSize,
+
                         @Setting("estimated-packet-size") int estimatedPacketSize) {
         }
 }

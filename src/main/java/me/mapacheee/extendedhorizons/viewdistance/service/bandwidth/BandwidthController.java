@@ -5,8 +5,9 @@ import me.mapacheee.extendedhorizons.viewdistance.service.player.PlayerChunkStat
 import me.mapacheee.extendedhorizons.viewdistance.service.player.PlayerStateManager;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-
+import org.bukkit.entity.Player;
 import java.util.UUID;
+import org.bukkit.Bukkit;
 
 /**
  * Manages bandwidth allocation and rate limiting for fake chunk packet sending.
@@ -72,10 +73,20 @@ public class BandwidthController {
      *         be exceeded
      */
     public boolean canSendData(UUID playerId, long estimatedBytes) {
+        Player player = Bukkit.getPlayer(playerId);
+        if (player != null && isBedrockPlayer(player)) {
+            return true;
+        }
+
         PlayerChunkState state = playerStateManager.getOrCreate(playerId);
 
         long bytesUsedThisTick = state.getBytesThisTick();
         return bytesUsedThisTick + estimatedBytes < maxBytesPerTick;
+    }
+
+    private boolean isBedrockPlayer(Player player) {
+        String name = player.getName();
+        return name.startsWith(".") || name.startsWith("*");
     }
 
     /**

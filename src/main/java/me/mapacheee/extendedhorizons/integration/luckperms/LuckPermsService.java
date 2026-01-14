@@ -95,6 +95,18 @@ public class LuckPermsService {
         return resolved;
     }
 
+    /**
+     * Cleans up cache entry for a player who quit.
+     * Prevents cache from growing unbounded over server lifetime.
+     * 
+     * @param playerId The player UUID to remove from cache
+     */
+    public void cleanupPlayer(UUID playerId) {
+        if (enabled) {
+            cache.remove(playerId);
+        }
+    }
+
     private interface LuckPermsHandler {
         int compute(Player player, int fallback, boolean useGroupPermissions);
     }
