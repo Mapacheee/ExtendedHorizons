@@ -94,6 +94,8 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
             }
         }
 
+        newChunk.blockEntities.putAll(original.blockEntities);
+
         return newChunk;
     }
 
