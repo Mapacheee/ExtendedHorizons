@@ -468,8 +468,26 @@ public class ChunkLoaderService {
                         .performance().fakeChunks().antiXray();
 
                 if (antiXray != null && antiXray.enabled()) {
-                    chunkToSend = nmsChunkAccess.cloneChunk(chunk);
-                    if (chunkToSend != null) {
+                    CompletableFuture<Object> cloneFuture = new CompletableFuture<>();
+                    final Object sourceChunk = chunkToSend;
+
+                    Bukkit.getScheduler().runTask(ExtendedHorizonsPlugin.getInstance(), () -> {
+                        try {
+                            cloneFuture.complete(nmsChunkAccess.cloneChunk(sourceChunk));
+                        } catch (Exception ex) {
+                            cloneFuture.completeExceptionally(ex);
+                        }
+                    });
+
+                    try {
+                        chunkToSend = cloneFuture.get();
+                    } catch (Exception ex) {
+                        if (DEBUG)
+                            logger.warn("[EH] Failed to clone chunk on main thread: {}", ex.getMessage());
+                        chunkToSend = chunk;
+                    }
+
+                    if (chunkToSend != null && chunkToSend != chunk) {
                         nmsChunkAccess.obfuscateChunk(
                                 chunkToSend,
                                 antiXray.hideOres(),
