@@ -1,7 +1,7 @@
 package me.mapacheee.extendedhorizons.viewdistance.listener;
 
 import com.google.inject.Inject;
-import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
+
 import me.mapacheee.extendedhorizons.viewdistance.service.ChunkLoaderService;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
