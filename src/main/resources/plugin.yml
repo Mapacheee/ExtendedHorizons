@@ -26,7 +26,7 @@ permissions:
     default: true
   extendedhorizons.distance.16:
     description: Allow view distance up to 16 chunks
-    default: true
+    default: false
   extendedhorizons.distance.32:
     description: Allow view distance up to 32 chunks
     default: op

@@ -138,7 +138,8 @@ public class LuckPermsService {
                     for (var node : user.getNodes()) {
                         if (node instanceof net.luckperms.api.node.types.PermissionNode p && p.getValue()) {
                             String perm = p.getPermission();
-                            if (perm.startsWith("extendedhorizons.max.")) {
+                            if (perm.startsWith("extendedhorizons.max.")
+                                    || perm.startsWith("extendedhorizons.distance.")) {
                                 Optional<Integer> n = extractTrailingInt(perm);
                                 if (n.isPresent() && n.get() > best)
                                     best = n.get();
