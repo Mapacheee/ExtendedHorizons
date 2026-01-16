@@ -99,7 +99,7 @@ public record MainConfig(
                         @Setting("max-fake-chunks-per-tick") int maxFakeChunksPerTick,
                         @Setting("max-bandwidth-per-player") int maxBandwidthPerPlayer,
                         @Setting("adaptive-rate-limiting") boolean adaptiveRateLimiting,
-
+                        @Setting("bandwidth-profiles") java.util.Map<String, Integer> bandwidthProfiles,
                         @Setting("estimated-packet-size") int estimatedPacketSize) {
         }
 }

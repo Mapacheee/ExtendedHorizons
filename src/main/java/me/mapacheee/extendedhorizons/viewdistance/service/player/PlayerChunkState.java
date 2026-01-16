@@ -49,9 +49,6 @@ public class PlayerChunkState {
      */
     private volatile long lastChunkPosition;
 
-    // === Packet Management ===
-
-
     // === Bandwidth Tracking ===
 
     /**
@@ -73,6 +70,18 @@ public class PlayerChunkState {
      * Actual bytes sent (measured from real packets).
      */
     private volatile long actualBytesSent;
+
+    /**
+     * Maximum bytes allowed per tick for this player.
+     * Default initialized to -1 (use global default until set).
+     */
+    private volatile long maxBytesPerTick = -1;
+
+    /**
+     * Maximum bytes allowed per second for this player.
+     * Default initialized to -1 (use global default until set).
+     */
+    private volatile long maxBytesPerSecond = -1;
 
     // === Performance Metrics ===
 
@@ -165,8 +174,6 @@ public class PlayerChunkState {
         this.lastChunkPosition = position;
     }
 
-    // --- Packet Management ---
-
     // --- Bandwidth Tracking ---
 
     public long getBytesThisTick() {
@@ -213,7 +220,21 @@ public class PlayerChunkState {
         this.actualBytesSent += bytes;
     }
 
-    // --- Performance Metrics ---
+    public long getMaxBytesPerTick() {
+        return maxBytesPerTick;
+    }
+
+    public void setMaxBytesPerTick(long maxBytesPerTick) {
+        this.maxBytesPerTick = maxBytesPerTick;
+    }
+
+    public long getMaxBytesPerSecond() {
+        return maxBytesPerSecond;
+    }
+
+    public void setMaxBytesPerSecond(long maxBytesPerSecond) {
+        this.maxBytesPerSecond = maxBytesPerSecond;
+    }
 
     public int getAvgPing() {
         return avgPing;

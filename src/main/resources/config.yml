@@ -105,8 +105,16 @@ bandwidth-saver:
   # Reduces packet rate for high-ping players to prevent packet loss
   adaptive-rate-limiting: true
 
-  # Fallback estimate if measurement disabled (in bytes)
-  # Average chunk packet is ~50KB (mountains can be 100KB+)
+  # Bandwidth Profiles
+  # Define custom bandwidth limits (in KB/s) that can be assigned via permissions.
+  # Permission: extendedhorizons.bandwidth.<profile_name>
+  # Example: extendedhorizons.bandwidth.vip -> 1000 KB/s
+  bandwidth-profiles:
+    vip: 1000
+    slow: 50
+    const: 500
+
+  # Estimated size of a chunk packet in bytes (used for calculations) can be 100KB+)
   estimated-packet-size: 50000
 
 # Database (SQLite) used for player view persistence
