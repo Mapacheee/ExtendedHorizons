@@ -578,6 +578,17 @@ public class ChunkLoaderService {
         return chunkMemoryCache.size();
     }
 
+    public void invalidateChunk(long chunkKey) {
+        if (chunkMemoryCache.containsKey(chunkKey)) {
+            chunkMemoryCache.remove(chunkKey);
+            if (DEBUG) {
+                int x = ChunkUtils.unpackX(chunkKey);
+                int z = ChunkUtils.unpackZ(chunkKey);
+                logger.debug("[EH] Invalidated cache for chunk {},{}", x, z);
+            }
+        }
+    }
+
     public double getCacheHitRate() {
         long hits = memoryCacheHits.get();
         long misses = memoryCacheMisses.get();

@@ -358,7 +358,10 @@ public class ViewDistanceService {
      */
     private ChunkClassification classifyChunks(Player player, Set<Long> allChunks, double borderCenterX,
             double borderCenterZ, double borderSize) {
-        int serverViewDistance = fakeChunkService.getServerViewDistance();
+        int serverViewDistance = player.getViewDistance();
+        if (serverViewDistance <= 0) {
+            serverViewDistance = fakeChunkService.getServerViewDistance();
+        }
         int playerChunkX = player.getLocation().getBlockX() >> 4;
         int playerChunkZ = player.getLocation().getBlockZ() >> 4;
 
@@ -373,9 +376,9 @@ public class ViewDistanceService {
 
             int dx = chunkX - playerChunkX;
             int dz = chunkZ - playerChunkZ;
-            double distanceSquared = dx * dx + dz * dz;
+            int distance = Math.max(Math.abs(dx), Math.abs(dz));
 
-            if (distanceSquared <= serverRadiusSquared) {
+            if (distance <= serverViewDistance) {
                 realChunks.add(key);
             } else {
                 fakeChunks.add(key);

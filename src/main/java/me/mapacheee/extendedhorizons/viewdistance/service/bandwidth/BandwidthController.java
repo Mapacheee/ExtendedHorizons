@@ -73,20 +73,11 @@ public class BandwidthController {
      *         be exceeded
      */
     public boolean canSendData(UUID playerId, long estimatedBytes) {
-        Player player = Bukkit.getPlayer(playerId);
-        if (player != null && isBedrockPlayer(player)) {
-            return true;
-        }
 
         PlayerChunkState state = playerStateManager.getOrCreate(playerId);
 
         long bytesUsedThisTick = state.getBytesThisTick();
         return bytesUsedThisTick + estimatedBytes < maxBytesPerTick;
-    }
-
-    private boolean isBedrockPlayer(Player player) {
-        String name = player.getName();
-        return name.startsWith(".") || name.startsWith("*");
     }
 
     /**
