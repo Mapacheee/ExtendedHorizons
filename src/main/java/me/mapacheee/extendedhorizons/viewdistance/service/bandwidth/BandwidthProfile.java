@@ -2,7 +2,6 @@ package me.mapacheee.extendedhorizons.viewdistance.service.bandwidth;
 
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
-import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -14,16 +13,15 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
-@Service
 @ListenerComponent
-public class BandwidthProfileService implements Listener {
+public class BandwidthProfile implements Listener {
 
     private final BandwidthController bandwidthController;
     private final ConfigService configService;
-    private static final Logger logger = LoggerFactory.getLogger(BandwidthProfileService.class);
+    private static final Logger logger = LoggerFactory.getLogger(BandwidthProfile.class);
 
     @Inject
-    public BandwidthProfileService(BandwidthController bandwidthController, ConfigService configService) {
+    public BandwidthProfile(BandwidthController bandwidthController, ConfigService configService) {
         this.bandwidthController = bandwidthController;
         this.configService = configService;
     }
