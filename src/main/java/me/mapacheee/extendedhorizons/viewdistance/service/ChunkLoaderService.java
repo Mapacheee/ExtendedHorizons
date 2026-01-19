@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.CompletableFuture;
+import me.mapacheee.extendedhorizons.viewdistance.service.cache.ChunkCacheKey;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import me.mapacheee.extendedhorizons.shared.config.MainConfig;
@@ -47,7 +48,7 @@ public class ChunkLoaderService {
 
     private final Map<Long, Long> generatingChunks = new ConcurrentHashMap<>();
     private final ExecutorService chunkProcessor;
-    private final Map<Long, Object> chunkMemoryCache;
+    private final Map<ChunkCacheKey, Object> chunkMemoryCache;
 
     private final AtomicLong memoryCacheHits = new AtomicLong(0);
     private final AtomicLong memoryCacheMisses = new AtomicLong(0);
@@ -78,9 +79,9 @@ public class ChunkLoaderService {
         int maxCacheSize = configService.get().performance().fakeChunks().maxMemoryCacheSize();
 
         this.chunkMemoryCache = Collections.synchronizedMap(
-                new LinkedHashMap<Long, Object>(16, 0.75f, true) {
+                new LinkedHashMap<ChunkCacheKey, Object>(16, 0.75f, true) {
                     @Override
-                    protected boolean removeEldestEntry(Map.Entry<Long, Object> eldest) {
+                    protected boolean removeEldestEntry(Map.Entry<ChunkCacheKey, Object> eldest) {
                         return size() > maxCacheSize;
                     }
                 });
@@ -169,7 +170,7 @@ public class ChunkLoaderService {
                         }
 
                         // Strategy 1: Memory cache
-                        Object memoryChunk = getChunkFromMemoryCache(w, chunkX, chunkZ);
+                        Object memoryChunk = getChunkFromMemoryCache(w.getUID(), chunkX, chunkZ);
                         if (memoryChunk != null) {
                             if (DEBUG) {
                                 logger.info("[EH] Loaded chunk {},{} from memory cache", chunkX, chunkZ);
@@ -378,7 +379,7 @@ public class ChunkLoaderService {
                     if (DEBUG)
                         logger.info("[EH] Generated chunk {},{}", chunkX, chunkZ);
                     long chunkKey = ChunkUtils.packChunkKey(chunkX, chunkZ);
-                    cacheChunkInMemory(chunkKey, nmsChunk);
+                    cacheChunkInMemory(chunk.getWorld().getUID(), chunkKey, nmsChunk);
                     sendChunkPacket(p, nmsChunk, key, sentTracker,
                             FakeChunkLoadEvent.LoadSource.GENERATED, borderCenterX, borderCenterZ, borderSize);
                 } else {
@@ -398,22 +399,29 @@ public class ChunkLoaderService {
         });
     }
 
-    private Object getChunkFromMemoryCache(World world, int chunkX, int chunkZ) {
+    private Object getChunkFromMemoryCache(UUID worldId, int chunkX, int chunkZ) {
         if (!configService.get().performance().fakeChunks().enableMemoryCache()) {
             return null;
         }
         long chunkKey = ChunkUtils.packChunkKey(chunkX, chunkZ);
+        ChunkCacheKey cacheKey = new ChunkCacheKey(worldId, chunkKey);
+
         synchronized (chunkMemoryCache) {
-            Object cached = chunkMemoryCache.get(chunkKey);
+            Object cached = chunkMemoryCache.get(cacheKey);
             if (cached != null) {
                 memoryCacheHits.incrementAndGet();
                 return cached;
             }
         }
+
+        World world = Bukkit.getWorld(worldId);
+        if (world == null)
+            return null;
+
         try {
             Object chunk = nmsChunkAccess.getChunkIfLoaded(world, chunkX, chunkZ);
             if (chunk != null) {
-                cacheChunkInMemory(chunkKey, chunk);
+                cacheChunkInMemory(worldId, chunkKey, chunk);
                 memoryCacheHits.incrementAndGet();
                 return chunk;
             }
@@ -425,11 +433,12 @@ public class ChunkLoaderService {
         return null;
     }
 
-    private void cacheChunkInMemory(long chunkKey, Object chunk) {
+    private void cacheChunkInMemory(UUID worldId, long chunkKey, Object chunk) {
         if (!configService.get().performance().fakeChunks().enableMemoryCache())
             return;
+        ChunkCacheKey key = new ChunkCacheKey(worldId, chunkKey);
         synchronized (chunkMemoryCache) {
-            chunkMemoryCache.put(chunkKey, chunk);
+            chunkMemoryCache.put(key, chunk);
         }
     }
 
@@ -578,14 +587,26 @@ public class ChunkLoaderService {
         return chunkMemoryCache.size();
     }
 
-    public void invalidateChunk(long chunkKey) {
-        if (chunkMemoryCache.containsKey(chunkKey)) {
-            chunkMemoryCache.remove(chunkKey);
+    public void invalidateChunk(UUID worldId, long chunkKey) {
+        ChunkCacheKey key = new ChunkCacheKey(worldId, chunkKey);
+        if (chunkMemoryCache.containsKey(key)) {
+            chunkMemoryCache.remove(key);
             if (DEBUG) {
                 int x = ChunkUtils.unpackX(chunkKey);
                 int z = ChunkUtils.unpackZ(chunkKey);
                 logger.debug("[EH] Invalidated cache for chunk {},{}", x, z);
             }
+        }
+    }
+
+    public void invalidateWorld(UUID worldId) {
+        int initialSize = chunkMemoryCache.size();
+        synchronized (chunkMemoryCache) {
+            chunkMemoryCache.keySet().removeIf(key -> key.worldId().equals(worldId));
+        }
+        int removed = initialSize - chunkMemoryCache.size();
+        if (removed > 0) {
+            logger.info("[EH] Invalidated {} chunks for world {}", removed, worldId);
         }
     }
 

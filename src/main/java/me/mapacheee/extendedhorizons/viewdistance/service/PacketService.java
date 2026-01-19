@@ -177,34 +177,6 @@ public class PacketService {
     }
 
     /**
-     * Sends a raw cached packet to the player
-     * Used for fake chunks from the packet cache
-     */
-    public void sendRawChunkPacket(Player player, int chunkX, int chunkZ, byte[] packetData) {
-        if (!player.isOnline() || packetData == null) {
-            return;
-        }
-
-        try {
-            org.bukkit.World world = player.getWorld();
-            Chunk chunk = world.getChunkAt(chunkX, chunkZ);
-
-            if (chunk.isLoaded()) {
-                Object nmsChunk = nmsChunkAccess.getNMSChunk(chunk);
-                if (nmsChunk != null) {
-                    Object packet = nmsPacketAccess.createChunkPacket(nmsChunk);
-                    nmsPacketAccess.sendPacket(player, packet);
-                }
-            }
-
-        } catch (Exception e) {
-            if (DEBUG) {
-                logger.warn("[EH] Error sending raw packet for chunk {},{}: {}", chunkX, chunkZ, e.getMessage());
-            }
-        }
-    }
-
-    /**
      * Cleans up all player data on quit
      */
     public void cleanupPlayer(Player player) {

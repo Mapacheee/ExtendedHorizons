@@ -2,14 +2,11 @@ package me.mapacheee.extendedhorizons.viewdistance.service;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import com.thewinterframework.service.annotation.lifecycle.OnDisable;
-import com.thewinterframework.service.annotation.lifecycle.OnEnable;
-import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import com.thewinterframework.service.annotation.scheduler.RepeatingTask;
 import me.mapacheee.extendedhorizons.api.event.FakeChunkUnloadEvent;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import me.mapacheee.extendedhorizons.shared.config.MainConfig;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
-import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.mapacheee.extendedhorizons.viewdistance.service.bandwidth.BandwidthController;
 import me.mapacheee.extendedhorizons.viewdistance.service.event.ChunkEventDispatcher;
 import me.mapacheee.extendedhorizons.viewdistance.service.nms.NMSPacketAccess;
@@ -31,7 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+import com.thewinterframework.utils.TimeUnit;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /*
@@ -51,7 +48,6 @@ public class FakeChunkService {
     private final WarmupManager warmupManager;
     private final ChunkLoaderService chunkLoaderService;
 
-    private ScheduledTask progressiveLoadingTask;
     private static final boolean DEBUG = false;
 
     @Inject
@@ -95,99 +91,83 @@ public class FakeChunkService {
         return chunkLoaderService.getStats();
     }
 
-    @OnEnable
-    public void onEnable() {
-        startProgressiveLoadingTask();
-    }
+    @RepeatingTask(every = 50, unit = TimeUnit.MILLIS, async = true)
+    public void progressiveLoadingTask() {
+        try {
+            chunkLoaderService.resetTickCounters();
+            playerStateManager.resetTickCounters();
 
-    @OnDisable
-    public void onDisable() {
-        if (progressiveLoadingTask != null) {
-            progressiveLoadingTask.cancel();
-        }
-    }
+            long bandwidthPerPlayer = configService.get().bandwidthSaver().maxBandwidthPerPlayer(); // KB/s
+            if (bandwidthPerPlayer <= 0)
+                bandwidthPerPlayer = 10000;
 
-    private void startProgressiveLoadingTask() {
-        this.progressiveLoadingTask = Bukkit.getAsyncScheduler()
-                .runAtFixedRate(ExtendedHorizonsPlugin.getInstance(), (task) -> {
-                    try {
-                        chunkLoaderService.resetTickCounters();
-                        playerStateManager.resetTickCounters();
+            bandwidthController.updateMaxBytesPerTick((int) bandwidthPerPlayer);
 
-                        long bandwidthPerPlayer = configService.get().bandwidthSaver().maxBandwidthPerPlayer(); // KB/s
-                        if (bandwidthPerPlayer <= 0)
-                            bandwidthPerPlayer = 10000;
-
-                        bandwidthController.updateMaxBytesPerTick((int) bandwidthPerPlayer);
-
-                        try {
-                            double mspt = Bukkit.getAverageTickTime();
-                            double maxMspt = configService.get().performance().maxMsptForLoading();
-                            if (maxMspt > 0 && mspt > maxMspt) {
-                                if (DEBUG) {
-                                    logger.warn("[EH] High MSPT ({}ms > {}ms), skipping chunk loading",
-                                            String.format("%.2f", mspt), maxMspt);
-                                }
-                                return;
-                            }
-                        } catch (UnsupportedOperationException | NullPointerException ignored) {
-                        }
-
-                        ThreadPoolExecutor executor = (ThreadPoolExecutor) chunkLoaderService.getExecutor();
-                        int activeTasks = executor.getActiveCount();
-                        int queueSize = executor.getQueue().size();
-                        int maxTasks = configService.get().performance().maxAsyncLoadTasks();
-                        int maxQueue = configService.get().performance().maxAsyncLoadQueue();
-
-                        if (maxTasks <= 0)
-                            maxTasks = 4;
-                        if (maxQueue <= 0)
-                            maxQueue = 10;
-
-                        if (activeTasks > maxTasks || queueSize > maxQueue) {
-                            if (DEBUG) {
-                                logger.warn("[EH] High async load ({} active, {} queued), skipping batch", activeTasks,
-                                        queueSize);
-                            }
-                            return;
-                        }
-
-                        List<UUID> playerIds = new ArrayList<>();
-                        for (UUID playerId : playerStateManager.getAllPlayerIds()) {
-                            PlayerChunkState state = playerStateManager.get(playerId).orElse(null);
-                            if (state == null || state.getChunkQueue().isEmpty()) {
-                                continue;
-                            }
-                            playerIds.add(playerId);
-                        }
-
-                        for (UUID playerId : playerIds) {
-                            PlayerChunkState state = playerStateManager.get(playerId).orElse(null);
-                            if (state == null)
-                                continue;
-
-                            Deque<Long> queue = state.getChunkQueue();
-                            if (queue == null || queue.isEmpty())
-                                continue;
-
-                            Player player = Bukkit.getPlayer(playerId);
-                            if (player == null || !player.isOnline()) {
-                                playerStateManager.remove(playerId);
-                                continue;
-                            }
-
-                            if (warmupManager.isWarmupActive(state)) {
-                                continue;
-                            }
-
-                            processChunkQueue(player, queue);
-                        }
-                    } catch (Throwable t) {
-                        logger.error("[EH] Error in progressive loading task", t);
+            try {
+                double mspt = Bukkit.getAverageTickTime();
+                double maxMspt = configService.get().performance().maxMsptForLoading();
+                if (maxMspt > 0 && mspt > maxMspt) {
+                    if (DEBUG) {
+                        logger.warn("[EH] High MSPT ({}ms > {}ms), skipping chunk loading",
+                                String.format("%.2f", mspt), maxMspt);
                     }
+                    return;
+                }
+            } catch (UnsupportedOperationException | NullPointerException ignored) {
+            }
 
-                }, 50L, Math.max(50L, configService.get().performance().chunkProcessInterval() * 50L),
-                        TimeUnit.MILLISECONDS);
+            ThreadPoolExecutor executor = (ThreadPoolExecutor) chunkLoaderService.getExecutor();
+            int activeTasks = executor.getActiveCount();
+            int queueSize = executor.getQueue().size();
+            int maxTasks = configService.get().performance().maxAsyncLoadTasks();
+            int maxQueue = configService.get().performance().maxAsyncLoadQueue();
+
+            if (maxTasks <= 0)
+                maxTasks = 4;
+            if (maxQueue <= 0)
+                maxQueue = 10;
+
+            if (activeTasks > maxTasks || queueSize > maxQueue) {
+                if (DEBUG) {
+                    logger.warn("[EH] High async load ({} active, {} queued), skipping batch", activeTasks,
+                            queueSize);
+                }
+                return;
+            }
+
+            List<UUID> playerIds = new ArrayList<>();
+            for (UUID playerId : playerStateManager.getAllPlayerIds()) {
+                PlayerChunkState state = playerStateManager.get(playerId).orElse(null);
+                if (state == null || state.getChunkQueue().isEmpty()) {
+                    continue;
+                }
+                playerIds.add(playerId);
+            }
+
+            for (UUID playerId : playerIds) {
+                PlayerChunkState state = playerStateManager.get(playerId).orElse(null);
+                if (state == null)
+                    continue;
+
+                Deque<Long> queue = state.getChunkQueue();
+                if (queue == null || queue.isEmpty())
+                    continue;
+
+                Player player = Bukkit.getPlayer(playerId);
+                if (player == null || !player.isOnline()) {
+                    playerStateManager.remove(playerId);
+                    continue;
+                }
+
+                if (warmupManager.isWarmupActive(state)) {
+                    continue;
+                }
+
+                processChunkQueue(player, queue);
+            }
+        } catch (Throwable t) {
+            logger.error("[EH] Error in progressive loading task", t);
+        }
     }
 
     private void processChunkQueue(Player player, Deque<Long> queue) {
@@ -423,7 +403,7 @@ public class FakeChunkService {
         }
 
         for (Long key : chunkKeys) {
-            chunkLoaderService.invalidateChunk(key);
+            chunkLoaderService.invalidateChunk(world.getUID(), key);
         }
 
         double borderCenterX = world.getWorldBorder().getCenter().getX();

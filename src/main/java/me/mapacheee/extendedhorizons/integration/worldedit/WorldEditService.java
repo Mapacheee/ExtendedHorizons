@@ -11,10 +11,11 @@ import com.sk89q.worldedit.world.block.BlockStateHolder;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.util.eventbus.Subscribe;
 import com.thewinterframework.service.annotation.Service;
+import com.thewinterframework.utils.TimeUnit;
+import com.thewinterframework.service.annotation.scheduler.RepeatingTask;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
 import me.mapacheee.extendedhorizons.viewdistance.service.FakeChunkService;
 import org.bukkit.Bukkit;
@@ -25,7 +26,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 @Service
 public class WorldEditService {
@@ -48,7 +48,6 @@ public class WorldEditService {
             try {
                 WorldEdit.getInstance().getEventBus().register(this);
                 enabled = true;
-                startFlushTask();
             } catch (Throwable t) {
                 plugin.getLogger().warning("[EH] Failed to register WorldEdit listener: " + t.getMessage());
             }
@@ -77,21 +76,20 @@ public class WorldEditService {
         event.setExtent(new ChunkTrackingExtent(event.getExtent(), world.getUID()));
     }
 
-    private void startFlushTask() {
-        Bukkit.getAsyncScheduler().runAtFixedRate(plugin, (task) -> {
-            if (modifiedChunks.isEmpty())
-                return;
+    @RepeatingTask(every = 500, unit = TimeUnit.MILLIS, async = true)
+    public void flushTask() {
+        if (!enabled || modifiedChunks.isEmpty())
+            return;
 
-            for (UUID worldId : new HashSet<>(modifiedChunks.keySet())) {
-                Set<Long> keys = modifiedChunks.remove(worldId);
-                if (keys != null && !keys.isEmpty()) {
-                    World world = Bukkit.getWorld(worldId);
-                    if (world != null) {
-                        fakeChunkService.refreshChunks(world, keys);
-                    }
+        for (UUID worldId : new HashSet<>(modifiedChunks.keySet())) {
+            Set<Long> keys = modifiedChunks.remove(worldId);
+            if (keys != null && !keys.isEmpty()) {
+                World world = Bukkit.getWorld(worldId);
+                if (world != null) {
+                    fakeChunkService.refreshChunks(world, keys);
                 }
             }
-        }, 500L, 500L, TimeUnit.MILLISECONDS);
+        }
     }
 
     private class ChunkTrackingExtent extends AbstractDelegateExtent {
@@ -113,8 +111,8 @@ public class WorldEditService {
         }
 
         private void recordChange(BlockVector3 pos) {
-            int chunkX = pos.getBlockX() >> 4;
-            int chunkZ = pos.getBlockZ() >> 4;
+            int chunkX = pos.x() >> 4;
+            int chunkZ = pos.z() >> 4;
             long key = ChunkUtils.packChunkKey(chunkX, chunkZ);
 
             modifiedChunks.computeIfAbsent(worldId, k -> ConcurrentHashMap.newKeySet()).add(key);

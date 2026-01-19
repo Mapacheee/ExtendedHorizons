@@ -25,25 +25,25 @@ public class BlockChangeListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
-        invalidate(event.getBlock().getChunk().getChunkKey());
+        invalidate(event.getBlock().getWorld().getUID(), event.getBlock().getChunk().getChunkKey());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        invalidate(event.getBlock().getChunk().getChunkKey());
+        invalidate(event.getBlock().getWorld().getUID(), event.getBlock().getChunk().getChunkKey());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
-        event.blockList().forEach(block -> invalidate(block.getChunk().getChunkKey()));
+        event.blockList().forEach(block -> invalidate(block.getWorld().getUID(), block.getChunk().getChunkKey()));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent event) {
-        event.blockList().forEach(block -> invalidate(block.getChunk().getChunkKey()));
+        event.blockList().forEach(block -> invalidate(block.getWorld().getUID(), block.getChunk().getChunkKey()));
     }
 
-    private void invalidate(long chunkKey) {
-        chunkLoaderService.invalidateChunk(chunkKey);
+    private void invalidate(java.util.UUID worldId, long chunkKey) {
+        chunkLoaderService.invalidateChunk(worldId, chunkKey);
     }
 }
