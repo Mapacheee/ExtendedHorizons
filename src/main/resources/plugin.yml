@@ -22,20 +22,8 @@ commands:
 
 permissions:
   extendedhorizons.use:
-    description: Basic permission to use ExtendedHorizons commands
+    description: Basic permission to use ExtendedHorizons features
     default: true
-  extendedhorizons.distance.16:
-    description: Allow view distance up to 16 chunks
-    default: false
-  extendedhorizons.distance.32:
-    description: Allow view distance up to 32 chunks
-    default: op
-  extendedhorizons.distance.64:
-    description: Allow view distance up to 64 chunks
-    default: false
-  extendedhorizons.distance.unlimited:
-    description: Allow unlimited view distance
-    default: false
   extendedhorizons.admin:
     description: Access to admin commands
     default: op

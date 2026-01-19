@@ -69,6 +69,10 @@ public class ViewDistanceService {
     public void handlePlayerJoin(Player player) {
         fakeChunkService.onPlayerJoin(player);
 
+        if (!player.hasPermission("extendedhorizons.use")) {
+            return;
+        }
+
         if (!isPluginEnabledForWorld(player.getWorld())) {
             return;
         }
@@ -81,17 +85,15 @@ public class ViewDistanceService {
                 return;
             }
 
-            int fallbackDefault = configService.get().viewDistance().defaultDistance();
+            int maxAllowed = getAllowedMax(p);
+
             int dbDistance = playerData.map(PlayerData::getViewDistance).orElse(-1);
-            int clientDistance = p.getClientViewDistance();
 
             int initialDistance;
             if (dbDistance > 0) {
-                initialDistance = dbDistance;
-            } else if (clientDistance > 0) {
-                initialDistance = clientDistance;
+                initialDistance = Math.min(dbDistance, maxAllowed);
             } else {
-                initialDistance = fallbackDefault;
+                initialDistance = maxAllowed;
             }
 
             int clamped = clampDistance(p, initialDistance);
@@ -167,6 +169,10 @@ public class ViewDistanceService {
             throw new IllegalArgumentException("Player must not be null");
         }
 
+        if (!player.hasPermission("extendedhorizons.use")) {
+            return;
+        }
+
         if (!isPluginEnabledForWorld(player.getWorld())) {
             throw new IllegalStateException("ExtendedHorizons is disabled in this world");
         }
@@ -192,24 +198,28 @@ public class ViewDistanceService {
     }
 
     /**
-     * Returns allowed maximum distance for this player after LuckPerms check.
+     * Returns allowed maximum distance (effective default + limit)
      */
     public int getAllowedMax(Player player) {
         String worldName = player.getWorld().getName();
 
-        Map<String, WorldConfig> worldSettings = configService
-                .get().worldSettings();
+        int baseDefault = configService.get().viewDistance().defaultDistance();
 
-        int configMax;
+        int permissionMax = -1;
+        if (luckPermsService != null && luckPermsService.isEnabled()) {
+            permissionMax = luckPermsService.resolveMaxDistance(player, -1);
+        }
+        int effectiveMax = (permissionMax > 0) ? permissionMax : baseDefault;
+
+        Map<String, WorldConfig> worldSettings = configService.get().worldSettings();
+        int globalCap;
         if (worldSettings != null && worldSettings.containsKey(worldName)) {
-            configMax = worldSettings.get(worldName).maxDistance();
+            globalCap = worldSettings.get(worldName).maxDistance();
         } else {
-            configMax = configService.get().viewDistance().maxDistance();
+            globalCap = configService.get().viewDistance().maxDistance();
         }
 
-        return luckPermsService != null && luckPermsService.isEnabled()
-                ? Math.min(configMax, luckPermsService.resolveMaxDistance(player, configMax))
-                : configMax;
+        return Math.min(effectiveMax, globalCap);
     }
 
     private int clampDistance(Player player, int value) {
