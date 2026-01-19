@@ -5,9 +5,7 @@ import me.mapacheee.extendedhorizons.viewdistance.service.player.PlayerChunkStat
 import me.mapacheee.extendedhorizons.viewdistance.service.player.PlayerStateManager;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import org.bukkit.entity.Player;
 import java.util.UUID;
-import org.bukkit.Bukkit;
 
 /**
  * Manages bandwidth allocation and rate limiting for fake chunk packet sending.
