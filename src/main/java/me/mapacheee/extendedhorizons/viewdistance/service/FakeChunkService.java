@@ -417,6 +417,42 @@ public class FakeChunkService {
                 .orElse(false);
     }
 
+    public void refreshChunks(World world, Set<Long> chunkKeys) {
+        if (chunkKeys == null || chunkKeys.isEmpty() || world == null) {
+            return;
+        }
+
+        for (Long key : chunkKeys) {
+            chunkLoaderService.invalidateChunk(key);
+        }
+
+        double borderCenterX = world.getWorldBorder().getCenter().getX();
+        double borderCenterZ = world.getWorldBorder().getCenter().getZ();
+        double borderSize = world.getWorldBorder().getSize();
+
+        for (UUID playerId : playerStateManager.getAllPlayerIds()) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null || !player.isOnline() || !player.getWorld().getUID().equals(world.getUID())) {
+                continue;
+            }
+
+            PlayerChunkState state = playerStateManager.getOrCreate(playerId);
+            Set<Long> fakeChunks = state.getFakeChunks();
+
+            Set<Long> toRefresh = new HashSet<>();
+            for (Long key : chunkKeys) {
+                if (fakeChunks.contains(key)) {
+                    fakeChunks.remove(key);
+                    toRefresh.add(key);
+                }
+            }
+
+            if (!toRefresh.isEmpty()) {
+                sendFakeChunks(player, toRefresh, borderCenterX, borderCenterZ, borderSize);
+            }
+        }
+    }
+
     private boolean isWithinServerDistance(Player player, int chunkX, int chunkZ) {
         int viewDistance = player.getViewDistance();
         if (viewDistance <= 0) {

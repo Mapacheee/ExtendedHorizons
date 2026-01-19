@@ -49,6 +49,11 @@ repositories {
         name = 'luckperms'
         url = 'https://repo.luckperms.net/'
     }
+
+    // EngineHub (WorldEdit)
+    maven {
+        url = 'https://maven.enginehub.org/repo/'
+    }
 }
 
 dependencies {
@@ -92,7 +97,10 @@ dependencies {
     compileOnly("me.clip:placeholderapi:2.11.7")
 
     // LuckPerms API
-    compileOnly("net.luckperms:api:5.4")    
+    compileOnly("net.luckperms:api:5.4")
+
+    // WorldEdit
+    compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.3.0")
 }
 
 tasks.withType(JavaCompile).configureEach {
