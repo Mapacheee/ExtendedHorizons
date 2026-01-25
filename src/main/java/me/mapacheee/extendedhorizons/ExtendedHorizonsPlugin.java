@@ -30,7 +30,7 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
     @Override
     protected Injector createInjector() {
-        return com.google.inject.Guice.createInjector(Stage.DEVELOPMENT, getGuiceModules());
+        return com.google.inject.Guice.createInjector(Stage.PRODUCTION, getGuiceModules());
     }
 
     @Override
@@ -43,10 +43,37 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
     @Override
     public void onPluginEnable() {
-        super.onPluginEnable();
+        try {
+            super.onPluginEnable();
+            PacketEvents.getAPI().init();
+        } catch (Throwable t) {
+            logger.error("=".repeat(80));
+            logger.error("CRITICAL ERROR DURING PLUGIN INITIALIZATION");
+            logger.error("=".repeat(80));
+            logger.error("Error type: {}", t.getClass().getName());
+            logger.error("Error message: {}", t.getMessage());
+            logger.error("Stack trace:", t);
 
-        PacketEvents.getAPI().init();
+            System.err.println("=".repeat(80));
+            System.err.println("EXTENDEDHORIZONS CRITICAL ERROR:");
+            System.err.println("=".repeat(80));
+            t.printStackTrace(System.err);
 
+            Throwable cause = t.getCause();
+            int depth = 1;
+            while (cause != null && depth < 10) {
+                logger.error("Caused by (depth {}): {} - {}", depth, cause.getClass().getName(), cause.getMessage());
+                System.err.println(
+                        "Caused by (depth " + depth + "): " + cause.getClass().getName() + " - " + cause.getMessage());
+                cause = cause.getCause();
+                depth++;
+            }
+
+            logger.error("=".repeat(80));
+            System.err.println("=".repeat(80));
+
+            throw t;
+        }
     }
 
     @Override

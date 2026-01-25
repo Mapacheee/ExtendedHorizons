@@ -74,9 +74,9 @@ public class ChunkLoaderService {
         this.nmsChunkAccess = nmsChunkAccess;
         this.nmsPacketAccess = nmsPacketAccess;
 
-        this.maxGenerationsPerTick = configService.get().performance().maxGenerationsPerTick();
-        this.maxDiskLoadsPerTick = configService.get().performance().maxDiskLoadsPerTick();
-        int maxCacheSize = configService.get().performance().fakeChunks().maxMemoryCacheSize();
+        this.maxGenerationsPerTick = 1;
+        this.maxDiskLoadsPerTick = 20;
+        int maxCacheSize = 1000;
 
         this.chunkMemoryCache = Collections.synchronizedMap(
                 new LinkedHashMap<ChunkCacheKey, Object>(16, 0.75f, true) {
@@ -104,6 +104,7 @@ public class ChunkLoaderService {
     public void resetTickCounters() {
         chunksGeneratedThisTick.set(0);
         chunksLoadedFromDiskThisTick.set(0);
+
         this.maxGenerationsPerTick = configService.get().performance().maxGenerationsPerTick();
         this.maxDiskLoadsPerTick = configService.get().performance().maxDiskLoadsPerTick();
         if (maxGenerationsPerTick <= 0)

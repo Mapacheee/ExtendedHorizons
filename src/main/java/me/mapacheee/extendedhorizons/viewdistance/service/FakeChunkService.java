@@ -2,8 +2,10 @@ package me.mapacheee.extendedhorizons.viewdistance.service;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
-import com.thewinterframework.service.annotation.scheduler.RepeatingTask;
+import com.thewinterframework.service.annotation.lifecycle.OnEnable;
+import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import me.mapacheee.extendedhorizons.api.event.FakeChunkUnloadEvent;
+import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import me.mapacheee.extendedhorizons.shared.config.MainConfig;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
@@ -17,6 +19,7 @@ import me.mapacheee.extendedhorizons.viewdistance.service.strategy.ChunkLoadStra
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,8 +31,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import com.thewinterframework.utils.TimeUnit;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 
 /*
  *   Manages fake chunks (chunks beyond server view-distance).
@@ -49,6 +53,7 @@ public class FakeChunkService {
     private final ChunkLoaderService chunkLoaderService;
 
     private static final boolean DEBUG = false;
+    private ScheduledTask progressiveLoadingScheduledTask;
 
     @Inject
     public FakeChunkService(
@@ -68,6 +73,27 @@ public class FakeChunkService {
         this.nmsPacketAccess = nmsPacketAccess;
         this.warmupManager = warmupManager;
         this.chunkLoaderService = chunkLoaderService;
+    }
+
+    @OnEnable
+    public void onEnable() {
+        ExtendedHorizonsPlugin plugin = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
+
+        this.progressiveLoadingScheduledTask = Bukkit.getAsyncScheduler().runAtFixedRate(
+                plugin,
+                (task) -> progressiveLoadingTask(),
+                50,
+                50,
+                TimeUnit.MILLISECONDS);
+        logger.info("[EH] Progressive chunk loading task started (Folia scheduler)");
+    }
+
+    @OnDisable
+    public void onDisable() {
+        if (progressiveLoadingScheduledTask != null) {
+            progressiveLoadingScheduledTask.cancel();
+            logger.info("[EH] Progressive chunk loading task stopped");
+        }
     }
 
     public void onPlayerJoin(Player player) {
@@ -91,7 +117,6 @@ public class FakeChunkService {
         return chunkLoaderService.getStats();
     }
 
-    @RepeatingTask(every = 50, unit = TimeUnit.MILLIS, async = true)
     public void progressiveLoadingTask() {
         try {
             chunkLoaderService.resetTickCounters();

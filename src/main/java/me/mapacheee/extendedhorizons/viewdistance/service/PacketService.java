@@ -106,7 +106,7 @@ public class PacketService {
             return future;
         }
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        player.getScheduler().run(plugin, (task) -> {
             try {
                 Object nmsChunk = nmsChunkAccess.getNMSChunk(chunk);
                 if (nmsChunk == null) {
@@ -128,7 +128,7 @@ public class PacketService {
                 }
                 future.complete(null);
             }
-        });
+        }, null);
 
         return future;
     }
@@ -143,7 +143,7 @@ public class PacketService {
 
         CompletableFuture<Integer> result = new CompletableFuture<>();
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        player.getScheduler().run(plugin, (task) -> {
             int sent = 0;
 
             for (Chunk chunk : chunks) {
@@ -171,7 +171,7 @@ public class PacketService {
             }
 
             result.complete(sent);
-        });
+        }, null);
 
         return result;
     }
