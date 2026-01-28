@@ -70,10 +70,16 @@ performance:
     # Increase for more players in same area, decrease for dispersed players or low RAM
     max-memory-cache-size: 1000
 
-    # Only send visible surface blocks in fake chunks
-    # This dramatically reduces packet size and bandwidth usage
-    # Recommended: true for better performance and anti-xray compatibility
-    surface-only-mode: true
+    # Surface Only Mode: Sends only visible blocks to players.
+    # PROS:
+    #   - Massive bandwidth savings (clients load chunks much faster).
+    #   - Security: Players cannot see underground ores (Anti-Xray by design).
+    # CONS:
+    #   - Initial Generation: HIGH CPU usage to calculate the surface cut.
+    #   - Solution: The 'disk-cache' (below) is HIGHLY RECOMMENDED to save these expensive packets,
+    #     ensuring this CPU cost is only paid once per chunk.
+    # Recommended: true if you have disk-cache enabled.
+    surface-only-mode: false
     # How many blocks below the surface to include (higher = more depth detail)
     # Recommended: 32-64 blocks for good balance
     depth-below-surface: 40
@@ -85,7 +91,7 @@ performance:
     # Enable Anti-Xray for fake chunks?
     # True: Secure (ores hidden), high CPU usage during generation.
     # False: Fast (raw copy), ores visible to X-rayers in the distance.
-    enable-anti-xray: true
+    enable-anti-xray: false
 
   occlusion-culling:
     enabled: true
