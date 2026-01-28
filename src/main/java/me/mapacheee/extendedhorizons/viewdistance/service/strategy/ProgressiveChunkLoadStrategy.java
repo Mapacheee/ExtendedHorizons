@@ -125,11 +125,21 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
         }
 
         Set<Long> queuedSet = state.getQueuedChunksSet();
+        List<Long> merged = new ArrayList<>(queue);
+
         for (Long key : newChunksToLoad) {
             if (!queuedSet.contains(key)) {
-                queue.add(key);
+                merged.add(key);
                 queuedSet.add(key);
             }
+        }
+        merged.sort((key1, key2) -> compareDistance(key1, key2, playerChunkX, playerChunkZ));
+
+        queue.clear();
+        queue.addAll(merged);
+
+        if (DEBUG) {
+            logger.info("[EH] Re-sorted queue for {} ({} chunks)", player.getName(), queue.size());
         }
     }
 
