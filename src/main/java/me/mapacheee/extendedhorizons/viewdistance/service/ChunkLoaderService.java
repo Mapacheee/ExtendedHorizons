@@ -414,7 +414,6 @@ public class ChunkLoaderService {
 
         // 2. Disk Cache Check (Async)
         packetCacheStorage.getCachedPacket(worldId, chunkX, chunkZ).thenAcceptAsync(diskBytes -> {
-            // Check if player is still online
             Player pCheck = Bukkit.getPlayer(playerId);
             if (pCheck == null || !pCheck.isOnline()) {
                 generatingChunks.remove(key);
@@ -433,10 +432,7 @@ public class ChunkLoaderService {
                 }
             }
 
-            // 3. Fallback: Generate Packet (Main Thread for safety with NMS/Chunk access)
-            // 3. Fallback: Generate Packet (Async Thread for heavy lifting)
-            // Even though NMS chunk access usually requires Main Thread, we are reading
-            // effectively static data for distant chunks. We wrap in try-catch to be safe.
+            // 3. Fallback: Generate Packet
             try {
                 Player p = Bukkit.getPlayer(playerId);
                 if (p == null || !p.isOnline()) {
@@ -472,15 +468,6 @@ public class ChunkLoaderService {
                     return;
                 }
 
-                try {
-                    ChunkCacheKey currentKey = new ChunkCacheKey(p.getWorld().getUID(), key);
-                    if (!currentKey.equals(cacheKey)) {
-                        generatingChunks.remove(key);
-                        return;
-                    }
-                } catch (Exception e) {
-                }
-
                 packetCache.put(cacheKey, packet);
 
                 final Object packetFinal = packet;
@@ -501,11 +488,23 @@ public class ChunkLoaderService {
         }, chunkProcessor);
     }
 
+    private final java.util.concurrent.atomic.AtomicInteger pendingSends = new java.util.concurrent.atomic.AtomicInteger(
+            0);
+
+    public int getPendingSends() {
+        return pendingSends.get();
+    }
+
     private void sendPacketOnMainThread(Player p, Object packet, long key, FakeChunkLoadEvent.LoadSource source,
             int chunkX,
             int chunkZ, Set<Long> sentTracker, PlayerChunkState state) {
+        pendingSends.incrementAndGet();
         p.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (ScheduledTask task) -> {
-            sendPacketAndFinish(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
+            try {
+                sendPacketAndFinish(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
+            } finally {
+                pendingSends.decrementAndGet();
+            }
         }, null);
     }
 

@@ -141,6 +141,15 @@ public class FakeChunkService {
             } catch (UnsupportedOperationException | NullPointerException ignored) {
             }
 
+            // Backpressure: If too many packets are waiting to be sent on Main Thread,
+            // pause generation
+            if (chunkLoaderService.getPendingSends() > 20) {
+                if (DEBUG)
+                    logger.warn("[EH] High pending sends ({}), backpressure applied",
+                            chunkLoaderService.getPendingSends());
+                return;
+            }
+
             ThreadPoolExecutor executor = (ThreadPoolExecutor) chunkLoaderService.getExecutor();
             int activeTasks = executor.getActiveCount();
             int queueSize = executor.getQueue().size();
