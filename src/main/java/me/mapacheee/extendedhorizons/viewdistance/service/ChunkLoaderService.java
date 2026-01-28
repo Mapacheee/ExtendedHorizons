@@ -482,10 +482,24 @@ public class ChunkLoaderService {
                 sendPacketOnMainThread(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
 
             } catch (Exception e) {
-                generatingChunks.remove(key);
-                logger.error("Error in async chunk generation", e);
+                handleGenerationFailure(playerId, key, e);
             }
         }, chunkProcessor);
+    }
+
+    private void handleGenerationFailure(UUID playerId, long key, Throwable t) {
+        generatingChunks.remove(key);
+        if (DEBUG) {
+            logger.warn("[EH] Async chunk generation failed for chunk key {} (Player: {}), requeueing...", key,
+                    playerId, t);
+        }
+
+        playerStateManager.get(playerId).ifPresent(state -> {
+            if (!state.getFakeChunks().contains(key)) {
+                state.getChunkQueue().addFirst(key);
+                state.getQueuedChunksSet().add(key);
+            }
+        });
     }
 
     private final java.util.concurrent.atomic.AtomicInteger pendingSends = new java.util.concurrent.atomic.AtomicInteger(
@@ -498,14 +512,25 @@ public class ChunkLoaderService {
     private void sendPacketOnMainThread(Player p, Object packet, long key, FakeChunkLoadEvent.LoadSource source,
             int chunkX,
             int chunkZ, Set<Long> sentTracker, PlayerChunkState state) {
+
+        if (!p.isOnline()) {
+            generatingChunks.remove(key);
+            return;
+        }
+
         pendingSends.incrementAndGet();
-        p.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (ScheduledTask task) -> {
-            try {
-                sendPacketAndFinish(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
-            } finally {
-                pendingSends.decrementAndGet();
-            }
-        }, null);
+        try {
+            p.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (ScheduledTask task) -> {
+                try {
+                    sendPacketAndFinish(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
+                } finally {
+                    pendingSends.decrementAndGet();
+                }
+            }, null);
+        } catch (Exception e) {
+            pendingSends.decrementAndGet();
+            generatingChunks.remove(key);
+        }
     }
 
     private void scheduleSend(UUID playerId, long key, Object packet, FakeChunkLoadEvent.LoadSource source, int chunkX,

@@ -141,8 +141,6 @@ public class FakeChunkService {
             } catch (UnsupportedOperationException | NullPointerException ignored) {
             }
 
-            // Backpressure: If too many packets are waiting to be sent on Main Thread,
-            // pause generation
             if (chunkLoaderService.getPendingSends() > 20) {
                 if (DEBUG)
                     logger.warn("[EH] High pending sends ({}), backpressure applied",
@@ -194,7 +192,6 @@ public class FakeChunkService {
                 }
 
                 if (warmupManager.isWarmupActive(state)) {
-
                     continue;
                 }
 
@@ -477,8 +474,9 @@ public class FakeChunkService {
         int playerChunkX = player.getLocation().getBlockX() >> 4;
         int playerChunkZ = player.getLocation().getBlockZ() >> 4;
 
+        int safeSquareRadius = (int) Math.floor(viewDistance * 0.65);
         int dist = Math.max(Math.abs(chunkX - playerChunkX), Math.abs(chunkZ - playerChunkZ));
 
-        return dist <= viewDistance;
+        return dist <= safeSquareRadius;
     }
 }
