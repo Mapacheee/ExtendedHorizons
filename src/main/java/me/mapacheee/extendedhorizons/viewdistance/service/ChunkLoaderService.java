@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
@@ -435,7 +434,10 @@ public class ChunkLoaderService {
             }
 
             // 3. Fallback: Generate Packet (Main Thread for safety with NMS/Chunk access)
-            player.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (ScheduledTask task) -> {
+            // 3. Fallback: Generate Packet (Async Thread for heavy lifting)
+            // Even though NMS chunk access usually requires Main Thread, we are reading
+            // effectively static data for distant chunks. We wrap in try-catch to be safe.
+            try {
                 Player p = Bukkit.getPlayer(playerId);
                 if (p == null || !p.isOnline()) {
                     generatingChunks.remove(key);
@@ -470,7 +472,6 @@ public class ChunkLoaderService {
                     return;
                 }
 
-                // Check world mismatch (safety)
                 try {
                     ChunkCacheKey currentKey = new ChunkCacheKey(p.getWorld().getUID(), key);
                     if (!currentKey.equals(cacheKey)) {
@@ -480,22 +481,32 @@ public class ChunkLoaderService {
                 } catch (Exception e) {
                 }
 
-                sendPacketAndFinish(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
                 packetCache.put(cacheKey, packet);
 
                 final Object packetFinal = packet;
                 try {
-                    CompletableFuture.runAsync(() -> {
-                        byte[] data = nmsPacketAccess.serializeChunkPacket(packetFinal);
-                        if (data != null) {
-                            packetCacheStorage.saveCachedPacket(worldId, chunkX, chunkZ, data);
-                        }
-                    }, chunkProcessor);
+                    byte[] data = nmsPacketAccess.serializeChunkPacket(packetFinal);
+                    if (data != null) {
+                        packetCacheStorage.saveCachedPacket(worldId, chunkX, chunkZ, data);
+                    }
                 } catch (Exception e) {
                 }
 
-            }, null);
+                sendPacketOnMainThread(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
+
+            } catch (Exception e) {
+                generatingChunks.remove(key);
+                logger.error("Error in async chunk generation", e);
+            }
         }, chunkProcessor);
+    }
+
+    private void sendPacketOnMainThread(Player p, Object packet, long key, FakeChunkLoadEvent.LoadSource source,
+            int chunkX,
+            int chunkZ, Set<Long> sentTracker, PlayerChunkState state) {
+        p.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (ScheduledTask task) -> {
+            sendPacketAndFinish(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
+        }, null);
     }
 
     private void scheduleSend(UUID playerId, long key, Object packet, FakeChunkLoadEvent.LoadSource source, int chunkX,
