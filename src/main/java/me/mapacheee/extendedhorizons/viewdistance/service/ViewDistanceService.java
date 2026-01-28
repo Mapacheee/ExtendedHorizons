@@ -384,9 +384,10 @@ public class ViewDistanceService {
 
             int dx = chunkX - playerChunkX;
             int dz = chunkZ - playerChunkZ;
-            int distance = Math.max(Math.abs(dx), Math.abs(dz));
+            int safeSquareRadius = (int) Math.floor(serverViewDistance * 0.65);
+            int chebyshevDist = Math.max(Math.abs(dx), Math.abs(dz));
 
-            if (distance <= serverViewDistance) {
+            if (chebyshevDist <= safeSquareRadius) {
                 realChunks.add(key);
             } else {
                 fakeChunks.add(key);
