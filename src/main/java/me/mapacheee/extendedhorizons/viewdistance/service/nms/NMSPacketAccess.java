@@ -11,6 +11,16 @@ public interface NMSPacketAccess {
     Object createChunkPacket(Object chunk);
 
     /**
+     * Creates a surface-only ClientboundLevelChunkWithLightPacket from a chunk.
+     * Only includes sections from the heightmap and a configurable depth below.
+     * 
+     * @param chunk             The chunk object
+     * @param depthBelowSurface Number of blocks to include below the surface
+     * @return The NMS packet object.
+     */
+    Object createSurfaceOnlyChunkPacket(Object chunk, int depthBelowSurface);
+
+    /**
      * Creates a ClientboundForgetLevelChunkPacket.
      * 
      * @return The NMS packet object.
@@ -53,4 +63,14 @@ public interface NMSPacketAccess {
      * @return The NMS packet object.
      */
     Object createSimulationDistancePacket(int distance);
+
+    /**
+     * Serializes a chunk packet to a byte array.
+     */
+    byte[] serializeChunkPacket(Object packet);
+
+    /**
+     * Deserializes a chunk packet from a byte array.
+     */
+    Object deserializeChunkPacket(byte[] data);
 }

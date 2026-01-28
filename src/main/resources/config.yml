@@ -70,21 +70,18 @@ performance:
     # Increase for more players in same area, decrease for dispersed players or low RAM
     max-memory-cache-size: 1000
 
-    
-    # Anti-X-Ray for fake chunks
+    # Only send visible surface blocks in fake chunks
+    # This dramatically reduces packet size and bandwidth usage
+    # Recommended: true for better performance and anti-xray compatibility
+    surface-only-mode: true
+    # How many blocks below the surface to include (higher = more depth detail)
+    # Recommended: 32-64 blocks for good balance
+    depth-below-surface: 40
 
-    # Enable this feature will affect the speed to load fake chunks
-    # Enable this only if its necessary
-    anti-xray:
-      # Enable anti-xray obfuscation for fake chunks
-      enabled: false
-      # Replace valuable ores with stone/deepslate
-      hide-ores: true
-      # Add fake ores to confuse x-ray users
-      add-fake-ores: true
-      # Density of fake ores (0.0-1.0, higher = more fakes)
-      fake-ore-density: 0.15
-  
+    # Persistent Disk Cache: Save processed packets to database (SQLite)
+    # Allows zero-CPU loading for previously visited chunks even after restart
+    disk-cache: true
+
   occlusion-culling:
     enabled: true
     sky-light-threshold: 14

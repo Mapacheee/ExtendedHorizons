@@ -185,6 +185,7 @@ public class FakeChunkService {
                 }
 
                 if (warmupManager.isWarmupActive(state)) {
+
                     continue;
                 }
 
@@ -235,7 +236,7 @@ public class FakeChunkService {
             return CompletableFuture.completedFuture(0);
         }
 
-        if (chunkKeys.isEmpty()) {
+        if (chunkKeys == null || chunkKeys.isEmpty()) {
             if (DEBUG)
                 logger.info("[EH] No fake chunks to send for {}", player.getName());
             return CompletableFuture.completedFuture(0);

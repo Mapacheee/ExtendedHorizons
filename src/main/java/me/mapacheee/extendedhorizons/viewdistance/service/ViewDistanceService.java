@@ -378,8 +378,6 @@ public class ViewDistanceService {
         Set<Long> realChunks = new HashSet<>();
         Set<Long> fakeChunks = new HashSet<>();
 
-        double serverRadiusSquared = (serverViewDistance + 0.5) * (serverViewDistance + 0.5);
-
         for (long key : allChunks) {
             int chunkX = ChunkUtils.unpackX(key);
             int chunkZ = ChunkUtils.unpackZ(key);
