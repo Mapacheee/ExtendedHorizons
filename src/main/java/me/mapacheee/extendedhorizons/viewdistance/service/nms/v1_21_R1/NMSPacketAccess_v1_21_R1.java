@@ -13,8 +13,10 @@ import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.network.protocol.Packet;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
+import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import java.util.BitSet;
+import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
@@ -22,6 +24,13 @@ import io.netty.buffer.Unpooled;
 
 @Service
 public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
+
+    private final ConfigService configService;
+
+    @Inject
+    public NMSPacketAccess_v1_21_R1(ConfigService configService) {
+        this.configService = configService;
+    }
 
     private static java.lang.reflect.Method writeMethod;
     private static java.lang.reflect.Constructor<ClientboundLevelChunkWithLightPacket> chunkPacketConstructor;
@@ -96,12 +105,15 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
             LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
             BitSet[] lightMasks = getLightMasks(nmsChunk);
 
+            boolean enableAntiXray = configService.get().performance().fakeChunks().enableAntiXray();
+            boolean trustEdges = !enableAntiXray;
+
             ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
                     nmsChunk,
                     lightEngine,
                     lightMasks[0],
                     lightMasks[1],
-                    false);
+                    trustEdges);
 
             return packet;
         } catch (Exception e) {

@@ -51,7 +51,8 @@ public record MainConfig(
                                 @Setting("max-memory-cache-size") int maxMemoryCacheSize,
                                 @Setting("surface-only-mode") boolean surfaceOnlyMode,
                                 @Setting("depth-below-surface") int depthBelowSurface,
-                                @Setting("disk-cache") boolean diskCache) {
+                                @Setting("disk-cache") boolean diskCache,
+                                @Setting("enable-anti-xray") boolean enableAntiXray) {
                 }
 
                 @ConfigSerializable

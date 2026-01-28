@@ -82,6 +82,11 @@ performance:
     # Allows zero-CPU loading for previously visited chunks even after restart
     disk-cache: true
 
+    # Enable Anti-Xray for fake chunks?
+    # True: Secure (ores hidden), high CPU usage during generation.
+    # False: Fast (raw copy), ores visible to X-rayers in the distance.
+    enable-anti-xray: true
+
   occlusion-culling:
     enabled: true
     sky-light-threshold: 14
