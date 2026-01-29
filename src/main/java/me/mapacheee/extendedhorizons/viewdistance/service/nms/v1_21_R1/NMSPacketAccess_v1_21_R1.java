@@ -226,7 +226,17 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
     @Override
     public int getPacketSize(Object packet) {
         if (packet instanceof ClientboundLevelChunkWithLightPacket) {
-            return -1;
+            int estimated = Math.max(1, configService.get().bandwidthSaver().estimatedPacketSize());
+            try {
+                if (configService.get().performance().fakeChunks().diskCache()) {
+                    byte[] data = serializeChunkPacket(packet);
+                    if (data != null && data.length > 0) {
+                        return data.length;
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            return estimated;
         }
         return 512;
     }
