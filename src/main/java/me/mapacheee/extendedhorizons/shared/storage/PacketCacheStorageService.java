@@ -9,6 +9,11 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.slf4j.Logger;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.zip.GZIPOutputStream;
+import java.util.zip.GZIPInputStream;
 import java.io.File;
 import java.sql.*;
 import java.util.UUID;
@@ -91,7 +96,18 @@ public class PacketCacheStorageService {
                 pstmt.setInt(3, z);
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
-                    return rs.getBytes("packet_data");
+                    byte[] raw = rs.getBytes("packet_data");
+                    if (raw == null || raw.length == 0) {
+                        return null;
+                    }
+                    if (isGzip(raw)) {
+                        try {
+                            return decompress(raw);
+                        } catch (Exception ignored) {
+                            return null;
+                        }
+                    }
+                    return raw;
                 }
             } catch (SQLException e) {
             }
@@ -114,12 +130,44 @@ public class PacketCacheStorageService {
                 pstmt.setString(1, worldId.toString());
                 pstmt.setInt(2, x);
                 pstmt.setInt(3, z);
-                pstmt.setBytes(4, data);
+                byte[] toStore = data;
+                try {
+                    if (configService.get().performance().fakeChunks().useCompression()) {
+                        toStore = compress(data);
+                    }
+                } catch (Exception ignored) {
+                }
+                pstmt.setBytes(4, toStore);
                 pstmt.setLong(5, System.currentTimeMillis());
             } catch (SQLException e) {
                 logger.error("Failed to save packet cache for chunk " + x + "," + z, e);
             }
         });
+    }
+
+    private boolean isGzip(byte[] data) {
+        return data.length > 2 && (data[0] == (byte) 0x1f) && (data[1] == (byte) 0x8b);
+    }
+
+    private byte[] compress(byte[] input) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        GZIPOutputStream gos = new GZIPOutputStream(baos);
+        gos.write(input);
+        gos.close();
+        return baos.toByteArray();
+    }
+
+    private byte[] decompress(byte[] input) throws IOException {
+        ByteArrayInputStream bais = new ByteArrayInputStream(input);
+        GZIPInputStream gis = new GZIPInputStream(bais);
+        byte[] buffer = new byte[8192];
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        int read;
+        while ((read = gis.read(buffer)) > 0) {
+            baos.write(buffer, 0, read);
+        }
+        gis.close();
+        return baos.toByteArray();
     }
 
     /**
