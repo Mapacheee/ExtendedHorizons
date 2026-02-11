@@ -56,14 +56,14 @@ public class CacheInvalidationListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent event) {
-        markDirty(event.getBlock().getWorld().getUID(), event.getBlock().getChunk().getX(),
-                event.getBlock().getChunk().getZ());
+        event.blockList().forEach(
+                block -> markDirty(block.getWorld().getUID(), block.getChunk().getX(), block.getChunk().getZ()));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
-        markDirty(event.getLocation().getWorld().getUID(), event.getLocation().getChunk().getX(),
-                event.getLocation().getChunk().getZ());
+        event.blockList().forEach(
+                block -> markDirty(block.getWorld().getUID(), block.getChunk().getX(), block.getChunk().getZ()));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
