@@ -77,19 +77,17 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
         }
         sortedKeys.sort((key1, key2) -> compareDistance(key1, key2, playerChunkX, playerChunkZ));
 
-        Queue<Long> queue = state.getChunkQueue();
-        Set<Long> queuedSet = state.getQueuedChunksSet();
-
+        int addedCount = 0;
         for (long key : sortedKeys) {
-            if (!queuedSet.contains(key)) {
-                queue.add(key);
-                queuedSet.add(key);
+            if (!state.queueChunk(key)) {
+                break;
             }
+            addedCount++;
         }
 
         if (DEBUG) {
             logger.info("[EH] Warmup active for {}, queued {} chunks (sorted by distance)",
-                    player.getName(), sortedKeys.size());
+                    player.getName(), addedCount);
         }
     }
 
@@ -137,22 +135,17 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
             }
         }
 
-        Set<Long> queuedSet = state.getQueuedChunksSet();
-        List<Long> merged = new ArrayList<>(queue);
-
+        int addedCount = 0;
         for (Long key : newChunksToLoad) {
-            if (!queuedSet.contains(key)) {
-                merged.add(key);
-                queuedSet.add(key);
+            if (!state.queueChunk(key)) {
+                break;
             }
+            addedCount++;
         }
-        merged.sort((key1, key2) -> compareDistance(key1, key2, playerChunkX, playerChunkZ));
 
-        queue.clear();
-        queue.addAll(merged);
-
-        if (DEBUG) {
-            logger.info("[EH] Re-sorted queue for {} ({} chunks)", player.getName(), queue.size());
+        if (DEBUG && addedCount > 0) {
+            logger.info("[EH] Added {} chunks to queue for {} ({} total)",
+                    addedCount, player.getName(), queue.size());
         }
     }
 

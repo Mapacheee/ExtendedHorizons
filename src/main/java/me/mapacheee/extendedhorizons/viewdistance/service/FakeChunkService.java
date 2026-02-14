@@ -122,6 +122,8 @@ public class FakeChunkService {
             chunkLoaderService.resetTickCounters();
             playerStateManager.resetTickCounters();
 
+            cleanupDisconnectedPlayers();
+
             long bandwidthPerPlayer = configService.get().bandwidthSaver().maxBandwidthPerPlayer(); // KB/s
             if (bandwidthPerPlayer <= 0)
                 bandwidthPerPlayer = 10000;
@@ -199,6 +201,27 @@ public class FakeChunkService {
             }
         } catch (Throwable t) {
             logger.error("[EH] Error in progressive loading task", t);
+        }
+    }
+
+    /**
+     * Cleans up player states for players who are no longer connected.
+     * This prevents memory leaks when players disconnect without proper cleanup.
+     */
+    private void cleanupDisconnectedPlayers() {
+        List<UUID> toRemove = new ArrayList<>();
+        for (UUID playerId : playerStateManager.getAllPlayerIds()) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null || !player.isOnline()) {
+                toRemove.add(playerId);
+            }
+        }
+
+        for (UUID playerId : toRemove) {
+            playerStateManager.remove(playerId);
+            if (DEBUG) {
+                logger.info("[EH] Cleaned up disconnected player state: {}", playerId);
+            }
         }
     }
 

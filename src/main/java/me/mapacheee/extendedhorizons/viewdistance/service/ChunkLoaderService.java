@@ -80,7 +80,9 @@ public class ChunkLoaderService {
 
         this.maxGenerationsPerTick = 1;
         this.maxDiskLoadsPerTick = 20;
-        int maxCacheSize = 1000;
+
+        int configuredCacheSize = configService.get().performance().fakeChunks().maxMemoryCacheSize();
+        final int maxCacheSize = (configuredCacheSize <= 0) ? 500 : Math.min(500, configuredCacheSize);
 
         this.chunkMemoryCache = Collections.synchronizedMap(
                 new LinkedHashMap<ChunkCacheKey, Object>(16, 0.75f, true) {
@@ -91,18 +93,23 @@ public class ChunkLoaderService {
                 });
 
         int maxPacketCacheSize = configService.get().performance().fakeChunks().maxCachedPackets();
+        if (maxPacketCacheSize <= 0 || maxPacketCacheSize > 2000) {
+            maxPacketCacheSize = 1000;
+        }
+        final int finalPacketCacheSize = maxPacketCacheSize;
+
         this.packetCache = Collections.synchronizedMap(
                 new LinkedHashMap<ChunkCacheKey, Object>(16, 0.75f, true) {
                     @Override
                     protected boolean removeEldestEntry(Map.Entry<ChunkCacheKey, Object> eldest) {
-                        return size() > maxPacketCacheSize;
+                        return size() > finalPacketCacheSize;
                     }
                 });
 
         int configuredThreads = configService.get().performance().chunkProcessorThreads();
         int threadCount = configuredThreads > 0
-                ? configuredThreads
-                : Math.max(4, Runtime.getRuntime().availableProcessors());
+                ? Math.min(configuredThreads, 8)
+                : Math.min(4, Runtime.getRuntime().availableProcessors());
 
         this.chunkProcessor = Executors.newFixedThreadPool(
                 threadCount,
@@ -562,9 +569,17 @@ public class ChunkLoaderService {
                 return;
             }
 
+            if (!state.canAddMoreFakeChunks()) {
+                generatingChunks.remove(key);
+                if (DEBUG)
+                    logger.info("[EH] Player {} reached fake chunk limit, skipping {},{}",
+                            p.getName(), chunkX, chunkZ);
+                return;
+            }
+
             nmsPacketAccess.sendPacket(p, packet);
 
-            state.getFakeChunks().add(key);
+            state.addFakeChunk(key);
             sentTracker.add(key);
             generatingChunks.remove(key);
 
