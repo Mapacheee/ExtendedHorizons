@@ -1,8 +1,0 @@
-name: ExamplePlugin
-version: 1.0.0
-main: com.example.exampleplugin.ExamplePlugin
-api-version: '1.21'
-description: Example plugin showing ExtendedHorizons API usage
-author: YourName
-
-depend: [ExtendedHorizons]
