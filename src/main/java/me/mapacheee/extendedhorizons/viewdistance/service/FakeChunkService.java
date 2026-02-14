@@ -117,6 +117,31 @@ public class FakeChunkService {
         return chunkLoaderService.getStats();
     }
 
+    /**
+     * Gets the server's current MSPT (milliseconds per tick).
+     * Compatible with both Paper and Folia.
+     *
+     * @return current MSPT, or 0 if unavailable
+     */
+    private double getServerMSPT() {
+        try {
+            return Bukkit.getAverageTickTime();
+        } catch (UnsupportedOperationException | NoSuchMethodError e) {
+            try {
+                double[] tps = Bukkit.getTPS();
+                if (tps.length > 0) {
+                    double currentTPS = tps[0];
+                    if (currentTPS > 0) {
+                        return 1000.0 / currentTPS;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+
+            return 0;
+        }
+    }
+
     public void progressiveLoadingTask() {
         try {
             chunkLoaderService.resetTickCounters();
@@ -130,17 +155,22 @@ public class FakeChunkService {
 
             bandwidthController.updateMaxBytesPerTick((int) bandwidthPerPlayer);
 
-            try {
-                double mspt = Bukkit.getAverageTickTime();
-                double maxMspt = configService.get().performance().maxMsptForLoading();
-                if (maxMspt > 0 && mspt > maxMspt) {
-                    if (DEBUG) {
-                        logger.warn("[EH] High MSPT ({}ms > {}ms), skipping chunk loading",
-                                String.format("%.2f", mspt), maxMspt);
+            double maxMspt = configService.get().performance().maxMsptForLoading();
+            if (maxMspt > 0) {
+                try {
+                    double mspt = getServerMSPT();
+                    if (mspt > maxMspt) {
+                        if (DEBUG) {
+                            logger.warn("[EH] High MSPT ({}ms > {}ms), skipping chunk loading",
+                                    String.format("%.2f", mspt), maxMspt);
+                        }
+                        return;
                     }
-                    return;
+                } catch (Exception e) {
+                    if (DEBUG) {
+                        logger.warn("[EH] Could not retrieve MSPT, continuing chunk loading: {}", e.getMessage());
+                    }
                 }
-            } catch (UnsupportedOperationException | NullPointerException ignored) {
             }
 
             if (chunkLoaderService.getPendingSends() > 20) {

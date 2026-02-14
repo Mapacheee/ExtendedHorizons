@@ -37,10 +37,13 @@ performance:
 
   # Delay in milliseconds before loading fake chunks after teleport
   # Gives the server time to load real chunks first
+  # During this period + 2 seconds, chunk loading is boosted 3-4x for faster loading
   teleport-warmup-delay: 10
 
-  # MSPT Protection: Pause fake chunk loading if server MSPT exceeds this value
-  # Set to 0 to disable
+  # MSPT (Milliseconds Per Tick) should be ~50ms normally (20 TPS)
+  # If MSPT > this value, the server is lagging and chunk loading pauses
+  # Recommended: 40-50 for most servers, 0 to disable protection
+  # Note: On Folia, uses TPS-based calculation as fallback
   max-mspt-for-loading: 40.0
 
   # Async Task Throttling: Limits concurrent chunk loading
