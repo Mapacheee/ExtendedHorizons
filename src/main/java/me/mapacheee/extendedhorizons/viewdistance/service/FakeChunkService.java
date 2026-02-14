@@ -235,6 +235,17 @@ public class FakeChunkService {
         Set<Long> sentTracker = state.getFakeChunks();
 
         int maxChunks = configService.get().bandwidthSaver().maxFakeChunksPerTick();
+
+        if (state.isInWarmup()) {
+            long warmupElapsed = System.currentTimeMillis() - state.getWarmupStartTime();
+            long warmupDuration = configService.get().performance().teleportWarmupDelay();
+
+            if (warmupElapsed < warmupDuration + 2000) {
+                double boostFactor = 4.0 - (3.0 * Math.min(1.0, warmupElapsed / (double)(warmupDuration + 2000)));
+                maxChunks = (int)(maxChunks * Math.max(1.0, boostFactor));
+            }
+        }
+
         List<Long> batch = new ArrayList<>();
         Set<Long> generatingChunks = chunkLoaderService.getGeneratingChunks();
 

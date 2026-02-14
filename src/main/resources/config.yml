@@ -48,8 +48,8 @@ performance:
   max-async-load-queue: 10
 
   # Strict limits per tick to prevent lag spikes
-  max-generations-per-tick: 1
-  max-disk-loads-per-tick: 20
+  max-generations-per-tick: 2
+  max-disk-loads-per-tick: 22
 
   # Fake chunks system configuration
   fake-chunks:
@@ -98,7 +98,7 @@ bandwidth-saver:
   skip-redundant-packets: true
 
   # Maximum fake chunks to send per tick (20 ticks = 1 second)
-  max-fake-chunks-per-tick: 20
+  max-fake-chunks-per-tick: 22
 
   # Maximum bandwidth per player in KB/s (0 = unlimited)
   # 512 KB/s ≈ 4 Mbps
