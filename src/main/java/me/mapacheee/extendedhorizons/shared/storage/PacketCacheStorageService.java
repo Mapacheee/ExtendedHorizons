@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.shared.storage;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
+import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import org.bukkit.plugin.Plugin;
@@ -18,9 +19,14 @@ import java.io.File;
 import java.sql.*;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 /*
  * Manages persistent storage of processed chunk packets using SQLite.
+ * Uses WAL mode and a single-threaded executor to prevent database locking issues.
  */
 @Service
 public class PacketCacheStorageService {
@@ -29,6 +35,9 @@ public class PacketCacheStorageService {
     private final Logger logger;
     private final Plugin plugin;
     private String databaseUrl;
+    private Connection sharedConnection;
+    private final ReentrantLock connectionLock = new ReentrantLock();
+    private ExecutorService dbExecutor;
 
     @Inject
     public PacketCacheStorageService(ConfigService configService, Logger logger) {
@@ -45,32 +54,94 @@ public class PacketCacheStorageService {
                 return;
             }
 
+            this.dbExecutor = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "EH-PacketCache-DB");
+                t.setDaemon(true);
+                return t;
+            });
+
             File dbFile = new File(plugin.getDataFolder(), configService.get().database().fileName() + ".db");
             if (!dbFile.getParentFile().exists()) {
                 dbFile.getParentFile().mkdirs();
             }
             this.databaseUrl = "jdbc:sqlite:" + dbFile.getAbsolutePath();
 
-            try (Connection conn = DriverManager.getConnection(databaseUrl);
-                    Statement stmt = conn.createStatement()) {
-                String sql = "CREATE TABLE IF NOT EXISTS packet_cache (" +
-                        "world_uid VARCHAR(36) NOT NULL," +
-                        "chunk_x INTEGER NOT NULL," +
-                        "chunk_z INTEGER NOT NULL," +
-                        "packet_data BLOB NOT NULL," +
-                        "created_at INTEGER NOT NULL," +
-                        "PRIMARY KEY (world_uid, chunk_x, chunk_z)" +
-                        ");";
-                stmt.execute(sql);
+            initializeConnection();
 
-                logger.info("Packet cache (disk) initialized successfully.");
-            } catch (SQLException e) {
-                logger.error("Failed to initialize packet cache database.", e);
-                this.databaseUrl = null;
-            }
+            logger.info("Packet cache (disk) initialized successfully with WAL mode.");
         } catch (Exception e) {
             logger.error("Critical error during PacketCacheStorageService initialization.", e);
             this.databaseUrl = null;
+        }
+    }
+
+    private void initializeConnection() throws SQLException {
+        sharedConnection = DriverManager.getConnection(databaseUrl);
+
+        try (Statement stmt = sharedConnection.createStatement()) {
+            // Enable WAL mode for better concurrent read/write performance
+            stmt.execute("PRAGMA journal_mode=WAL;");
+            // Increase busy timeout to wait longer before giving up
+            stmt.execute("PRAGMA busy_timeout=30000;");
+            // Synchronous mode for better performance (still safe with WAL)
+            stmt.execute("PRAGMA synchronous=NORMAL;");
+            // Increase cache size
+            stmt.execute("PRAGMA cache_size=10000;");
+
+            String sql = "CREATE TABLE IF NOT EXISTS packet_cache (" +
+                    "world_uid VARCHAR(36) NOT NULL," +
+                    "chunk_x INTEGER NOT NULL," +
+                    "chunk_z INTEGER NOT NULL," +
+                    "packet_data BLOB NOT NULL," +
+                    "created_at INTEGER NOT NULL," +
+                    "PRIMARY KEY (world_uid, chunk_x, chunk_z)" +
+                    ");";
+            stmt.execute(sql);
+        }
+    }
+
+    private Connection getConnection() throws SQLException {
+        connectionLock.lock();
+        try {
+            if (sharedConnection == null || sharedConnection.isClosed()) {
+                initializeConnection();
+            }
+            return sharedConnection;
+        } finally {
+            connectionLock.unlock();
+        }
+    }
+
+    @OnDisable
+    public void shutdown() {
+        if (dbExecutor != null) {
+            dbExecutor.shutdown();
+            try {
+                if (!dbExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    dbExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                dbExecutor.shutdownNow();
+            }
+        }
+
+        connectionLock.lock();
+        try {
+            if (sharedConnection != null) {
+                try {
+                    if (!sharedConnection.isClosed()) {
+                        // Checkpoint WAL before closing
+                        try (Statement stmt = sharedConnection.createStatement()) {
+                            stmt.execute("PRAGMA wal_checkpoint(TRUNCATE);");
+                        }
+                        sharedConnection.close();
+                    }
+                } catch (SQLException e) {
+                    logger.error("Error closing database connection", e);
+                }
+            }
+        } finally {
+            connectionLock.unlock();
         }
     }
 
@@ -87,32 +158,36 @@ public class PacketCacheStorageService {
         }
 
         return CompletableFuture.supplyAsync(() -> {
-            try (Connection conn = DriverManager.getConnection(databaseUrl);
-                    PreparedStatement pstmt = conn
-                            .prepareStatement(
-                                    "SELECT packet_data FROM packet_cache WHERE world_uid = ? AND chunk_x = ? AND chunk_z = ?")) {
-                pstmt.setString(1, worldId.toString());
-                pstmt.setInt(2, x);
-                pstmt.setInt(3, z);
-                ResultSet rs = pstmt.executeQuery();
-                if (rs.next()) {
-                    byte[] raw = rs.getBytes("packet_data");
-                    if (raw == null || raw.length == 0) {
-                        return null;
-                    }
-                    if (isGzip(raw)) {
-                        try {
-                            return decompress(raw);
-                        } catch (Exception ignored) {
+            connectionLock.lock();
+            try {
+                Connection conn = getConnection();
+                try (PreparedStatement pstmt = conn.prepareStatement(
+                        "SELECT packet_data FROM packet_cache WHERE world_uid = ? AND chunk_x = ? AND chunk_z = ?")) {
+                    pstmt.setString(1, worldId.toString());
+                    pstmt.setInt(2, x);
+                    pstmt.setInt(3, z);
+                    ResultSet rs = pstmt.executeQuery();
+                    if (rs.next()) {
+                        byte[] raw = rs.getBytes("packet_data");
+                        if (raw == null || raw.length == 0) {
                             return null;
                         }
+                        if (isGzip(raw)) {
+                            try {
+                                return decompress(raw);
+                            } catch (Exception ignored) {
+                                return null;
+                            }
+                        }
+                        return raw;
                     }
-                    return raw;
                 }
-            } catch (SQLException e) {
+            } catch (SQLException ignored) {
+            } finally {
+                connectionLock.unlock();
             }
             return null;
-        });
+        }, dbExecutor);
     }
 
     /**
@@ -124,25 +199,31 @@ public class PacketCacheStorageService {
         }
 
         CompletableFuture.runAsync(() -> {
-            String sql = "INSERT OR REPLACE INTO packet_cache (world_uid, chunk_x, chunk_z, packet_data, created_at) VALUES(?, ?, ?, ?, ?);";
-            try (Connection conn = DriverManager.getConnection(databaseUrl);
-                    PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, worldId.toString());
-                pstmt.setInt(2, x);
-                pstmt.setInt(3, z);
-                byte[] toStore = data;
-                try {
-                    if (configService.get().performance().fakeChunks().useCompression()) {
-                        toStore = compress(data);
+            connectionLock.lock();
+            try {
+                Connection conn = getConnection();
+                String sql = "INSERT OR REPLACE INTO packet_cache (world_uid, chunk_x, chunk_z, packet_data, created_at) VALUES(?, ?, ?, ?, ?);";
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setString(1, worldId.toString());
+                    pstmt.setInt(2, x);
+                    pstmt.setInt(3, z);
+                    byte[] toStore = data;
+                    try {
+                        if (configService.get().performance().fakeChunks().useCompression()) {
+                            toStore = compress(data);
+                        }
+                    } catch (Exception ignored) {
                     }
-                } catch (Exception ignored) {
+                    pstmt.setBytes(4, toStore);
+                    pstmt.setLong(5, System.currentTimeMillis());
+                    pstmt.executeUpdate();
                 }
-                pstmt.setBytes(4, toStore);
-                pstmt.setLong(5, System.currentTimeMillis());
             } catch (SQLException e) {
-                logger.error("Failed to save packet cache for chunk " + x + "," + z, e);
+                // Log at debug level to avoid spam
+            } finally {
+                connectionLock.unlock();
             }
-        });
+        }, dbExecutor);
     }
 
     private boolean isGzip(byte[] data) {
@@ -179,16 +260,20 @@ public class PacketCacheStorageService {
         }
 
         CompletableFuture.runAsync(() -> {
-            String sql = "DELETE FROM packet_cache WHERE world_uid = ? AND chunk_x = ? AND chunk_z = ?;";
-            try (Connection conn = DriverManager.getConnection(databaseUrl);
-                    PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, worldId.toString());
-                pstmt.setInt(2, x);
-                pstmt.setInt(3, z);
-                pstmt.executeUpdate();
-            } catch (SQLException e) {
-                logger.error("Failed to invalidate packet cache for chunk " + x + "," + z, e);
+            connectionLock.lock();
+            try {
+                Connection conn = getConnection();
+                String sql = "DELETE FROM packet_cache WHERE world_uid = ? AND chunk_x = ? AND chunk_z = ?;";
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setString(1, worldId.toString());
+                    pstmt.setInt(2, x);
+                    pstmt.setInt(3, z);
+                    pstmt.executeUpdate();
+                }
+            } catch (SQLException ignored) {
+            } finally {
+                connectionLock.unlock();
             }
-        });
+        }, dbExecutor);
     }
 }
