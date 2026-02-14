@@ -23,8 +23,11 @@ public class PlayerMovementListener implements Listener {
     private final Provider<ViewDistanceService> viewDistanceServiceProvider;
     private final Map<UUID, Long> lastUpdateTime = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastChunkPos = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> fastMoveCount = new ConcurrentHashMap<>();
 
-    private static final long UPDATE_COOLDOWN_MS = 1000;
+    private static final long UPDATE_COOLDOWN_MS = 500;
+    private static final long FAST_MOVE_COOLDOWN_MS = 500;
+    private static final int FAST_MOVE_THRESHOLD = 3;
 
     @Inject
     public PlayerMovementListener(Provider<ViewDistanceService> viewDistanceServiceProvider) {
@@ -64,29 +67,42 @@ public class PlayerMovementListener implements Listener {
 
         lastChunkPos.put(playerId, currentChunkPos);
 
-        Long lastUpdate = lastUpdateTime.get(playerId);
-        long now = System.currentTimeMillis();
-        if (lastUpdate != null && now - lastUpdate < 250) {
-            return;
-        }
-        lastUpdateTime.put(playerId, now);
-
         int dX = Math.abs(toChunkX - fromChunkX);
         int dZ = Math.abs(toChunkZ - fromChunkZ);
         int cheb = Math.max(dX, dZ);
+
+        if (cheb >= FAST_MOVE_THRESHOLD) {
+            int count = fastMoveCount.getOrDefault(playerId, 0) + 1;
+            fastMoveCount.put(playerId, count);
+        } else {
+            fastMoveCount.put(playerId, 0);
+        }
+
+        Long lastUpdate = lastUpdateTime.get(playerId);
+        long now = System.currentTimeMillis();
+
+        int currentFastMoveCount = fastMoveCount.getOrDefault(playerId, 0);
+        long cooldown = currentFastMoveCount > 2 ? FAST_MOVE_COOLDOWN_MS : 250;
+
+        if (lastUpdate != null && now - lastUpdate < cooldown) {
+            return;
+        }
+        lastUpdateTime.put(playerId, now);
 
         ViewDistanceService viewDistanceService = viewDistanceServiceProvider.get();
 
         if (cheb >= 3) {
             viewDistanceService.updatePlayerViewFast(event.getPlayer());
-            event.getPlayer().getScheduler().runDelayed(
-                    ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class),
-                    (task) -> {
-                        if (event.getPlayer().isOnline())
-                            viewDistanceServiceProvider.get().updatePlayerView(event.getPlayer());
-                    },
-                    null,
-                    5L);
+            if (currentFastMoveCount < 3) {
+                event.getPlayer().getScheduler().runDelayed(
+                        ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class),
+                        (task) -> {
+                            if (event.getPlayer().isOnline())
+                                viewDistanceServiceProvider.get().updatePlayerView(event.getPlayer());
+                        },
+                        null,
+                        5L);
+            }
         } else {
             viewDistanceService.updatePlayerView(event.getPlayer());
         }
@@ -98,5 +114,6 @@ public class PlayerMovementListener implements Listener {
     public void cleanupPlayer(UUID playerId) {
         lastUpdateTime.remove(playerId);
         lastChunkPos.remove(playerId);
+        fastMoveCount.remove(playerId);
     }
 }

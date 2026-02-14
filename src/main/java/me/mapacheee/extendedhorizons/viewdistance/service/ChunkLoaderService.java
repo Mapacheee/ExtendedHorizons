@@ -154,6 +154,14 @@ public class ChunkLoaderService {
             if (!player.isOnline())
                 break;
 
+            if (sentTracker.contains(key)) {
+                continue;
+            }
+
+            if (generatingChunks.containsKey(key)) {
+                continue;
+            }
+
             generatingChunks.put(key, System.currentTimeMillis());
 
             long estimatedChunkSize = configService.get().bandwidthSaver().estimatedPacketSize();
@@ -534,6 +542,12 @@ public class ChunkLoaderService {
             return;
         }
 
+        // Check if chunk was already sent (race condition protection from cache)
+        if (state.getFakeChunks().contains(key)) {
+            generatingChunks.remove(key);
+            return;
+        }
+
         p.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (ScheduledTask task) -> {
             sendPacketAndFinish(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
         }, null);
@@ -542,6 +556,12 @@ public class ChunkLoaderService {
     private void sendPacketAndFinish(Player p, Object packet, long key, FakeChunkLoadEvent.LoadSource source,
             int chunkX, int chunkZ, Set<Long> sentTracker, PlayerChunkState state) {
         try {
+            // Final check: skip if already sent (race condition protection)
+            if (state.getFakeChunks().contains(key)) {
+                generatingChunks.remove(key);
+                return;
+            }
+
             nmsPacketAccess.sendPacket(p, packet);
 
             state.getFakeChunks().add(key);
