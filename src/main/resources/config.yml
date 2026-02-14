@@ -6,6 +6,7 @@
 #     https://github.com/Mapacheee/ExtendedHorizons    #
 #                                                      #
 #   Join our Discord:  https://discord.gg/yA3vD2S8Zj   #
+#   Donate here:       https://paypal.me/mapachedou    #
 #                                                      #
 ########################################################
 
@@ -17,13 +18,12 @@ view-distance:
 
 # Per-world settings (optional)
 # If a world is not listed here, it will use the global settings above
-# You can configure each world independently
 world-settings:
   # Example: Limit view distance in the Nether
   # world_nether:
-  #   enabled: true           # Enable/disable fake chunks for this world
-  #   max-distance: 32        # Maximum view distance for this world
-  
+  #   enabled: true
+  #   max-distance: 32
+
   # Example: Disable fake chunks in the End
   # world_the_end:
   #   enabled: false
@@ -31,114 +31,106 @@ world-settings:
 
 # Performance settings
 performance:
-  # Number of threads for parallel chunk processing (0 = auto-detect based on CPU cores)
-  # Recommended: 0 (auto) or 4-8 for most servers
+  # Number of threads for chunk processing (0 = auto-detect based on CPU cores)
+  # Recommended: 0 (auto) or 2-4 for most servers
   chunk-processor-threads: 0
-  # Interval in ticks between chunk validation/process cycles
-  # Higher values reduce CPU usage but make loading "stuttery"
-  chunk-process-interval: 1
-  
-  # Teleport warmup delay in milliseconds to load fake chunks
+
+  # Delay in milliseconds before loading fake chunks after teleport
+  # Gives the server time to load real chunks first
   teleport-warmup-delay: 10
 
-  # MSPT Protection: Pause fake chunk loading if server is lagging
+  # MSPT Protection: Pause fake chunk loading if server MSPT exceeds this value
+  # Set to 0 to disable
   max-mspt-for-loading: 40.0
 
-  # Async Task Throttling: Limit concurrent chunk loading tasks
+  # Async Task Throttling: Limits concurrent chunk loading
   max-async-load-tasks: 4
   max-async-load-queue: 10
 
-  # Generation Limiter: Strict limit on chunks generated per tick
+  # Strict limits per tick to prevent lag spikes
   max-generations-per-tick: 1
-  # Disk Load Limiter: Strict limit on chunks loaded from disk per tick to prevent I/O lag
   max-disk-loads-per-tick: 20
 
-  # Fake chunks system (packets cache)
+  # Fake chunks system configuration
   fake-chunks:
-    # Enable packet cache system
     enabled: true
-    # Maximum cached packets (5000 = ~150MB)
-    max-cached-packets: 5000
-    # Enable GZIP compression for packets (slower but saves RAM)
-    use-compression: false
-    # Cache cleanup interval in seconds
-    cache-cleanup-interval: 10
-    # Enable chunk memory cache (reuses loaded chunks, saves CPU but uses RAM)
-    # Recommended: true for <50 players, false for >100 players or low RAM servers
-    enable-memory-cache: false
-    # Maximum chunks to cache in memory (1000 = ~40-80MB depending on chunk complexity)
-    # Increase for more players in same area, decrease for dispersed players or low RAM
-    max-memory-cache-size: 1000
 
-    # Surface Only Mode: Sends only visible blocks to players.
-    # PROS:
-    #   - Massive bandwidth savings (clients load chunks much faster).
-    #   - Security: Players cannot see underground ores (Anti-Xray by design).
-    # CONS:
-    #   - Initial Generation: HIGH CPU usage to calculate the surface cut.
-    #   - Solution: The 'disk-cache' (below) is HIGHLY RECOMMENDED to save these expensive packets,
-    #     ensuring this CPU cost is only paid once per chunk.
-    # Recommended: true if you have disk-cache enabled.
+    # RAM Cache for processed packets (faster resending)
+    # Higher = more RAM usage, faster chunk resending
+    max-cached-packets: 2000
+
+    # Memory cache for NMS chunk objects (reuses loaded chunks)
+    # Recommended: true for small servers, false for large servers or low RAM
+    enable-memory-cache: true
+    max-memory-cache-size: 500
+
+    # Surface Only Mode: Only sends visible surface blocks
+    # Pros: Massive bandwidth savings, built-in anti-xray
+    # Cons: High CPU for initial generation (mitigated by disk-cache)
     surface-only-mode: false
-    # How many blocks below the surface to include (higher = more depth detail)
-    # Recommended: 32-64 blocks for good balance
     depth-below-surface: 40
 
-    # Persistent Disk Cache: Save processed packets to database (SQLite)
-    # Allows zero-CPU loading for previously visited chunks even after restart
+    # Persistent disk cache (SQLite): Saves processed packets to disk
+    # Highly recommended - allows instant loading of previously visited chunks
     disk-cache: true
 
-    # Enable Anti-Xray for fake chunks?
-    # True: Secure (ores hidden), high CPU usage during generation.
-    # False: Fast (raw copy), ores visible to X-rayers in the distance.
+    # Compress packets before saving to disk (slower but smaller files)
+    use-compression: false
+
+    # Anti-Xray for fake chunks
+    # True: Ores hidden in distance, higher CPU usage
+    # False: Raw chunk data, faster but xray-able
     enable-anti-xray: false
 
+  # Occlusion Culling: Disables fake chunks when player is underground
+  # Saves bandwidth when player can't see the distance anyway
   occlusion-culling:
     enabled: true
     sky-light-threshold: 14
     max-y-level: 320
     min-y-level: -64
 
-# Bandwidth Saver settings
+# Bandwidth management
 bandwidth-saver:
   enabled: true
-  # Skips redundant entity movement/rotation packets (ESU-inspired)
+
+  # Skip redundant entity packets (minor bandwidth savings)
   skip-redundant-packets: true
-  # Limits the rate of fake chunk sending to prevent network saturation
+
+  # Maximum fake chunks to send per tick (20 ticks = 1 second)
   max-fake-chunks-per-tick: 20
-  # Maximum bandwidth per player in KB/s (512 KB/s = ~4 Mbps)
-  # Set to 0 to disable bandwidth limiting
+
+  # Maximum bandwidth per player in KB/s (0 = unlimited)
+  # 512 KB/s ≈ 4 Mbps
   max-bandwidth-per-player: 10000
-  # Enable adaptive rate limiting based on player ping
-  # Reduces packet rate for high-ping players to prevent packet loss
+
+  # Reduce packet rate for high-ping players
   adaptive-rate-limiting: true
 
-  # Bandwidth Profiles
-  # Define custom bandwidth limits (in KB/s) that can be assigned via permissions.
+  # Custom bandwidth limits assignable via permission
   # Permission: extendedhorizons.bandwidth.<profile_name>
-  # Example: extendedhorizons.bandwidth.vip -> 1000 KB/s
   bandwidth-profiles:
     vip: 1000
     slow: 50
-    const: 500
 
-  # Estimated size of a chunk packet in bytes (used for calculations) can be 100KB+)
+  # Estimated chunk packet size in bytes (used for bandwidth calculations)
   estimated-packet-size: 50000
 
-# Database (SQLite) used for player view persistence
+# Database for storing player preferences
 database:
   enabled: true
   file-name: "extendedhorizons"
 
+# Plugin integrations
 integrations:
   placeholderapi:
     enabled: true
   luckperms:
     enabled: true
-    check-interval: 60 # seconds
+    check-interval: 60
     use-group-permissions: true
 
-# Message toggles (actual texts live in messages.yml)
+# Message settings (texts are in messages.yml)
 messages:
   welcome-message:
     enabled: false

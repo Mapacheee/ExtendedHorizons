@@ -32,7 +32,6 @@ public record MainConfig(
         @ConfigSerializable
         public record PerformanceConfig(
                         @Setting("chunk-processor-threads") int chunkProcessorThreads,
-                        @Setting("chunk-process-interval") int chunkProcessInterval,
                         @Setting("teleport-warmup-delay") int teleportWarmupDelay,
                         @Setting("max-mspt-for-loading") double maxMsptForLoading,
                         @Setting("max-async-load-tasks") int maxAsyncLoadTasks,
@@ -46,7 +45,6 @@ public record MainConfig(
                                 boolean enabled,
                                 @Setting("max-cached-packets") int maxCachedPackets,
                                 @Setting("use-compression") boolean useCompression,
-                                @Setting("cache-cleanup-interval") int cacheCleanupInterval,
                                 @Setting("enable-memory-cache") boolean enableMemoryCache,
                                 @Setting("max-memory-cache-size") int maxMemoryCacheSize,
                                 @Setting("surface-only-mode") boolean surfaceOnlyMode,
