@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.viewdistance.listener;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
+import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import me.mapacheee.extendedhorizons.viewdistance.service.ChunkLoaderService;
 import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
@@ -30,6 +31,10 @@ public class CacheInvalidationListener implements Listener {
     @OnEnable
     public void register() {
         Bukkit.getPluginManager().registerEvents(this, plugin);
+    }
+
+    @OnDisable
+    public void unregister() {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

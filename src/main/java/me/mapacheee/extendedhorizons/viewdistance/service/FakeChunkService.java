@@ -117,10 +117,37 @@ public class FakeChunkService {
         return chunkLoaderService.getStats();
     }
 
+    /**
+     * Gets the server's current MSPT (milliseconds per tick).
+     * Compatible with both Paper and Folia.
+     *
+     * @return current MSPT, or 0 if unavailable
+     */
+    private double getServerMSPT() {
+        try {
+            return Bukkit.getAverageTickTime();
+        } catch (UnsupportedOperationException | NoSuchMethodError e) {
+            try {
+                double[] tps = Bukkit.getTPS();
+                if (tps.length > 0) {
+                    double currentTPS = tps[0];
+                    if (currentTPS > 0) {
+                        return 1000.0 / currentTPS;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+
+            return 0;
+        }
+    }
+
     public void progressiveLoadingTask() {
         try {
             chunkLoaderService.resetTickCounters();
             playerStateManager.resetTickCounters();
+
+            cleanupDisconnectedPlayers();
 
             long bandwidthPerPlayer = configService.get().bandwidthSaver().maxBandwidthPerPlayer(); // KB/s
             if (bandwidthPerPlayer <= 0)
@@ -128,17 +155,22 @@ public class FakeChunkService {
 
             bandwidthController.updateMaxBytesPerTick((int) bandwidthPerPlayer);
 
-            try {
-                double mspt = Bukkit.getAverageTickTime();
-                double maxMspt = configService.get().performance().maxMsptForLoading();
-                if (maxMspt > 0 && mspt > maxMspt) {
-                    if (DEBUG) {
-                        logger.warn("[EH] High MSPT ({}ms > {}ms), skipping chunk loading",
-                                String.format("%.2f", mspt), maxMspt);
+            double maxMspt = configService.get().performance().maxMsptForLoading();
+            if (maxMspt > 0) {
+                try {
+                    double mspt = getServerMSPT();
+                    if (mspt > maxMspt) {
+                        if (DEBUG) {
+                            logger.warn("[EH] High MSPT ({}ms > {}ms), skipping chunk loading",
+                                    String.format("%.2f", mspt), maxMspt);
+                        }
+                        return;
                     }
-                    return;
+                } catch (Exception e) {
+                    if (DEBUG) {
+                        logger.warn("[EH] Could not retrieve MSPT, continuing chunk loading: {}", e.getMessage());
+                    }
                 }
-            } catch (UnsupportedOperationException | NullPointerException ignored) {
             }
 
             if (chunkLoaderService.getPendingSends() > 20) {
@@ -202,6 +234,27 @@ public class FakeChunkService {
         }
     }
 
+    /**
+     * Cleans up player states for players who are no longer connected.
+     * This prevents memory leaks when players disconnect without proper cleanup.
+     */
+    private void cleanupDisconnectedPlayers() {
+        List<UUID> toRemove = new ArrayList<>();
+        for (UUID playerId : playerStateManager.getAllPlayerIds()) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null || !player.isOnline()) {
+                toRemove.add(playerId);
+            }
+        }
+
+        for (UUID playerId : toRemove) {
+            playerStateManager.remove(playerId);
+            if (DEBUG) {
+                logger.info("[EH] Cleaned up disconnected player state: {}", playerId);
+            }
+        }
+    }
+
     private void processChunkQueue(Player player, Deque<Long> queue) {
         if (!player.isOnline() || queue.isEmpty()) {
             return;
@@ -212,6 +265,17 @@ public class FakeChunkService {
         Set<Long> sentTracker = state.getFakeChunks();
 
         int maxChunks = configService.get().bandwidthSaver().maxFakeChunksPerTick();
+
+        if (state.isInWarmup()) {
+            long warmupElapsed = System.currentTimeMillis() - state.getWarmupStartTime();
+            long warmupDuration = configService.get().performance().teleportWarmupDelay();
+
+            if (warmupElapsed < warmupDuration + 2000) {
+                double boostFactor = 4.0 - (3.0 * Math.min(1.0, warmupElapsed / (double)(warmupDuration + 2000)));
+                maxChunks = (int)(maxChunks * Math.max(1.0, boostFactor));
+            }
+        }
+
         List<Long> batch = new ArrayList<>();
         Set<Long> generatingChunks = chunkLoaderService.getGeneratingChunks();
 

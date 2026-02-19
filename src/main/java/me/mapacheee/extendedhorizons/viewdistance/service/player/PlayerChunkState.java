@@ -19,6 +19,9 @@ public class PlayerChunkState {
 
     private final UUID playerId;
 
+    private static final int MAX_FAKE_CHUNKS_PER_PLAYER = 5000;
+    private static final int MAX_QUEUED_CHUNKS_PER_PLAYER = 2000;
+
     // === Chunk Tracking ===
 
     /**
@@ -158,8 +161,59 @@ public class PlayerChunkState {
         return fakeChunks;
     }
 
+    /**
+     * Adds a fake chunk key, respecting the maximum limit.
+     * @param key The chunk key to add
+     * @return true if added, false if limit reached
+     */
+    public boolean addFakeChunk(long key) {
+        if (fakeChunks.size() >= MAX_FAKE_CHUNKS_PER_PLAYER) {
+            return false;
+        }
+        return fakeChunks.add(key);
+    }
+
+    /**
+     * Checks if more fake chunks can be added.
+     */
+    public boolean canAddMoreFakeChunks() {
+        return fakeChunks.size() < MAX_FAKE_CHUNKS_PER_PLAYER;
+    }
+
     public Deque<Long> getChunkQueue() {
         return chunkQueue;
+    }
+
+    /**
+     * Adds a chunk to the queue if within limits.
+     * @param key The chunk key to queue
+     * @return true if added, false if limit reached or already queued
+     */
+    public boolean queueChunk(long key) {
+        if (queuedChunksSet.size() >= MAX_QUEUED_CHUNKS_PER_PLAYER) {
+            return false;
+        }
+        if (queuedChunksSet.add(key)) {
+            chunkQueue.add(key);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Adds a chunk to the front of the queue if within limits.
+     * @param key The chunk key to queue
+     * @return true if added, false if limit reached or already queued
+     */
+    public boolean queueChunkFirst(long key) {
+        if (queuedChunksSet.size() >= MAX_QUEUED_CHUNKS_PER_PLAYER) {
+            return false;
+        }
+        if (queuedChunksSet.add(key)) {
+            chunkQueue.addFirst(key);
+            return true;
+        }
+        return false;
     }
 
     public Set<Long> getQueuedChunksSet() {
