@@ -50,7 +50,7 @@ public class ChunkLoaderService {
     private final Map<Long, Long> generatingChunks = new ConcurrentHashMap<>();
     private final ExecutorService chunkProcessor;
     private final Map<ChunkCacheKey, Object> chunkMemoryCache;
-    private final Map<ChunkCacheKey, Object> packetCache;
+    private final Map<ChunkCacheKey, byte[]> packetCache;
 
     private final AtomicLong memoryCacheHits = new AtomicLong(0);
     private final AtomicLong memoryCacheMisses = new AtomicLong(0);
@@ -99,10 +99,15 @@ public class ChunkLoaderService {
         final int finalPacketCacheSize = maxPacketCacheSize;
 
         this.packetCache = Collections.synchronizedMap(
-                new LinkedHashMap<ChunkCacheKey, Object>(16, 0.75f, true) {
+                new LinkedHashMap<ChunkCacheKey, byte[]>(16, 0.75f, true) {
                     @Override
+<<<<<<< Updated upstream
                     protected boolean removeEldestEntry(Map.Entry<ChunkCacheKey, Object> eldest) {
                         return size() > finalPacketCacheSize;
+=======
+                    protected boolean removeEldestEntry(Map.Entry<ChunkCacheKey, byte[]> eldest) {
+                        return size() > maxPacketCacheSize;
+>>>>>>> Stashed changes
                     }
                 });
 
@@ -124,7 +129,6 @@ public class ChunkLoaderService {
     public void resetTickCounters() {
         chunksGeneratedThisTick.set(0);
         chunksLoadedFromDiskThisTick.set(0);
-
         this.maxGenerationsPerTick = configService.get().performance().maxGenerationsPerTick();
         this.maxDiskLoadsPerTick = configService.get().performance().maxDiskLoadsPerTick();
         if (maxGenerationsPerTick <= 0)
@@ -156,6 +160,7 @@ public class ChunkLoaderService {
         double borderCenterX = state.getBorderCenterX();
         double borderCenterZ = state.getBorderCenterZ();
         double borderSize = state.getBorderSize();
+        UUID worldId = world.getUID();
 
         for (long key : batch) {
             if (!player.isOnline())
@@ -181,44 +186,56 @@ public class ChunkLoaderService {
             int chunkX = ChunkUtils.unpackX(key);
             int chunkZ = ChunkUtils.unpackZ(key);
             UUID playerId = player.getUniqueId();
-            String worldName = world.getName();
+            ChunkCacheKey cacheKey = new ChunkCacheKey(worldId, key);
 
             try {
-                chunkProcessor.execute(() -> {
-                    try {
+                byte[] cachedBytes = packetCache.get(cacheKey);
+                if (cachedBytes != null) {
+                    chunkProcessor.execute(() -> {
                         Player p = Bukkit.getPlayer(playerId);
                         if (p == null || !p.isOnline()) {
                             generatingChunks.remove(key);
                             return;
                         }
-
-                        World w = Bukkit.getWorld(worldName);
-                        if (w == null) {
+                        Object packet = nmsPacketAccess.deserializeChunkPacket(cachedBytes);
+                        if (packet != null) {
+                            scheduleSend(playerId, key, packet, FakeChunkLoadEvent.LoadSource.MEMORY_CACHE, chunkX,
+                                    chunkZ, sentTracker);
+                        } else {
                             generatingChunks.remove(key);
-                            return;
                         }
+                    });
+                    continue;
+                }
 
-                        // Strategy 1: Memory cache
-                        Object memoryChunk = getChunkFromMemoryCache(w.getUID(), chunkX, chunkZ);
-                        if (memoryChunk != null) {
-                            if (DEBUG) {
-                                logger.info("[EH] Loaded chunk {},{} from memory cache", chunkX, chunkZ);
-                            }
-                            sendChunkPacket(p, memoryChunk, key, sentTracker,
-                                    FakeChunkLoadEvent.LoadSource.MEMORY_CACHE, borderCenterX, borderCenterZ,
-                                    borderSize);
-                            return;
-                        }
-
-                        // Strategy 2: Disk NBT
-                        loadChunkFromDiskAndSend(p, w, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ,
-                                borderSize);
-
-                    } catch (Exception e) {
+                packetCacheStorage.getCachedPacket(worldId, chunkX, chunkZ).thenAcceptAsync(diskBytes -> {
+                    Player p = Bukkit.getPlayer(playerId);
+                    if (p == null || !p.isOnline()) {
                         generatingChunks.remove(key);
-                        logger.warn("[EH] Error loading chunk {},{}: {}", chunkX, chunkZ, e.getMessage(), e);
+                        return;
                     }
+
+                    if (diskBytes != null) {
+                        try {
+                            Object packet = nmsPacketAccess.deserializeChunkPacket(diskBytes);
+                            if (packet != null) {
+                                packetCache.put(cacheKey, diskBytes);
+                                scheduleSend(playerId, key, packet, FakeChunkLoadEvent.LoadSource.DISK_CACHE, chunkX,
+                                        chunkZ, sentTracker);
+                                return;
+                            }
+                        } catch (Exception e) {
+                        }
+                    }
+
+                    loadChunkFromDiskAndSend(p, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ,
+                            borderSize);
+
+                }, chunkProcessor).exceptionally(ex -> {
+                    generatingChunks.remove(key);
+                    return null;
                 });
+
             } catch (Exception e) {
                 generatingChunks.remove(key);
                 logger.warn("[EH] Failed to submit chunk {},{} for processing: {}", chunkX, chunkZ, e.getMessage());
@@ -230,13 +247,13 @@ public class ChunkLoaderService {
             long key, Set<Long> sentTracker, final double borderCenterX, final double borderCenterZ,
             final double borderSize) {
 
+        if (isServerLagging()) {
+            deferChunk(player, key, "High MSPT");
+            return;
+        }
+
         if (chunksLoadedFromDiskThisTick.get() >= maxDiskLoadsPerTick) {
-            if (DEBUG)
-                logger.info("[EH] Disk load limit hit, deferring chunk {},{}", chunkX, chunkZ);
-            generatingChunks.remove(key);
-            PlayerChunkState limitState = playerStateManager.getOrCreate(player.getUniqueId());
-            limitState.getChunkQueue().addFirst(key);
-            limitState.getQueuedChunksSet().add(key);
+            deferChunk(player, key, "Disk load limit hit");
             return;
         }
 
@@ -245,7 +262,7 @@ public class ChunkLoaderService {
 
         generatingChunks.put(key, System.currentTimeMillis());
 
-        world.getChunkAtAsync(chunkX, chunkZ, false).thenAcceptAsync(chunk -> {
+        world.getChunkAtAsync(chunkX, chunkZ, false).thenAccept(chunk -> {
             Player p = Bukkit.getPlayer(playerId);
             if (p == null || !p.isOnline()) {
                 generatingChunks.remove(key);
@@ -254,12 +271,7 @@ public class ChunkLoaderService {
 
             if (chunk == null || !chunk.isLoaded()) {
                 if (chunksGeneratedThisTick.get() >= maxGenerationsPerTick) {
-                    if (DEBUG)
-                        logger.info("[EH] Generation limit hit, deferring chunk {},{}", chunkX, chunkZ);
-                    generatingChunks.remove(key);
-                    PlayerChunkState limitState = playerStateManager.getOrCreate(playerId);
-                    limitState.getChunkQueue().addFirst(key);
-                    limitState.getQueuedChunksSet().add(key);
+                    deferChunk(p, key, "Generation limit hit");
                     return;
                 }
 
@@ -279,19 +291,58 @@ public class ChunkLoaderService {
 
                 try {
                     Object nmsChunk = nmsChunkAccess.getNMSChunk(chunk);
+                    Object packet = null;
                     if (nmsChunk != null) {
-                        sendChunkPacket(p, nmsChunk, key, sentTracker, FakeChunkLoadEvent.LoadSource.DISK,
-                                borderCenterX, borderCenterZ, borderSize);
+                        try {
+                            boolean surfaceOnlyMode = configService.get().performance().fakeChunks().surfaceOnlyMode();
+                            if (surfaceOnlyMode) {
+                                int depth = configService.get().performance().fakeChunks().depthBelowSurface();
+                                packet = nmsPacketAccess.createSurfaceOnlyChunkPacket(nmsChunk, depth);
+                            } else {
+                                packet = nmsPacketAccess.createChunkPacket(nmsChunk);
+                            }
+                        } catch (Throwable t) {
+                            logger.warn("[EH] Failed to create packet from disk chunk {},{}: {}", chunkX, chunkZ,
+                                    t.getMessage());
+                        }
                     } else {
                         fallbackToGeneration(p, world.getName(), chunkX, chunkZ, key, sentTracker,
                                 borderCenterX, borderCenterZ, borderSize);
+                        return;
                     }
+
+                    if (packet != null) {
+                        final Object packetFinal = packet;
+                        chunkProcessor.execute(() -> {
+                            try {
+                                byte[] data = nmsPacketAccess.serializeChunkPacket(packetFinal);
+                                if (data != null) {
+                                    packetCacheStorage.saveCachedPacket(world.getUID(), chunkX, chunkZ, data);
+                                    ChunkCacheKey cacheKey = new ChunkCacheKey(world.getUID(), key);
+                                    packetCache.put(cacheKey, data);
+                                }
+
+                                sendPacketOnMainThread(p, packetFinal, key, FakeChunkLoadEvent.LoadSource.DISK,
+                                        chunkX, chunkZ, sentTracker, null);
+
+                            } catch (Exception e) {
+                                generatingChunks.remove(key);
+                            }
+                        });
+                    } else {
+                        generatingChunks.remove(key);
+                    }
+
                 } catch (Exception e) {
-                    logger.warn("[EH] Exception getting NMS chunk for {},{}: {}", chunkX, chunkZ, e.getMessage(), e);
+                    logger.warn("[EH] Exception processing disk chunk for {},{}: {}", chunkX, chunkZ, e.getMessage(),
+                            e);
                     generatingChunks.remove(key);
                 }
             }
-        }, chunkProcessor);
+        }).exceptionally(throwable -> {
+            generatingChunks.remove(key);
+            return null;
+        });
     }
 
     private void fallbackToGeneration(Player p, String worldName, int chunkX, int chunkZ, long key,
@@ -306,16 +357,19 @@ public class ChunkLoaderService {
                 generatingChunks.remove(key);
             }
         } else {
-            generatingChunks.remove(key);
-            PlayerChunkState limitState = playerStateManager.getOrCreate(p.getUniqueId());
-            limitState.getChunkQueue().addFirst(key);
-            limitState.getQueuedChunksSet().add(key);
+            deferChunk(p, key, "Generation limit hit (Fallback)");
         }
     }
 
     private void generateChunkAndSend(Player player, World world, int chunkX, int chunkZ,
             long key, Set<Long> sentTracker, final double borderCenterX, final double borderCenterZ,
             final double borderSize) {
+
+        if (isServerLagging()) {
+            deferChunk(player, key, "High MSPT (Generation)");
+            return;
+        }
+
         UUID playerId = player.getUniqueId();
         String worldName = world.getName();
         World w = Bukkit.getWorld(worldName);
@@ -324,7 +378,7 @@ public class ChunkLoaderService {
             return;
         }
 
-        w.getChunkAtAsync(chunkX, chunkZ, true).thenAcceptAsync(chunk -> {
+        w.getChunkAtAsync(chunkX, chunkZ, true).thenAccept(chunk -> {
             Player p = Bukkit.getPlayer(playerId);
             if (p == null || !p.isOnline()) {
                 generatingChunks.remove(key);
@@ -333,116 +387,24 @@ public class ChunkLoaderService {
 
             try {
                 Object nmsChunk = nmsChunkAccess.getNMSChunk(chunk);
+                Object packet = null;
+
                 if (nmsChunk != null) {
                     if (DEBUG)
                         logger.info("[EH] Generated chunk {},{}", chunkX, chunkZ);
-                    long chunkKey = ChunkUtils.packChunkKey(chunkX, chunkZ);
-                    cacheChunkInMemory(chunk.getWorld().getUID(), chunkKey, nmsChunk);
-                    sendChunkPacket(p, nmsChunk, key, sentTracker,
-                            FakeChunkLoadEvent.LoadSource.GENERATED, borderCenterX, borderCenterZ, borderSize);
-                } else {
-                    generatingChunks.remove(key);
-                    if (DEBUG)
-                        logger.warn("[EH] Generated chunk {},{} is null", chunkX, chunkZ);
-                }
-            } catch (Exception e) {
-                generatingChunks.remove(key);
-                if (DEBUG)
-                    logger.warn("[EH] Failed to process generated chunk {},{}: {}", chunkX, chunkZ, e.getMessage());
-            }
-        }, chunkProcessor).exceptionally(throwable -> {
-            generatingChunks.remove(key);
-            logger.warn("[EH] Failed to generate chunk {},{}: {}", chunkX, chunkZ, throwable.getMessage());
-            return null;
-        });
-    }
-
-    private Object getChunkFromMemoryCache(UUID worldId, int chunkX, int chunkZ) {
-        if (!configService.get().performance().fakeChunks().enableMemoryCache()) {
-            return null;
-        }
-        long chunkKey = ChunkUtils.packChunkKey(chunkX, chunkZ);
-        ChunkCacheKey cacheKey = new ChunkCacheKey(worldId, chunkKey);
-
-        synchronized (chunkMemoryCache) {
-            Object cached = chunkMemoryCache.get(cacheKey);
-            if (cached != null) {
-                memoryCacheHits.incrementAndGet();
-                return cached;
-            }
-        }
-
-        World world = Bukkit.getWorld(worldId);
-        if (world == null)
-            return null;
-
-        try {
-            Object chunk = nmsChunkAccess.getChunkIfLoaded(world, chunkX, chunkZ);
-            if (chunk != null) {
-                cacheChunkInMemory(worldId, chunkKey, chunk);
-                memoryCacheHits.incrementAndGet();
-                return chunk;
-            }
-        } catch (Exception e) {
-            if (DEBUG)
-                logger.info("[EH] Memory cache lookup failed for {},{}: {}", chunkX, chunkZ, e.getMessage());
-        }
-        memoryCacheMisses.incrementAndGet();
-        return null;
-    }
-
-    private void cacheChunkInMemory(UUID worldId, long chunkKey, Object chunk) {
-        if (!configService.get().performance().fakeChunks().enableMemoryCache())
-            return;
-        ChunkCacheKey key = new ChunkCacheKey(worldId, chunkKey);
-        synchronized (chunkMemoryCache) {
-            chunkMemoryCache.put(key, chunk);
-        }
-    }
-
-    private void sendChunkPacket(Player player, Object chunk, long key, Set<Long> sentTracker,
-            FakeChunkLoadEvent.LoadSource source, final double borderCenterX, final double borderCenterZ,
-            final double borderSize) {
-
-        int chunkX = ChunkUtils.unpackX(key);
-        int chunkZ = ChunkUtils.unpackZ(key);
-
-        boolean isWithinBorder = ChunkUtils.isChunkWithinWorldBorder(borderCenterX, borderCenterZ, borderSize, chunkX,
-                chunkZ);
-
-        if (!isWithinBorder) {
-            generatingChunks.remove(key);
-            sentTracker.add(key);
-            return;
-        }
-
-        UUID playerId = player.getUniqueId();
-        UUID worldId = player.getWorld().getUID();
-        ChunkCacheKey cacheKey = new ChunkCacheKey(worldId, key);
-
-        // 1. RAM Cache Check (Fast)
-        Object cachedPacket = packetCache.get(cacheKey);
-        if (cachedPacket != null) {
-            scheduleSend(playerId, key, cachedPacket, source, chunkX, chunkZ, sentTracker);
-            return;
-        }
-
-        // 2. Disk Cache Check (Async)
-        packetCacheStorage.getCachedPacket(worldId, chunkX, chunkZ).thenAcceptAsync(diskBytes -> {
-            Player pCheck = Bukkit.getPlayer(playerId);
-            if (pCheck == null || !pCheck.isOnline()) {
-                generatingChunks.remove(key);
-                return;
-            }
-
-            if (diskBytes != null) {
-                try {
-                    Object packet = nmsPacketAccess.deserializeChunkPacket(diskBytes);
-                    if (packet != null) {
-                        packetCache.put(cacheKey, packet);
-                        scheduleSend(playerId, key, packet, source, chunkX, chunkZ, sentTracker);
-                        return;
+                    try {
+                        boolean surfaceOnlyMode = configService.get().performance().fakeChunks().surfaceOnlyMode();
+                        if (surfaceOnlyMode) {
+                            int depth = configService.get().performance().fakeChunks().depthBelowSurface();
+                            packet = nmsPacketAccess.createSurfaceOnlyChunkPacket(nmsChunk, depth);
+                        } else {
+                            packet = nmsPacketAccess.createChunkPacket(nmsChunk);
+                        }
+                    } catch (Throwable t) {
+                        logger.warn("[EH] Failed to create packet object for {},{}: {}", chunkX, chunkZ,
+                                t.getMessage());
                     }
+<<<<<<< Updated upstream
                 } catch (Exception e) {
                 }
             }
@@ -487,6 +449,66 @@ public class ChunkLoaderService {
             }, null);
             }
         , chunkProcessor);
+=======
+                }
+
+                if (packet == null) {
+                    generatingChunks.remove(key);
+                    return;
+                }
+
+                final Object packetFinal = packet;
+                chunkProcessor.execute(() -> {
+                    try {
+                        byte[] data = nmsPacketAccess.serializeChunkPacket(packetFinal);
+                        if (data != null) {
+                            packetCacheStorage.saveCachedPacket(w.getUID(), chunkX, chunkZ, data);
+                            ChunkCacheKey cacheKey = new ChunkCacheKey(w.getUID(), key);
+                            packetCache.put(cacheKey, data);
+                        }
+
+                        sendPacketOnMainThread(p, packetFinal, key, FakeChunkLoadEvent.LoadSource.GENERATED,
+                                chunkX, chunkZ, sentTracker, null);
+
+                    } catch (Exception e) {
+                        handleGenerationFailure(playerId, key, e);
+                    }
+                });
+
+            } catch (Exception e) {
+                generatingChunks.remove(key);
+                logger.warn("[EH] Failed to process generated chunk {},{}: {}", chunkX, chunkZ, e.getMessage());
+            }
+        }).exceptionally(throwable -> {
+            generatingChunks.remove(key);
+            logger.warn("[EH] Failed to generate chunk {},{}: {}", chunkX, chunkZ, throwable.getMessage());
+            return null;
+        });
+    }
+
+    private boolean isServerLagging() {
+        try {
+            double mspt = Bukkit.getAverageTickTime();
+            double maxMspt = configService.get().performance().maxMsptForLoading();
+            return maxMspt > 0 && mspt > maxMspt;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void deferChunk(Player player, long key, String reason) {
+        if (DEBUG) {
+            int chunkX = ChunkUtils.unpackX(key);
+            int chunkZ = ChunkUtils.unpackZ(key);
+            logger.info("[EH] {}, deferring chunk {},{} (Key: {})", reason, chunkX, chunkZ, key);
+        }
+        generatingChunks.remove(key);
+        PlayerChunkState limitState = playerStateManager.getOrCreate(player.getUniqueId());
+        if (!limitState.getFakeChunks().contains(key)) {
+            limitState.getChunkQueue().addFirst(key);
+            limitState.getQueuedChunksSet().add(key);
+        }
+>>>>>>> Stashed changes
     }
 
     private void handleGenerationFailure(UUID playerId, long key, Throwable t) {
@@ -495,13 +517,10 @@ public class ChunkLoaderService {
             logger.warn("[EH] Async chunk generation failed for chunk key {} (Player: {}), requeueing...", key,
                     playerId, t);
         }
-
-        playerStateManager.get(playerId).ifPresent(state -> {
-            if (!state.getFakeChunks().contains(key)) {
-                state.getChunkQueue().addFirst(key);
-                state.getQueuedChunksSet().add(key);
-            }
-        });
+        Player p = Bukkit.getPlayer(playerId);
+        if (p != null) {
+            deferChunk(p, key, "Generation Failure");
+        }
     }
 
     private final java.util.concurrent.atomic.AtomicInteger pendingSends = new java.util.concurrent.atomic.AtomicInteger(

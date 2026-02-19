@@ -57,6 +57,22 @@ performance:
   # Fake chunks system configuration
   fake-chunks:
     enabled: true
+<<<<<<< Updated upstream
+=======
+    # Maximum cached packets in RAM (each entry is ~50-100KB as byte[])
+    # 1000 entries ≈ 50-100MB. Increase for large servers with many unique chunks.
+    max-cached-packets: 1000
+    # Enable GZIP compression for packets (slower but saves RAM)
+    use-compression: false
+    # Cache cleanup interval in seconds
+    cache-cleanup-interval: 10
+    # Enable chunk memory cache (reuses loaded chunks, saves CPU but uses RAM)
+    # Recommended: true for <50 players, false for >100 players or low RAM servers
+    enable-memory-cache: false
+    # Maximum chunks to cache in memory (1000 = ~40-80MB depending on chunk complexity)
+    # Increase for more players in same area, decrease for dispersed players or low RAM
+    max-memory-cache-size: 1000
+>>>>>>> Stashed changes
 
     # RAM Cache for processed packets (faster resending)
     # Higher = more RAM usage, faster chunk resending
@@ -99,6 +115,7 @@ bandwidth-saver:
 
   # Skip redundant entity packets (minor bandwidth savings)
   skip-redundant-packets: true
+<<<<<<< Updated upstream
 
   # Maximum fake chunks to send per tick (20 ticks = 1 second)
   max-fake-chunks-per-tick: 22
@@ -108,13 +125,30 @@ bandwidth-saver:
   max-bandwidth-per-player: 10000
 
   # Reduce packet rate for high-ping players
+=======
+  # Limits the rate of fake chunk sending to prevent network saturation
+  max-fake-chunks-per-tick: 20
+  # Maximum bandwidth per player in KB/s (2000 KB/s = ~2 MB/s)
+  # Set to 0 to disable bandwidth limiting
+  max-bandwidth-per-player: 2000
+  # Enable adaptive rate limiting based on player ping
+  # Reduces packet rate for high-ping players to prevent packet loss
+>>>>>>> Stashed changes
   adaptive-rate-limiting: true
 
   # Custom bandwidth limits assignable via permission
   # Permission: extendedhorizons.bandwidth.<profile_name>
+<<<<<<< Updated upstream
   bandwidth-profiles:
     vip: 1000
     slow: 50
+=======
+  # Example: extendedhorizons.bandwidth.vip -> 4000 KB/s
+  bandwidth-profiles:
+    vip: 4000
+    slow: 500
+    const: 1000
+>>>>>>> Stashed changes
 
   # Estimated chunk packet size in bytes (used for bandwidth calculations)
   estimated-packet-size: 50000

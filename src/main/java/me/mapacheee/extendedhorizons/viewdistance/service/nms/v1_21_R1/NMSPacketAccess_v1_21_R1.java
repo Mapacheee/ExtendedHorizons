@@ -56,8 +56,8 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
         }
         ClientboundLevelChunkWithLightPacket packet = (ClientboundLevelChunkWithLightPacket) packetObj;
 
+        var buffer = Unpooled.buffer();
         try {
-            var buffer = Unpooled.buffer();
             var registryAccess = MinecraftServer.getServer().registryAccess();
             var buf = new RegistryFriendlyByteBuf(buffer, registryAccess);
 
@@ -71,6 +71,8 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
         } catch (Exception e) {
             e.printStackTrace();
             return null;
+        } finally {
+            buffer.release();
         }
     }
 
@@ -80,8 +82,8 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
             return null;
         }
 
+        var buffer = Unpooled.wrappedBuffer(data);
         try {
-            var buffer = Unpooled.wrappedBuffer(data);
             var registryAccess = MinecraftServer.getServer().registryAccess();
             var buf = new RegistryFriendlyByteBuf(buffer, registryAccess);
 
@@ -92,6 +94,8 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
         } catch (Exception e) {
             e.printStackTrace();
             return null;
+        } finally {
+            buffer.release();
         }
     }
 

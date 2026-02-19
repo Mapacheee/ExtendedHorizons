@@ -129,6 +129,11 @@ public class FakeChunkLoadEvent extends Event implements Cancellable {
         DISK,
 
         /**
+         * Chunk loaded from Persistent Packet Cache (DB).
+         */
+        DISK_CACHE,
+
+        /**
          * Chunk was generated because it didn't exist (slowest).
          */
         GENERATED

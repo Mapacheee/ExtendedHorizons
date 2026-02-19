@@ -31,6 +31,17 @@ public class BandwidthProfile implements Listener {
         applyProfile(event.getPlayer());
     }
 
+    @Inject
+    public void init() {
+        int defaultBw = configService.get().bandwidthSaver().maxBandwidthPerPlayer();
+        logger.info("[EH] BandwidthProfile initialized. Default limit: {} KB/s", defaultBw);
+        if (defaultBw > 2000) {
+            logger.warn(
+                    "[EH] WARNING: Default bandwidth is set to {} KB/s (High!). Usage: {} players -> {} MB/s potential usage.",
+                    defaultBw, 50, (50 * defaultBw) / 1024);
+        }
+    }
+
     private void applyProfile(Player player) {
         Map<String, Integer> profiles = configService.get().bandwidthSaver().bandwidthProfiles();
 
@@ -54,7 +65,20 @@ public class BandwidthProfile implements Listener {
 
         if (maxKbps > 0) {
             bandwidthController.setPlayerBandwidth(player.getUniqueId(), maxKbps);
-            logger.info("Applied bandwidth profile to {}: {} KB/s", player.getName(), maxKbps);
+            logger.info(
+                    "[EH] Applied bandwidth profile to {}: {} KB/s (Permission: extendedhorizons.bandwidth.<profile>)",
+                    player.getName(), maxKbps);
+
+            int defaultBw = configService.get().bandwidthSaver().maxBandwidthPerPlayer();
+            if (defaultBw > 0 && maxKbps < defaultBw) {
+                logger.warn(
+                        "[EH] Configuration Alert: Player {} has profile limit ({} KB/s) LOWER than default ({} KB/s). They will be throttled!",
+                        player.getName(), maxKbps, defaultBw);
+            }
+        } else {
+            // Log for default users if debug or first time
+            // logger.info("[EH] No specific profile for {}, using default.",
+            // player.getName());
         }
     }
 }
