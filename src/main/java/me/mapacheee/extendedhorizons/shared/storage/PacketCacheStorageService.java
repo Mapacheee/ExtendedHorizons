@@ -130,7 +130,6 @@ public class PacketCacheStorageService {
             if (sharedConnection != null) {
                 try {
                     if (!sharedConnection.isClosed()) {
-                        // Checkpoint WAL before closing
                         try (Statement stmt = sharedConnection.createStatement()) {
                             stmt.execute("PRAGMA wal_checkpoint(TRUNCATE);");
                         }
@@ -199,7 +198,6 @@ public class PacketCacheStorageService {
         }
 
         CompletableFuture.runAsync(() -> {
-<<<<<<< Updated upstream
             connectionLock.lock();
             try {
                 Connection conn = getConnection();
@@ -219,19 +217,7 @@ public class PacketCacheStorageService {
                     pstmt.setLong(5, System.currentTimeMillis());
                     pstmt.executeUpdate();
                 }
-=======
-            String sql = "INSERT OR REPLACE INTO packet_cache (world_uid, chunk_x, chunk_z, packet_data, created_at) VALUES(?, ?, ?, ?, ?);";
-            try (Connection conn = DriverManager.getConnection(databaseUrl);
-                    PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, worldId.toString());
-                pstmt.setInt(2, x);
-                pstmt.setInt(3, z);
-                pstmt.setBytes(4, data);
-                pstmt.setLong(5, System.currentTimeMillis());
-                pstmt.executeUpdate();
->>>>>>> Stashed changes
-            } catch (SQLException e) {
-                // Log at debug level to avoid spam
+            } catch (SQLException ignored) {
             } finally {
                 connectionLock.unlock();
             }

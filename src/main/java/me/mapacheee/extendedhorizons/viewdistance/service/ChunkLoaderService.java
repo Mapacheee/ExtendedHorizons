@@ -101,13 +101,8 @@ public class ChunkLoaderService {
         this.packetCache = Collections.synchronizedMap(
                 new LinkedHashMap<ChunkCacheKey, byte[]>(16, 0.75f, true) {
                     @Override
-<<<<<<< Updated upstream
-                    protected boolean removeEldestEntry(Map.Entry<ChunkCacheKey, Object> eldest) {
-                        return size() > finalPacketCacheSize;
-=======
                     protected boolean removeEldestEntry(Map.Entry<ChunkCacheKey, byte[]> eldest) {
-                        return size() > maxPacketCacheSize;
->>>>>>> Stashed changes
+                        return size() > finalPacketCacheSize;
                     }
                 });
 
@@ -404,52 +399,6 @@ public class ChunkLoaderService {
                         logger.warn("[EH] Failed to create packet object for {},{}: {}", chunkX, chunkZ,
                                 t.getMessage());
                     }
-<<<<<<< Updated upstream
-                } catch (Exception e) {
-                }
-            }
-
-            Player p = Bukkit.getPlayer(playerId);
-            if (p == null || !p.isOnline()) {
-                generatingChunks.remove(key);
-                return;
-            }
-            PlayerChunkState state = playerStateManager.get(playerId).orElse(null);
-            if (state == null) {
-                generatingChunks.remove(key);
-                return;
-            }
-            p.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (ScheduledTask task) -> {
-                try {
-                    Object chunkToSend = chunk;
-                    Object packet;
-                    boolean surfaceOnlyMode = configService.get().performance().fakeChunks().surfaceOnlyMode();
-                    if (surfaceOnlyMode) {
-                        int depth = configService.get().performance().fakeChunks().depthBelowSurface();
-                        packet = nmsPacketAccess.createSurfaceOnlyChunkPacket(chunkToSend, depth);
-                    } else {
-                        packet = nmsPacketAccess.createChunkPacket(chunkToSend);
-                    }
-                    if (packet == null) {
-                        generatingChunks.remove(key);
-                        return;
-                    }
-                    packetCache.put(cacheKey, packet);
-                    try {
-                        byte[] data = nmsPacketAccess.serializeChunkPacket(packet);
-                        if (data != null) {
-                            packetCacheStorage.saveCachedPacket(worldId, chunkX, chunkZ, data);
-                        }
-                    } catch (Exception ignored) {
-                    }
-                    sendPacketAndFinish(p, packet, key, source, chunkX, chunkZ, sentTracker, state);
-                } catch (Throwable t) {
-                    handleGenerationFailure(playerId, key, t);
-                }
-            }, null);
-            }
-        , chunkProcessor);
-=======
                 }
 
                 if (packet == null) {
@@ -508,7 +457,6 @@ public class ChunkLoaderService {
             limitState.getChunkQueue().addFirst(key);
             limitState.getQueuedChunksSet().add(key);
         }
->>>>>>> Stashed changes
     }
 
     private void handleGenerationFailure(UUID playerId, long key, Throwable t) {
