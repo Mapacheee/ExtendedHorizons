@@ -6,7 +6,9 @@ import com.google.inject.Stage;
 import com.thewinterframework.paper.PaperWinterPlugin;
 import com.thewinterframework.plugin.WinterBootPlugin;
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
+import me.mapacheee.extendedhorizons.integration.placeholderapi.PlaceholderService;
 import me.mapacheee.extendedhorizons.viewdistance.service.FakeChunkService;
+import org.bukkit.Bukkit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,7 +32,7 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
     @Override
     protected Injector createInjector() {
-        return com.google.inject.Guice.createInjector(Stage.PRODUCTION, getGuiceModules());
+        return com.google.inject.Guice.createInjector(Stage.DEVELOPMENT, getGuiceModules());
     }
 
     @Override
@@ -43,8 +45,15 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
     @Override
     public void onPluginEnable() {
-            super.onPluginEnable();
-            PacketEvents.getAPI().init();
+        super.onPluginEnable();
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+            getService(PlaceholderService.class).register();
+        } else {
+            logger.warn("PlaceholderAPI is not installed. Placeholders will not work.");
+        }
+
+        PacketEvents.getAPI().init();
+
     }
 
     @Override

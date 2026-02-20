@@ -37,51 +37,42 @@ public class PlayerStorageService {
 
     @OnEnable
     public void initialize() {
-        try {
-            if (!configService.get().database().enabled()) {
-                logger.info("Database is disabled. Player data will not be persisted.");
-                return;
-            }
+        if (!configService.get().database().enabled()) {
+            logger.info("Database is disabled. Player data will not be persisted.");
+            return;
+        }
 
-            File dbFile = new File(plugin.getDataFolder(), configService.get().database().fileName() + ".db");
-            if (!dbFile.getParentFile().exists()) {
-                dbFile.getParentFile().mkdirs();
-            }
-            this.databaseUrl = "jdbc:sqlite:" + dbFile.getAbsolutePath();
+        File dbFile = new File(plugin.getDataFolder(), configService.get().database().fileName() + ".db");
+        if (!dbFile.getParentFile().exists()) {
+            dbFile.getParentFile().mkdirs();
+        }
+        this.databaseUrl = "jdbc:sqlite:" + dbFile.getAbsolutePath();
 
-            try (Connection conn = DriverManager.getConnection(databaseUrl);
-                    Statement stmt = conn.createStatement()) {
-                String sql = "CREATE TABLE IF NOT EXISTS player_data (" +
-                        "uuid TEXT PRIMARY KEY," +
-                        "view_distance INTEGER NOT NULL" +
-                        ");";
-                stmt.execute(sql);
-                logger.info("Player data database initialized successfully at: {}", dbFile.getAbsolutePath());
-            } catch (SQLException e) {
-                logger.error("Failed to initialize player data database.", e);
-                this.databaseUrl = null;
-            }
-        } catch (Exception e) {
-            logger.error("Critical error during PlayerStorageService initialization. Database will be disabled.", e);
-            this.databaseUrl = null;
+        try (Connection conn = DriverManager.getConnection(databaseUrl);
+             Statement stmt = conn.createStatement()) {
+            String sql = "CREATE TABLE IF NOT EXISTS player_data (" +
+                    "uuid TEXT PRIMARY KEY," +
+                    "view_distance INTEGER NOT NULL" +
+                    ");";
+            stmt.execute(sql);
+        } catch (SQLException e) {
+            logger.error("Failed to initialize player data database.", e);
         }
     }
 
     /**
      * Retrieves a players data from the database asynchronously.
-     * 
      * @param uuid The UUID of the player to retrieve.
      * @return A CompletableFuture containing an Optional of PlayerData.
      */
     public CompletableFuture<Optional<PlayerData>> getPlayerData(UUID uuid) {
-        if (!configService.get().database().enabled() || databaseUrl == null) {
+        if (!configService.get().database().enabled()) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = DriverManager.getConnection(databaseUrl);
-                    PreparedStatement pstmt = conn
-                            .prepareStatement("SELECT view_distance FROM player_data WHERE uuid = ?")) {
+                 PreparedStatement pstmt = conn.prepareStatement("SELECT view_distance FROM player_data WHERE uuid = ?")) {
                 pstmt.setString(1, uuid.toString());
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
@@ -96,12 +87,11 @@ public class PlayerStorageService {
 
     /**
      * Saves or updates a players data in the database asynchronously.
-     * 
      * @param playerData The PlayerData object to save.
      * @return A CompletableFuture that completes when the operation is finished.
      */
     public CompletableFuture<Void> savePlayerData(PlayerData playerData) {
-        if (!configService.get().database().enabled() || databaseUrl == null) {
+        if (!configService.get().database().enabled()) {
             return CompletableFuture.completedFuture(null);
         }
 
@@ -109,7 +99,7 @@ public class PlayerStorageService {
             String sql = "INSERT INTO player_data (uuid, view_distance) VALUES(?, ?) " +
                     "ON CONFLICT(uuid) DO UPDATE SET view_distance = excluded.view_distance;";
             try (Connection conn = DriverManager.getConnection(databaseUrl);
-                    PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, playerData.getUuid().toString());
                 pstmt.setInt(2, playerData.getViewDistance());
                 pstmt.executeUpdate();
@@ -119,3 +109,4 @@ public class PlayerStorageService {
         });
     }
 }
+

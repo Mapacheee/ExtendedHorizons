@@ -5,6 +5,7 @@ import me.mapacheee.extendedhorizons.viewdistance.service.player.PlayerChunkStat
 import me.mapacheee.extendedhorizons.viewdistance.service.player.PlayerStateManager;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
+
 import java.util.UUID;
 
 /**
@@ -25,11 +26,11 @@ public class BandwidthController {
     private final ConfigService configService;
 
     /**
-     * Maximum bytes that can be sent per tick (50ms) to a single player (Default).
+     * Maximum bytes that can be sent per tick (50ms) to a single player.
      * Defaults to 25KB (500KB/s / 20 ticks).
      * Updated dynamically from config.
      */
-    private volatile long defaultMaxBytesPerTick = 25000;
+    private volatile long maxBytesPerTick = 25000;
 
     @Inject
     public BandwidthController(PlayerStateManager playerStateManager, ConfigService configService) {
@@ -71,17 +72,10 @@ public class BandwidthController {
      *         be exceeded
      */
     public boolean canSendData(UUID playerId, long estimatedBytes) {
-
         PlayerChunkState state = playerStateManager.getOrCreate(playerId);
 
         long bytesUsedThisTick = state.getBytesThisTick();
-
-        long limit = state.getMaxBytesPerTick();
-        if (limit <= 0) {
-            limit = defaultMaxBytesPerTick;
-        }
-
-        return bytesUsedThisTick + estimatedBytes < limit;
+        return bytesUsedThisTick + estimatedBytes < maxBytesPerTick;
     }
 
     /**
@@ -98,15 +92,10 @@ public class BandwidthController {
         }
 
         long bytesSent = state.getBytesThisSecond();
+        int maxBandwidth = configService.get().bandwidthSaver().maxBandwidthPerPlayer();
 
-        long maxBandwidthBytes = state.getMaxBytesPerSecond();
-
-        if (maxBandwidthBytes <= 0) {
-            int maxBandwidthKB = configService.get().bandwidthSaver().maxBandwidthPerPlayer();
-            maxBandwidthBytes = maxBandwidthKB * 1024L;
-        }
-
-        return maxBandwidthBytes <= 0 || bytesSent < maxBandwidthBytes;
+        // maxBandwidth is in KB/s, convert to bytes
+        return maxBandwidth <= 0 || bytesSent < (maxBandwidth * 1024L);
     }
 
     /**
@@ -131,42 +120,23 @@ public class BandwidthController {
     }
 
     /**
-     * Gets the current global maximum bytes per tick limit.
+     * Gets the current maximum bytes per tick limit.
      * 
      * @return Maximum bytes that can be sent per tick
      */
-    public long getDefaultMaxBytesPerTick() {
-        return defaultMaxBytesPerTick;
+    public long getMaxBytesPerTick() {
+        return maxBytesPerTick;
     }
 
     /**
-     * Updates the default maximum bytes per tick based on configured bandwidth per
-     * player.
+     * Updates the maximum bytes per tick based on configured bandwidth per player.
      * 
      * @param bandwidthPerPlayerKB Bandwidth limit per player in KB/s
      */
     public void updateMaxBytesPerTick(int bandwidthPerPlayerKB) {
         if (bandwidthPerPlayerKB > 0) {
             // Convert KB/s to bytes/tick (20 ticks per second)
-            this.defaultMaxBytesPerTick = (bandwidthPerPlayerKB * 1024) / 20;
-        }
-    }
-
-    /**
-     * Sets a specific bandwidth limit for a player.
-     * 
-     * @param playerId           The player UUID
-     * @param kilobytesPerSecond The limit in KB/s. Set to -1 to use default.
-     */
-    public void setPlayerBandwidth(UUID playerId, int kilobytesPerSecond) {
-        PlayerChunkState state = playerStateManager.getOrCreate(playerId);
-        if (kilobytesPerSecond <= 0) {
-            state.setMaxBytesPerTick(-1);
-            state.setMaxBytesPerSecond(-1);
-        } else {
-            long bytesPerSec = kilobytesPerSecond * 1024L;
-            state.setMaxBytesPerSecond(bytesPerSec);
-            state.setMaxBytesPerTick(bytesPerSec / 20);
+            this.maxBytesPerTick = (bandwidthPerPlayerKB * 1024) / 20;
         }
     }
 }

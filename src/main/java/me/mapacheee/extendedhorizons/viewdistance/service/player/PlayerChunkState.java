@@ -19,9 +19,6 @@ public class PlayerChunkState {
 
     private final UUID playerId;
 
-    private static final int MAX_FAKE_CHUNKS_PER_PLAYER = 5000;
-    private static final int MAX_QUEUED_CHUNKS_PER_PLAYER = 2000;
-
     // === Chunk Tracking ===
 
     /**
@@ -52,6 +49,13 @@ public class PlayerChunkState {
      */
     private volatile long lastChunkPosition;
 
+    // === Packet Management ===
+
+    /**
+     * Queue of packets waiting to be sent to this player (batched).
+     */
+    private final Deque<Object> pendingPackets = new ConcurrentLinkedDeque<>();
+
     // === Bandwidth Tracking ===
 
     /**
@@ -73,18 +77,6 @@ public class PlayerChunkState {
      * Actual bytes sent (measured from real packets).
      */
     private volatile long actualBytesSent;
-
-    /**
-     * Maximum bytes allowed per tick for this player.
-     * Default initialized to -1 (use global default until set).
-     */
-    private volatile long maxBytesPerTick = -1;
-
-    /**
-     * Maximum bytes allowed per second for this player.
-     * Default initialized to -1 (use global default until set).
-     */
-    private volatile long maxBytesPerSecond = -1;
 
     // === Performance Metrics ===
 
@@ -161,59 +153,8 @@ public class PlayerChunkState {
         return fakeChunks;
     }
 
-    /**
-     * Adds a fake chunk key, respecting the maximum limit.
-     * @param key The chunk key to add
-     * @return true if added, false if limit reached
-     */
-    public boolean addFakeChunk(long key) {
-        if (fakeChunks.size() >= MAX_FAKE_CHUNKS_PER_PLAYER) {
-            return false;
-        }
-        return fakeChunks.add(key);
-    }
-
-    /**
-     * Checks if more fake chunks can be added.
-     */
-    public boolean canAddMoreFakeChunks() {
-        return fakeChunks.size() < MAX_FAKE_CHUNKS_PER_PLAYER;
-    }
-
     public Deque<Long> getChunkQueue() {
         return chunkQueue;
-    }
-
-    /**
-     * Adds a chunk to the queue if within limits.
-     * @param key The chunk key to queue
-     * @return true if added, false if limit reached or already queued
-     */
-    public boolean queueChunk(long key) {
-        if (queuedChunksSet.size() >= MAX_QUEUED_CHUNKS_PER_PLAYER) {
-            return false;
-        }
-        if (queuedChunksSet.add(key)) {
-            chunkQueue.add(key);
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Adds a chunk to the front of the queue if within limits.
-     * @param key The chunk key to queue
-     * @return true if added, false if limit reached or already queued
-     */
-    public boolean queueChunkFirst(long key) {
-        if (queuedChunksSet.size() >= MAX_QUEUED_CHUNKS_PER_PLAYER) {
-            return false;
-        }
-        if (queuedChunksSet.add(key)) {
-            chunkQueue.addFirst(key);
-            return true;
-        }
-        return false;
     }
 
     public Set<Long> getQueuedChunksSet() {
@@ -226,6 +167,12 @@ public class PlayerChunkState {
 
     public void setLastChunkPosition(long position) {
         this.lastChunkPosition = position;
+    }
+
+    // --- Packet Management ---
+
+    public Deque<Object> getPendingPackets() {
+        return pendingPackets;
     }
 
     // --- Bandwidth Tracking ---
@@ -274,21 +221,7 @@ public class PlayerChunkState {
         this.actualBytesSent += bytes;
     }
 
-    public long getMaxBytesPerTick() {
-        return maxBytesPerTick;
-    }
-
-    public void setMaxBytesPerTick(long maxBytesPerTick) {
-        this.maxBytesPerTick = maxBytesPerTick;
-    }
-
-    public long getMaxBytesPerSecond() {
-        return maxBytesPerSecond;
-    }
-
-    public void setMaxBytesPerSecond(long maxBytesPerSecond) {
-        this.maxBytesPerSecond = maxBytesPerSecond;
-    }
+    // --- Performance Metrics ---
 
     public int getAvgPing() {
         return avgPing;
@@ -436,8 +369,7 @@ public class PlayerChunkState {
         fakeChunks.clear();
         chunkQueue.clear();
         queuedChunksSet.clear();
-        queuedChunksSet.clear();
-
+        pendingPackets.clear();
         lastChunkPosition = 0;
         bytesThisTick = 0;
         bytesThisSecond = 0;
@@ -461,8 +393,11 @@ public class PlayerChunkState {
         return chunkQueue.size();
     }
 
+    /**
+     * Gets the number of packets waiting to be sent.
+     */
     public int getPendingPacketCount() {
-        return 0;
+        return pendingPackets.size();
     }
 
     @Override
@@ -471,7 +406,7 @@ public class PlayerChunkState {
                 "playerId=" + playerId +
                 ", fakeChunks=" + fakeChunks.size() +
                 ", queuedChunks=" + chunkQueue.size() +
-                ", queuedChunks=" + chunkQueue.size() +
+                ", pendingPackets=" + pendingPackets.size() +
                 ", bytesThisSecond=" + bytesThisSecond +
                 ", avgPing=" + avgPing +
                 ", inWarmup=" + inWarmup +

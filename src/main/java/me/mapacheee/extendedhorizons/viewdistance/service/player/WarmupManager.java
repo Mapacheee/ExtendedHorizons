@@ -28,8 +28,7 @@ public class WarmupManager {
     public void startWarmup(PlayerChunkState state) {
         state.setWarmupStartTime(System.currentTimeMillis());
         state.setInWarmup(true);
-        state.getChunkQueue().clear();
-        state.getQueuedChunksSet().clear();
+        state.getChunkQueue().clear(); // Clear old chunks as they might be irrelevant
     }
 
     /**
@@ -51,14 +50,5 @@ public class WarmupManager {
         state.setInWarmup(isActive);
 
         return isActive;
-    }
-
-    /**
-     * Gets the warmup duration in milliseconds.
-     *
-     * @return warmup duration in ms
-     */
-    public long getWarmupDuration() {
-        return configService.get().performance().teleportWarmupDelay();
     }
 }

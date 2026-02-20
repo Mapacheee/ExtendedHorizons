@@ -68,8 +68,7 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
                     return fullChunk;
                 }
             }
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
 
         return null;
     }
@@ -94,8 +93,6 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
             }
         }
 
-        newChunk.blockEntities.putAll(original.blockEntities);
-
         return newChunk;
     }
 
@@ -109,87 +106,51 @@ public class NMSChunkAccess_v1_21_R1 implements NMSChunkAccess {
 
         Random random = new Random();
 
-        int minHeight = chunk.getLevel().getWorld().getMinHeight();
-        int maxHeight = chunk.getLevel().getWorld().getMaxHeight();
-
-        LevelChunkSection[] sections = chunk.getSections();
-
-        for (int i = 0; i < sections.length; i++) {
-            LevelChunkSection section = sections[i];
-            if (section == null || section.hasOnlyAir())
+        for (LevelChunkSection section : chunk.getSections()) {
+            if (section.hasOnlyAir())
                 continue;
 
-            int sectionY = (i * 16) + minHeight;
+            BlockState stone = null;
+            BlockState deepslate = null;
+            BlockState netherrack = null;
 
             for (int x = 0; x < 16; x++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int yRel = 0; yRel < 16; yRel++) {
-                        int y = sectionY + yRel;
-                        BlockState state = section.getBlockState(x, yRel, z);
+                for (int y = 0; y < 16; y++) {
+                    for (int z = 0; z < 16; z++) {
+                        BlockState state = section.getBlockState(x, y, z);
                         Block block = state.getBlock();
 
                         if (hideOres) {
                             if (isValuableOre(block)) {
-                                if (isExposed(chunk, x, y, z, minHeight, maxHeight)) {
-                                    continue;
-                                }
-
                                 Block replacement = getReplacement(block);
                                 BlockState replacementState;
 
                                 if (replacement == Blocks.STONE) {
-                                    replacementState = Blocks.STONE.defaultBlockState();
+                                    if (stone == null) stone = Blocks.STONE.defaultBlockState();
+                                    replacementState = stone;
                                 } else if (replacement == Blocks.DEEPSLATE) {
-                                    replacementState = Blocks.DEEPSLATE.defaultBlockState();
+                                    if (deepslate == null) deepslate = Blocks.DEEPSLATE.defaultBlockState();
+                                    replacementState = deepslate;
                                 } else {
-                                    replacementState = Blocks.NETHERRACK.defaultBlockState();
+                                    if (netherrack == null) netherrack = Blocks.NETHERRACK.defaultBlockState();
+                                    replacementState = netherrack;
                                 }
 
-                                section.setBlockState(x, yRel, z, replacementState, false);
+                                section.setBlockState(x, y, z, replacementState, false);
                                 continue;
                             }
                         }
 
                         if (addFakeOres) {
                             if (shouldFakeOre(block) && random.nextDouble() < density) {
-                                if (isExposed(chunk, x, y, z, minHeight, maxHeight)) {
-                                    continue;
-                                }
-
                                 Block fakeOre = getRandomOre(block, random);
-                                section.setBlockState(x, yRel, z, fakeOre.defaultBlockState(), false);
+                                section.setBlockState(x, y, z, fakeOre.defaultBlockState(), false);
                             }
                         }
                     }
                 }
             }
         }
-    }
-
-    private boolean isExposed(LevelChunk chunk, int x, int y, int z, int minHeight, int maxHeight) {
-        if (checkTransparent(chunk, x + 1, y, z, minHeight, maxHeight))
-            return true;
-        if (checkTransparent(chunk, x - 1, y, z, minHeight, maxHeight))
-            return true;
-        if (checkTransparent(chunk, x, y + 1, z, minHeight, maxHeight))
-            return true;
-        if (checkTransparent(chunk, x, y - 1, z, minHeight, maxHeight))
-            return true;
-        if (checkTransparent(chunk, x, y, z + 1, minHeight, maxHeight))
-            return true;
-        if (checkTransparent(chunk, x, y, z - 1, minHeight, maxHeight))
-            return true;
-        return false;
-    }
-
-    private boolean checkTransparent(LevelChunk chunk, int x, int y, int z, int minHeight, int maxHeight) {
-        if (y < minHeight || y >= maxHeight)
-            return true;
-        if (x < 0 || x > 15 || z < 0 || z > 15)
-            return true;
-
-        BlockState state = chunk.getBlockState(x, y, z);
-        return state.isAir() || !state.getFluidState().isEmpty();
     }
 
     private boolean isValuableOre(Block block) {

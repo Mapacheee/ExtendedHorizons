@@ -88,13 +88,3 @@ startup:
 messages:
   welcome-message:
     text: "<#14D9D9>Welcome! Your view distance has been set to <#C935F2>{distance} <#14D9D9>chunks."
-
-# Bandwidth messages
-bandwidth:
-  set: "<#14D9D9>Bandwidth for <#C935F2>{player}<#14D9D9> set to <#C935F2>{kbps} <#14D9D9>KB/s."
-  state-not-found: "<#FF5555>State not found for player (not loaded?)."
-  check-header: "<#3498DB>--- Bandwidth: <#C935F2>{player} <#3498DB>---"
-  check-custom: "<#14D9D9>Custom Limit: <#C935F2>{kbps} <#14D9D9>KB/s"
-  check-custom-tick: "<#95A5A6>(Tick Limit: {bytes} bytes)"
-  check-global: "<#F39C12>Using Global Default: {kbps} KB/s"
-  check-global-tick: "<#95A5A6>(Global Tick Limit: {bytes} bytes)"

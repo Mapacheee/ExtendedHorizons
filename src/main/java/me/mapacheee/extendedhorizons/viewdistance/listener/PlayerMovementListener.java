@@ -5,6 +5,7 @@ import com.google.inject.Provider;
 import com.thewinterframework.paper.listener.ListenerComponent;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -23,11 +24,8 @@ public class PlayerMovementListener implements Listener {
     private final Provider<ViewDistanceService> viewDistanceServiceProvider;
     private final Map<UUID, Long> lastUpdateTime = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastChunkPos = new ConcurrentHashMap<>();
-    private final Map<UUID, Integer> fastMoveCount = new ConcurrentHashMap<>();
 
-    private static final long UPDATE_COOLDOWN_MS = 500;
-    private static final long FAST_MOVE_COOLDOWN_MS = 500;
-    private static final int FAST_MOVE_THRESHOLD = 3;
+    private static final long UPDATE_COOLDOWN_MS = 1000;
 
     @Inject
     public PlayerMovementListener(Provider<ViewDistanceService> viewDistanceServiceProvider) {
@@ -67,42 +65,26 @@ public class PlayerMovementListener implements Listener {
 
         lastChunkPos.put(playerId, currentChunkPos);
 
-        int dX = Math.abs(toChunkX - fromChunkX);
-        int dZ = Math.abs(toChunkZ - fromChunkZ);
-        int cheb = Math.max(dX, dZ);
-
-        if (cheb >= FAST_MOVE_THRESHOLD) {
-            int count = fastMoveCount.getOrDefault(playerId, 0) + 1;
-            fastMoveCount.put(playerId, count);
-        } else {
-            fastMoveCount.put(playerId, 0);
-        }
-
         Long lastUpdate = lastUpdateTime.get(playerId);
         long now = System.currentTimeMillis();
-
-        int currentFastMoveCount = fastMoveCount.getOrDefault(playerId, 0);
-        long cooldown = currentFastMoveCount > 2 ? FAST_MOVE_COOLDOWN_MS : 250;
-
-        if (lastUpdate != null && now - lastUpdate < cooldown) {
+        if (lastUpdate != null && now - lastUpdate < 250) {
             return;
         }
         lastUpdateTime.put(playerId, now);
+
+        int dX = Math.abs(toChunkX - fromChunkX);
+        int dZ = Math.abs(toChunkZ - fromChunkZ);
+        int cheb = Math.max(dX, dZ);
 
         ViewDistanceService viewDistanceService = viewDistanceServiceProvider.get();
 
         if (cheb >= 3) {
             viewDistanceService.updatePlayerViewFast(event.getPlayer());
-            if (currentFastMoveCount < 3) {
-                event.getPlayer().getScheduler().runDelayed(
-                        ExtendedHorizonsPlugin.getPlugin(ExtendedHorizonsPlugin.class),
-                        (task) -> {
-                            if (event.getPlayer().isOnline())
-                                viewDistanceServiceProvider.get().updatePlayerView(event.getPlayer());
-                        },
-                        null,
-                        5L);
-            }
+            Bukkit.getScheduler().runTaskLater(ExtendedHorizonsPlugin
+                    .getPlugin(ExtendedHorizonsPlugin.class), () -> {
+                        if (event.getPlayer().isOnline())
+                            viewDistanceServiceProvider.get().updatePlayerView(event.getPlayer());
+                    }, 5L);
         } else {
             viewDistanceService.updatePlayerView(event.getPlayer());
         }
@@ -114,6 +96,5 @@ public class PlayerMovementListener implements Listener {
     public void cleanupPlayer(UUID playerId) {
         lastUpdateTime.remove(playerId);
         lastChunkPos.remove(playerId);
-        fastMoveCount.remove(playerId);
     }
 }

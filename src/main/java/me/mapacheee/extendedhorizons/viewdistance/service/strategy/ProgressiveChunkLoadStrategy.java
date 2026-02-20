@@ -68,26 +68,22 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
         int playerChunkX = player.getLocation().getBlockX() >> 4;
         int playerChunkZ = player.getLocation().getBlockZ() >> 4;
 
-        Set<Long> alreadySent = state.getFakeChunks();
-        List<Long> sortedKeys = new ArrayList<>();
-        for (Long key : allVisibleChunks) {
-            if (!alreadySent.contains(key)) {
-                sortedKeys.add(key);
-            }
-        }
+        List<Long> sortedKeys = new ArrayList<>(allVisibleChunks);
         sortedKeys.sort((key1, key2) -> compareDistance(key1, key2, playerChunkX, playerChunkZ));
 
-        int addedCount = 0;
+        Queue<Long> queue = state.getChunkQueue();
+        Set<Long> queuedSet = state.getQueuedChunksSet();
+
         for (long key : sortedKeys) {
-            if (!state.queueChunk(key)) {
-                break;
+            if (!queuedSet.contains(key)) {
+                queue.add(key);
+                queuedSet.add(key);
             }
-            addedCount++;
         }
 
         if (DEBUG) {
             logger.info("[EH] Warmup active for {}, queued {} chunks (sorted by distance)",
-                    player.getName(), addedCount);
+                    player.getName(), sortedKeys.size());
         }
     }
 
@@ -100,13 +96,6 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
 
         int playerChunkX = player.getLocation().getBlockX() >> 4;
         int playerChunkZ = player.getLocation().getBlockZ() >> 4;
-
-        Set<Long> alreadySent = state.getFakeChunks();
-        newChunksToLoad.removeIf(alreadySent::contains);
-
-        if (newChunksToLoad.isEmpty()) {
-            return;
-        }
 
         newChunksToLoad.sort((key1, key2) -> compareDistance(key1, key2, playerChunkX, playerChunkZ));
 
@@ -135,17 +124,12 @@ public class ProgressiveChunkLoadStrategy implements ChunkLoadStrategy {
             }
         }
 
-        int addedCount = 0;
+        Set<Long> queuedSet = state.getQueuedChunksSet();
         for (Long key : newChunksToLoad) {
-            if (!state.queueChunk(key)) {
-                break;
+            if (!queuedSet.contains(key)) {
+                queue.add(key);
+                queuedSet.add(key);
             }
-            addedCount++;
-        }
-
-        if (DEBUG && addedCount > 0) {
-            logger.info("[EH] Added {} chunks to queue for {} ({} total)",
-                    addedCount, player.getName(), queue.size());
         }
     }
 

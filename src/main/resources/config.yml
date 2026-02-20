@@ -113,7 +113,7 @@ bandwidth-saver:
   # Custom bandwidth limits assignable via permission
   # Permission: extendedhorizons.bandwidth.<profile_name>
   bandwidth-profiles:
-    vip: 1000
+    vip: 20000
     slow: 50
 
   # Estimated chunk packet size in bytes (used for bandwidth calculations)

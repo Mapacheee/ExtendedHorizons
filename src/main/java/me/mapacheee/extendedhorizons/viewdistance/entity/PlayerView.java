@@ -14,12 +14,10 @@ public class PlayerView {
 
     private final UUID uuid;
     private int targetDistance;
-    private int preferredDistance;
 
-    public PlayerView(Player player, int initialDistance, int preferredDistance) {
+    public PlayerView(Player player, int initialDistance) {
         this.uuid = player.getUniqueId();
         this.targetDistance = initialDistance;
-        this.preferredDistance = preferredDistance;
     }
 
     public UUID getUuid() {
@@ -32,14 +30,6 @@ public class PlayerView {
 
     public void setTargetDistance(int targetDistance) {
         this.targetDistance = targetDistance;
-    }
-
-    public int getPreferredDistance() {
-        return preferredDistance;
-    }
-
-    public void setPreferredDistance(int preferredDistance) {
-        this.preferredDistance = preferredDistance;
     }
 
     public static long getChunkKey(Chunk chunk) {

@@ -32,12 +32,12 @@ public record MainConfig(
         @ConfigSerializable
         public record PerformanceConfig(
                         @Setting("chunk-processor-threads") int chunkProcessorThreads,
+                        @Setting("chunk-process-interval") int chunkProcessInterval,
                         @Setting("teleport-warmup-delay") int teleportWarmupDelay,
                         @Setting("max-mspt-for-loading") double maxMsptForLoading,
                         @Setting("max-async-load-tasks") int maxAsyncLoadTasks,
                         @Setting("max-async-load-queue") int maxAsyncLoadQueue,
                         @Setting("max-generations-per-tick") int maxGenerationsPerTick,
-                        @Setting("max-disk-loads-per-tick") int maxDiskLoadsPerTick,
                         @Setting("fake-chunks") FakeChunksConfig fakeChunks,
                         @Setting("occlusion-culling") OcclusionCullingConfig occlusionCulling) {
                 @ConfigSerializable
@@ -45,12 +45,19 @@ public record MainConfig(
                                 boolean enabled,
                                 @Setting("max-cached-packets") int maxCachedPackets,
                                 @Setting("use-compression") boolean useCompression,
+                                @Setting("cache-cleanup-interval") int cacheCleanupInterval,
                                 @Setting("enable-memory-cache") boolean enableMemoryCache,
                                 @Setting("max-memory-cache-size") int maxMemoryCacheSize,
-                                @Setting("surface-only-mode") boolean surfaceOnlyMode,
-                                @Setting("depth-below-surface") int depthBelowSurface,
-                                @Setting("disk-cache") boolean diskCache,
-                                @Setting("enable-anti-xray") boolean enableAntiXray) {
+                                @Setting("packet-cache-ttl-seconds") int packetCacheTtlSeconds,
+                                @Setting("anti-xray") AntiXrayConfig antiXray) {
+
+                        @ConfigSerializable
+                        public record AntiXrayConfig(
+                                        boolean enabled,
+                                        @Setting("hide-ores") boolean hideOres,
+                                        @Setting("add-fake-ores") boolean addFakeOres,
+                                        @Setting("fake-ore-density") double fakeOreDensity) {
+                        }
                 }
 
                 @ConfigSerializable
@@ -92,7 +99,7 @@ public record MainConfig(
                         @Setting("max-fake-chunks-per-tick") int maxFakeChunksPerTick,
                         @Setting("max-bandwidth-per-player") int maxBandwidthPerPlayer,
                         @Setting("adaptive-rate-limiting") boolean adaptiveRateLimiting,
-                        @Setting("bandwidth-profiles") java.util.Map<String, Integer> bandwidthProfiles,
+                        @Setting("measure-actual-packet-size") boolean measureActualPacketSize,
                         @Setting("estimated-packet-size") int estimatedPacketSize) {
         }
 }

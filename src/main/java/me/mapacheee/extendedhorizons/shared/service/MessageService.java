@@ -181,30 +181,4 @@ public class MessageService {
         String txt = m.messages().welcomeMessage().text().replace("{distance}", String.valueOf(distance));
         sendPrefixed(sender, txt);
     }
-
-    public void sendBandwidthSet(CommandSender sender, String player, int kbps) {
-        String msg = configService.messages().bandwidth().set()
-                .replace("{player}", player)
-                .replace("{kbps}", String.valueOf(kbps));
-        sendPrefixed(sender, msg);
-    }
-
-    public void sendBandwidthStateNotFound(CommandSender sender) {
-        sendPrefixed(sender, configService.messages().bandwidth().stateNotFound());
-    }
-
-    public void sendBandwidthCheckInfo(CommandSender sender, String player, boolean isCustom, int kbps,
-            long bytesLimit) {
-        var b = configService.messages().bandwidth();
-
-        sendRaw(sender, b.checkHeader().replace("{player}", player));
-
-        if (isCustom) {
-            sendRaw(sender, b.checkCustom().replace("{kbps}", String.valueOf(kbps)));
-            sendRaw(sender, b.checkCustomTick().replace("{bytes}", String.valueOf(bytesLimit)));
-        } else {
-            sendRaw(sender, b.checkGlobal().replace("{kbps}", String.valueOf(kbps)));
-            sendRaw(sender, b.checkGlobalTick().replace("{bytes}", String.valueOf(bytesLimit)));
-        }
-    }
 }

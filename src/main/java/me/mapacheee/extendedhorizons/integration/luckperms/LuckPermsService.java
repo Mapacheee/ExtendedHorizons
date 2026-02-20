@@ -77,7 +77,7 @@ public class LuckPermsService {
      */
     public int resolveMaxDistance(Player player, int fallback) {
         if (!enabled || handler == null)
-            return -1;
+            return fallback;
 
         UUID id = player.getUniqueId();
         long now = Instant.now().getEpochSecond();
@@ -86,25 +86,13 @@ public class LuckPermsService {
             return ce.value;
         }
 
-        int resolved = handler.compute(player, -1, useGroupPermissions);
+        int resolved = handler.compute(player, fallback, useGroupPermissions);
 
         CacheEntry fresh = new CacheEntry();
         fresh.value = resolved;
         fresh.expiresAt = now + cacheTtlSeconds;
         cache.put(id, fresh);
         return resolved;
-    }
-
-    /**
-     * Cleans up cache entry for a player who quit.
-     * Prevents cache from growing unbounded over server lifetime.
-     * 
-     * @param playerId The player UUID to remove from cache
-     */
-    public void cleanupPlayer(UUID playerId) {
-        if (enabled) {
-            cache.remove(playerId);
-        }
     }
 
     private interface LuckPermsHandler {
@@ -125,21 +113,30 @@ public class LuckPermsService {
                 if (user == null)
                     return fallback;
 
-                int best = -1;
-
-                for (var node : user.getNodes()) {
-                    if (node instanceof net.luckperms.api.node.types.PermissionNode p && p.getValue()) {
-                        String perm = p.getPermission();
-                        if (perm.startsWith("extendedhorizons.view.")) {
-                            Optional<Integer> n = extractTrailingInt(perm);
-                            if (n.isPresent() && n.get() > best)
-                                best = n.get();
-                        }
-                    }
+                net.luckperms.api.cacheddata.CachedMetaData meta = user.getCachedData().getMetaData();
+                String metaValue = meta.getMetaValue("extendedhorizons.max-distance");
+                if (metaValue != null) {
+                    Integer parsed = parsePositiveInt(metaValue);
+                    if (parsed != null)
+                        return parsed;
                 }
 
-                return best > 0 ? best : fallback;
-
+                if (useGroupPermissions) {
+                    int best = -1;
+                    for (var node : user.getNodes()) {
+                        if (node instanceof net.luckperms.api.node.types.PermissionNode p && p.getValue()) {
+                            String perm = p.getPermission();
+                            if (perm.startsWith("extendedhorizons.max.")) {
+                                Optional<Integer> n = extractTrailingInt(perm);
+                                if (n.isPresent() && n.get() > best)
+                                    best = n.get();
+                            }
+                        }
+                    }
+                    if (best > 0)
+                        return best;
+                }
+                return fallback;
             } catch (Exception e) {
                 return fallback;
             }
@@ -154,6 +151,15 @@ public class LuckPermsService {
                 return val > 0 ? Optional.of(val) : Optional.empty();
             } catch (NumberFormatException e) {
                 return Optional.empty();
+            }
+        }
+
+        private Integer parsePositiveInt(String s) {
+            try {
+                int v = Integer.parseInt(s.trim());
+                return v > 0 ? v : null;
+            } catch (NumberFormatException e) {
+                return null;
             }
         }
     }

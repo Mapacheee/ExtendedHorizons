@@ -10,71 +10,65 @@ import java.util.List;
 @ConfigSerializable
 @Configurate("messages")
 public record MessageConfig(
-                String prefix,
-                General general,
-                ViewDistance viewDistance,
-                List<String> stats,
-                Errors errors,
-                List<String> help,
-                World world,
-                Integrations integrations,
-                Startup startup,
-                Messages messages,
-                Bandwidth bandwidth,
-                Additional additional) {
-        @ConfigSerializable
-        public record General(String noPermission, String playerNotFound, String playerOnly, String configReloaded,
-                        String configError, String pluginInfo, String unknownCommand) {
-        }
+        String prefix,
+        General general,
+        ViewDistance viewDistance,
+        List<String> stats,
+        Errors errors,
+        List<String> help,
+        World world,
+        Integrations integrations,
+        Startup startup,
+        Messages messages,
+        Additional additional) {
+    @ConfigSerializable
+    public record General(String noPermission, String playerNotFound, String playerOnly, String configReloaded,
+            String configError, String pluginInfo, String unknownCommand) {
+    }
 
-        @ConfigSerializable
-        public record ViewDistance(
-                        String currentDistance,
-                        String distanceChanged,
-                        String distanceSetOther,
-                        String otherCurrentDistance,
-                        String noViewData,
-                        String noViewDataOther,
-                        String reset,
-                        String maxDistanceExceeded,
-                        String minDistanceError,
-                        String serverViewDistanceError,
-                        String invalidDistance) {
-        }
+    @ConfigSerializable
+    public record ViewDistance(
+            String currentDistance,
+            String distanceChanged,
+            String distanceSetOther,
+            String otherCurrentDistance,
+            String noViewData,
+            String noViewDataOther,
+            String reset,
+            String maxDistanceExceeded,
+            String minDistanceError,
+            String serverViewDistanceError,
+            String invalidDistance) {
+    }
 
-        @ConfigSerializable
-        public record Errors(String databaseError, String networkError, String chunkGenerationFailed,
-                        String permissionCheckFailed, String packeteventsError) {
-        }
+    @ConfigSerializable
+    public record Errors(String databaseError, String networkError, String chunkGenerationFailed,
+            String permissionCheckFailed, String packeteventsError) {
+    }
 
-        @ConfigSerializable
-        public record World(String notFound, String usage, String configNotice, String distanceSet, String disabled,
-                        String performanceModeChanged, String maxDistanceInfo) {
-        }
+    @ConfigSerializable
+    public record World(String notFound, String usage, String configNotice, String distanceSet, String disabled,
+            String performanceModeChanged, String maxDistanceInfo) {
+    }
 
-        @ConfigSerializable
-        public record Integrations(String placeholderapiEnabled, String placeholderapiDisabled, String luckpermsEnabled,
-                        String luckpermsDisabled) {
-        }
+    @ConfigSerializable
+    public record Integrations(String placeholderapiEnabled, String placeholderapiDisabled, String luckpermsEnabled,
+            String luckpermsDisabled) {
+    }
 
-        @ConfigSerializable
-        public record Startup(String loading, String loaded, String enabled, String serverDetected,
-                        String packeteventsInitialized) {
-        }
+    @ConfigSerializable
+    public record Startup(String loading, String loaded, String enabled, String serverDetected,
+            String packeteventsInitialized) {
+    }
 
+    @ConfigSerializable
+    public record Messages(WelcomeMessage welcomeMessage) {
         @ConfigSerializable
-        public record Messages(WelcomeMessage welcomeMessage) {
-                @ConfigSerializable
-                public record WelcomeMessage(String text) {
-                }
+        public record WelcomeMessage(String text) {
         }
+    }
 
-        @ConfigSerializable
-        public record Additional(String noViewData, String distanceSetOther, String minDistanceError) {
-        }
-
-        @ConfigSerializable
-        public record Bandwidth(String set, String stateNotFound, String checkHeader, String checkCustom,
-                        String checkCustomTick, String checkGlobal, String checkGlobalTick) {
-        }
+    @ConfigSerializable
+    public record Additional(String noViewData, String distanceSetOther, String minDistanceError) {
+    }
 }

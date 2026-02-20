@@ -26,9 +26,7 @@ import io.netty.buffer.Unpooled;
 public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
 
     private final ConfigService configService;
-
-    @Inject
-    public NMSPacketAccess_v1_21_R1(ConfigService configService) {
+    private static java.lang.reflect.Method writeMethod;
         this.configService = configService;
     }
 
