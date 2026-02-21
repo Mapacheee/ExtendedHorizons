@@ -18,6 +18,21 @@ public interface NMSPacketAccess {
     Object createUnloadPacket(int x, int z);
 
     /**
+     * Serializes a chunk packet to bytes.
+     */
+    byte[] serializeChunkPacket(Object packet);
+
+    /**
+     * Deserializes a chunk packet from bytes.
+     */
+    Object deserializeChunkPacket(byte[] data);
+
+    /**
+     * Creates a chunk packet containing only surface blocks.
+     */
+    Object createSurfaceOnlyChunkPacket(Object chunk, int depthBelowSurface);
+
+    /**
      * Sends a packet to a player.
      * 
      * @param packet The NMS packet object (or Bukkit Packet if supported).

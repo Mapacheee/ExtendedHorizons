@@ -52,7 +52,7 @@ performance:
 
   # Strict limits per tick to prevent lag spikes
   max-generations-per-tick: 2
-  max-disk-loads-per-tick: 22
+  chunk-process-interval: 5
 
   # Fake chunks system configuration
   fake-chunks:
@@ -67,15 +67,11 @@ performance:
     enable-memory-cache: true
     max-memory-cache-size: 500
 
-    # Surface Only Mode: Only sends visible surface blocks
-    # Pros: Massive bandwidth savings, built-in anti-xray
-    # Cons: High CPU for initial generation (mitigated by disk-cache)
-    surface-only-mode: false
-    depth-below-surface: 40
+    # Interval (in seconds) to clean up old packets from the memory cache
+    cache-cleanup-interval: 300
 
-    # Persistent disk cache (SQLite): Saves processed packets to disk
-    # Highly recommended - allows instant loading of previously visited chunks
-    disk-cache: true
+    # How long to keep a packet in memory before it is evicted (in seconds)
+    packet-cache-ttl-seconds: 600
 
     # Compress packets before saving to disk (slower but smaller files)
     use-compression: false
@@ -83,7 +79,11 @@ performance:
     # Anti-Xray for fake chunks
     # True: Ores hidden in distance, higher CPU usage
     # False: Raw chunk data, faster but xray-able
-    enable-anti-xray: false
+    anti-xray:
+      enabled: false
+      hide-ores: true
+      add-fake-ores: true
+      fake-ore-density: 0.1
 
   # Occlusion Culling: Disables fake chunks when player is underground
   # Saves bandwidth when player can't see the distance anyway

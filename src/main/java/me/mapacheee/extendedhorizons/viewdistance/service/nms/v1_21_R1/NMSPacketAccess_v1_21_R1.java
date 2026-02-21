@@ -21,17 +21,22 @@ import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
 import io.netty.buffer.Unpooled;
+import java.lang.reflect.Method;
+import java.lang.reflect.Constructor;
+import net.minecraft.world.level.levelgen.Heightmap;
 
 @Service
 public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
 
     private final ConfigService configService;
-    private static java.lang.reflect.Method writeMethod;
+
+    @Inject
+    public NMSPacketAccess_v1_21_R1(ConfigService configService) {
         this.configService = configService;
     }
 
-    private static java.lang.reflect.Method writeMethod;
-    private static java.lang.reflect.Constructor<ClientboundLevelChunkWithLightPacket> chunkPacketConstructor;
+    private static Method writeMethod;
+    private static Constructor<ClientboundLevelChunkWithLightPacket> chunkPacketConstructor;
 
     static {
         try {
@@ -107,7 +112,7 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
             LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
             BitSet[] lightMasks = getLightMasks(nmsChunk);
 
-            boolean enableAntiXray = configService.get().performance().fakeChunks().enableAntiXray();
+            boolean enableAntiXray = configService.get().performance().fakeChunks().antiXray().enabled();
             boolean trustEdges = !enableAntiXray;
 
             ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
@@ -176,7 +181,7 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
         int sectionHeight = 16;
 
         var heightmap = chunk
-                .getOrCreateHeightmapUnprimed(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING);
+                .getOrCreateHeightmapUnprimed(Heightmap.Types.MOTION_BLOCKING);
 
         int maxHeight = Integer.MIN_VALUE;
         for (int x = 0; x < 16; x++) {
@@ -228,17 +233,7 @@ public class NMSPacketAccess_v1_21_R1 implements NMSPacketAccess {
     @Override
     public int getPacketSize(Object packet) {
         if (packet instanceof ClientboundLevelChunkWithLightPacket) {
-            int estimated = Math.max(1, configService.get().bandwidthSaver().estimatedPacketSize());
-            try {
-                if (configService.get().performance().fakeChunks().diskCache()) {
-                    byte[] data = serializeChunkPacket(packet);
-                    if (data != null && data.length > 0) {
-                        return data.length;
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-            return estimated;
+            return Math.max(1, configService.get().bandwidthSaver().estimatedPacketSize());
         }
         return 512;
     }

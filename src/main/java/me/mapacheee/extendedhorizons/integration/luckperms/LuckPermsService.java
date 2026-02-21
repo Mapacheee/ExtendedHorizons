@@ -66,6 +66,10 @@ public class LuckPermsService {
         return enabled;
     }
 
+    public void cleanupPlayer(UUID id) {
+        cache.remove(id);
+    }
+
     /**
      * Returns the maximum view distance allowed for the player according to
      * LuckPerms.

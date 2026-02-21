@@ -14,14 +14,30 @@ public class PlayerView {
 
     private final UUID uuid;
     private int targetDistance;
+    private int preferredDistance;
+
+    public PlayerView(Player player, int targetDistance, int preferredDistance) {
+        this.uuid = player.getUniqueId();
+        this.targetDistance = targetDistance;
+        this.preferredDistance = preferredDistance;
+    }
 
     public PlayerView(Player player, int initialDistance) {
         this.uuid = player.getUniqueId();
         this.targetDistance = initialDistance;
+        this.preferredDistance = initialDistance;
     }
 
     public UUID getUuid() {
         return uuid;
+    }
+
+    public int getPreferredDistance() {
+        return preferredDistance;
+    }
+
+    public void setPreferredDistance(int preferredDistance) {
+        this.preferredDistance = preferredDistance;
     }
 
     public int getTargetDistance() {

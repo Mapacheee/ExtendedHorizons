@@ -5,7 +5,6 @@ import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.api.event.FakeChunkLoadEvent;
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
-import me.mapacheee.extendedhorizons.shared.storage.PacketCacheStorageService;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
 import me.mapacheee.extendedhorizons.viewdistance.service.bandwidth.BandwidthController;
 import me.mapacheee.extendedhorizons.viewdistance.service.nms.NMSChunkAccess;
@@ -30,7 +29,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 
-import me.mapacheee.extendedhorizons.viewdistance.service.cache.ChunkCacheKey;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -45,8 +43,6 @@ public class ChunkLoaderService {
     private final BandwidthController bandwidthController;
     private final NMSChunkAccess nmsChunkAccess;
     private final NMSPacketAccess nmsPacketAccess;
-    private final PacketCacheStorageService packetCacheStorage;
-
     private final Map<Long, Long> generatingChunks = new ConcurrentHashMap<>();
     private final ExecutorService chunkProcessor;
     private final Map<ChunkCacheKey, Object> chunkMemoryCache;
@@ -69,14 +65,12 @@ public class ChunkLoaderService {
             PlayerStateManager playerStateManager,
             BandwidthController bandwidthController,
             NMSChunkAccess nmsChunkAccess,
-            NMSPacketAccess nmsPacketAccess,
-            PacketCacheStorageService packetCacheStorage) {
+            NMSPacketAccess nmsPacketAccess) {
         this.configService = configService;
         this.playerStateManager = playerStateManager;
         this.bandwidthController = bandwidthController;
         this.nmsChunkAccess = nmsChunkAccess;
         this.nmsPacketAccess = nmsPacketAccess;
-        this.packetCacheStorage = packetCacheStorage;
 
         this.maxGenerationsPerTick = 1;
         this.maxDiskLoadsPerTick = 20;
@@ -125,11 +119,9 @@ public class ChunkLoaderService {
         chunksGeneratedThisTick.set(0);
         chunksLoadedFromDiskThisTick.set(0);
         this.maxGenerationsPerTick = configService.get().performance().maxGenerationsPerTick();
-        this.maxDiskLoadsPerTick = configService.get().performance().maxDiskLoadsPerTick();
+        this.maxDiskLoadsPerTick = 20;
         if (maxGenerationsPerTick <= 0)
             maxGenerationsPerTick = 1;
-        if (maxDiskLoadsPerTick <= 0)
-            maxDiskLoadsPerTick = 20;
 
         cleanupStaleGenerations();
     }
@@ -203,32 +195,14 @@ public class ChunkLoaderService {
                     continue;
                 }
 
-                packetCacheStorage.getCachedPacket(worldId, chunkX, chunkZ).thenAcceptAsync(diskBytes -> {
+                chunkProcessor.execute(() -> {
                     Player p = Bukkit.getPlayer(playerId);
                     if (p == null || !p.isOnline()) {
                         generatingChunks.remove(key);
                         return;
                     }
-
-                    if (diskBytes != null) {
-                        try {
-                            Object packet = nmsPacketAccess.deserializeChunkPacket(diskBytes);
-                            if (packet != null) {
-                                packetCache.put(cacheKey, diskBytes);
-                                scheduleSend(playerId, key, packet, FakeChunkLoadEvent.LoadSource.DISK_CACHE, chunkX,
-                                        chunkZ, sentTracker);
-                                return;
-                            }
-                        } catch (Exception e) {
-                        }
-                    }
-
                     loadChunkFromDiskAndSend(p, world, chunkX, chunkZ, key, sentTracker, borderCenterX, borderCenterZ,
                             borderSize);
-
-                }, chunkProcessor).exceptionally(ex -> {
-                    generatingChunks.remove(key);
-                    return null;
                 });
 
             } catch (Exception e) {
@@ -289,13 +263,7 @@ public class ChunkLoaderService {
                     Object packet = null;
                     if (nmsChunk != null) {
                         try {
-                            boolean surfaceOnlyMode = configService.get().performance().fakeChunks().surfaceOnlyMode();
-                            if (surfaceOnlyMode) {
-                                int depth = configService.get().performance().fakeChunks().depthBelowSurface();
-                                packet = nmsPacketAccess.createSurfaceOnlyChunkPacket(nmsChunk, depth);
-                            } else {
-                                packet = nmsPacketAccess.createChunkPacket(nmsChunk);
-                            }
+                            packet = nmsPacketAccess.createChunkPacket(nmsChunk);
                         } catch (Throwable t) {
                             logger.warn("[EH] Failed to create packet from disk chunk {},{}: {}", chunkX, chunkZ,
                                     t.getMessage());
@@ -312,7 +280,6 @@ public class ChunkLoaderService {
                             try {
                                 byte[] data = nmsPacketAccess.serializeChunkPacket(packetFinal);
                                 if (data != null) {
-                                    packetCacheStorage.saveCachedPacket(world.getUID(), chunkX, chunkZ, data);
                                     ChunkCacheKey cacheKey = new ChunkCacheKey(world.getUID(), key);
                                     packetCache.put(cacheKey, data);
                                 }
@@ -388,13 +355,7 @@ public class ChunkLoaderService {
                     if (DEBUG)
                         logger.info("[EH] Generated chunk {},{}", chunkX, chunkZ);
                     try {
-                        boolean surfaceOnlyMode = configService.get().performance().fakeChunks().surfaceOnlyMode();
-                        if (surfaceOnlyMode) {
-                            int depth = configService.get().performance().fakeChunks().depthBelowSurface();
-                            packet = nmsPacketAccess.createSurfaceOnlyChunkPacket(nmsChunk, depth);
-                        } else {
-                            packet = nmsPacketAccess.createChunkPacket(nmsChunk);
-                        }
+                        packet = nmsPacketAccess.createChunkPacket(nmsChunk);
                     } catch (Throwable t) {
                         logger.warn("[EH] Failed to create packet object for {},{}: {}", chunkX, chunkZ,
                                 t.getMessage());
@@ -411,7 +372,6 @@ public class ChunkLoaderService {
                     try {
                         byte[] data = nmsPacketAccess.serializeChunkPacket(packetFinal);
                         if (data != null) {
-                            packetCacheStorage.saveCachedPacket(w.getUID(), chunkX, chunkZ, data);
                             ChunkCacheKey cacheKey = new ChunkCacheKey(w.getUID(), key);
                             packetCache.put(cacheKey, data);
                         }
@@ -588,8 +548,6 @@ public class ChunkLoaderService {
         ChunkCacheKey key = new ChunkCacheKey(worldId, chunkKey);
         packetCache.remove(key);
 
-        packetCacheStorage.invalidate(worldId, chunkX, chunkZ);
-
         if (DEBUG) {
             logger.info("[EH] Invalidated cache for {},{}", chunkX, chunkZ);
         }
@@ -638,5 +596,8 @@ public class ChunkLoaderService {
         int cacheSize = chunkMemoryCache.size();
         double estimatedBytes = cacheSize * 50_000.0;
         return estimatedBytes / (1024.0 * 1024.0);
+    }
+
+    public record ChunkCacheKey(UUID worldId, long chunkKey) {
     }
 }

@@ -166,6 +166,7 @@ public class ChunkPacketCache {
      */
     private void startCleanupTask() {
         int intervalSeconds = configService.get().performance().fakeChunks().cacheCleanupInterval();
+
         long intervalMs = intervalSeconds * 1000L;
 
         this.cleanupTask = Bukkit.getAsyncScheduler().runAtFixedRate(

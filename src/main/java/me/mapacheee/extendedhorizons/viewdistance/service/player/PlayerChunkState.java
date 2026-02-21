@@ -161,6 +161,14 @@ public class PlayerChunkState {
         return queuedChunksSet;
     }
 
+    public boolean canAddMoreFakeChunks() {
+        return true;
+    }
+
+    public void addFakeChunk(long key) {
+        fakeChunks.add(key);
+    }
+
     public long getLastChunkPosition() {
         return lastChunkPosition;
     }
