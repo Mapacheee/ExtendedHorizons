@@ -7,6 +7,7 @@ import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 
 import me.mapacheee.extendedhorizons.shared.service.ConfigService;
 import me.mapacheee.extendedhorizons.shared.service.MessageService;
+import me.mapacheee.extendedhorizons.viewdistance.service.ChunkLoaderService;
 import me.mapacheee.extendedhorizons.viewdistance.service.FakeChunkService;
 import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
 import org.bukkit.Bukkit;
@@ -30,6 +31,7 @@ public class ViewDistanceCommand {
     private final ConfigService configService;
     private final ReloadServiceManager reloadServiceManager;
     private final FakeChunkService fakeChunkService;
+    private final ChunkLoaderService chunkLoaderService;
 
     @Inject
     public ViewDistanceCommand(
@@ -37,12 +39,14 @@ public class ViewDistanceCommand {
             MessageService messageService,
             ConfigService configService,
             ReloadServiceManager reloadServiceManager,
-            FakeChunkService fakeChunkService) {
+            FakeChunkService fakeChunkService,
+            ChunkLoaderService chunkLoaderService) {
         this.viewDistanceService = viewDistanceService;
         this.messageService = messageService;
         this.configService = configService;
         this.reloadServiceManager = reloadServiceManager;
         this.fakeChunkService = fakeChunkService;
+        this.chunkLoaderService = chunkLoaderService;
     }
 
     @Command("eh|extendedhorizons|horizons|viewdistance|vd help")
@@ -182,11 +186,11 @@ public class ViewDistanceCommand {
         }
         int avg = countWithView == 0 ? 0 : (sum / countWithView);
 
-        int cachedFakePackets = fakeChunkService.getCacheSize();
-        double fakeMemoryMB = fakeChunkService.getEstimatedMemoryUsageMB();
+        int cachedFakePackets = chunkLoaderService.getPacketCacheSize();
+        double fakeMemoryMB = chunkLoaderService.getEstimatedMemoryUsageMB();
 
         messageService.sendStats(sender, online, max, avg, fakeChunkService.getServerViewDistance(),
-                cachedFakePackets, fakeMemoryMB, fakeChunkService.getCacheHitRate(),
+                cachedFakePackets, fakeMemoryMB, chunkLoaderService.getCacheHitRate(),
                 fakeChunkService.getStats());
     }
 

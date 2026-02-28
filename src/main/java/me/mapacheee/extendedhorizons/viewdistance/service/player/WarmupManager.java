@@ -28,7 +28,7 @@ public class WarmupManager {
     public void startWarmup(PlayerChunkState state) {
         state.setWarmupStartTime(System.currentTimeMillis());
         state.setInWarmup(true);
-        state.getChunkQueue().clear(); // Clear old chunks as they might be irrelevant
+        state.getChunkQueue().clear();
     }
 
     /**

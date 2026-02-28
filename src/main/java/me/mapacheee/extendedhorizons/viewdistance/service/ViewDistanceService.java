@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.bukkit.WorldBorder;
 import java.util.concurrent.ConcurrentHashMap;
 import me.mapacheee.extendedhorizons.shared.storage.PlayerData;
 import me.mapacheee.extendedhorizons.shared.config.MainConfig.WorldConfig;
@@ -105,33 +106,30 @@ public class ViewDistanceService {
 
             p.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
                     (task) -> {
-                        Player player2 = Bukkit.getPlayer(playerId);
-                        if (player2 == null || !player2.isOnline())
+                        if (!p.isOnline())
                             return;
 
-                        packetService.ensureClientRadius(player2, clamped);
-                        packetService.ensureClientSimulationDistance(player2, clamped);
+                        packetService.ensureClientRadius(p, clamped);
+                        packetService.ensureClientSimulationDistance(p, clamped);
                     }, null, 5L);
 
             var msgCfg = configService.get().messages();
             if (msgCfg != null && msgCfg.welcomeMessage() != null && msgCfg.welcomeMessage().enabled()) {
                 p.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
                         (task) -> {
-                            Player player2 = Bukkit.getPlayer(playerId);
-                            if (player2 != null && player2.isOnline())
-                                messageService.sendWelcome(player2, clamped);
+                            if (p.isOnline())
+                                messageService.sendWelcome(p, clamped);
                         }, null, 15L);
             }
 
             p.getScheduler().runDelayed(ExtendedHorizonsPlugin.getInstance(),
                     (task) -> {
-                        Player player2 = Bukkit.getPlayer(playerId);
-                        if (player2 == null || !player2.isOnline())
+                        if (!p.isOnline())
                             return;
 
-                        packetService.ensureClientRadius(player2, clamped);
-                        packetService.ensureClientSimulationDistance(player2, clamped);
-                        updatePlayerView(player2);
+                        packetService.ensureClientRadius(p, clamped);
+                        packetService.ensureClientSimulationDistance(p, clamped);
+                        updatePlayerView(p);
                     }, null, 70L);
         });
     }
@@ -198,28 +196,73 @@ public class ViewDistanceService {
     }
 
     /**
-     * Returns allowed maximum distance (effective default + limit)
+     * Returns allowed maximum distance for the player.
+     * Priority:
+     * 1. LuckPerms meta/permission (extendedhorizons.max.<N>) if available
+     * 2. Bukkit permission (extendedhorizons.see.<N>) - scans for highest value
+     * 3. Config default-distance as fallback
+     * 
+     * The result is ALWAYS capped by config max-distance (global or per-world).
      */
     public int getAllowedMax(Player player) {
         String worldName = player.getWorld().getName();
 
+        // Absolute cap: world-specific or global max-distance (nothing overrides this)
+        Map<String, WorldConfig> worldSettings = configService.get().worldSettings();
+        int absoluteCap;
+        if (worldSettings != null && worldSettings.containsKey(worldName)) {
+            absoluteCap = worldSettings.get(worldName).maxDistance();
+        } else {
+            absoluteCap = configService.get().viewDistance().maxDistance();
+        }
+
         int baseDefault = configService.get().viewDistance().defaultDistance();
 
-        int permissionMax = -1;
+        // 1. Check LuckPerms override first (backward compat)
+        int luckPermsMax = -1;
         if (luckPermsService != null && luckPermsService.isEnabled()) {
-            permissionMax = luckPermsService.resolveMaxDistance(player, -1);
+            luckPermsMax = luckPermsService.resolveMaxDistance(player, -1);
         }
-        int effectiveMax = (permissionMax > 0) ? permissionMax : baseDefault;
 
-        Map<String, WorldConfig> worldSettings = configService.get().worldSettings();
-        int globalCap;
-        if (worldSettings != null && worldSettings.containsKey(worldName)) {
-            globalCap = worldSettings.get(worldName).maxDistance();
+        // 2. Check Bukkit permission extendedhorizons.see.<N>
+        int permissionMax = resolveSeePermission(player);
+
+        // Determine effective max:
+        // - LuckPerms takes priority if set
+        // - Then Bukkit see.<N> permission
+        // - Then config default
+        int effectiveMax;
+        if (luckPermsMax > 0) {
+            effectiveMax = luckPermsMax;
+        } else if (permissionMax > 0) {
+            effectiveMax = permissionMax;
         } else {
-            globalCap = configService.get().viewDistance().maxDistance();
+            effectiveMax = baseDefault;
         }
 
-        return Math.min(effectiveMax, globalCap);
+        // Absolute cap always wins
+        return Math.min(effectiveMax, absoluteCap);
+    }
+
+    /**
+     * Scans player's Bukkit permissions for extendedhorizons.see.<N>
+     * Returns the highest N value found, or -1 if no such permission exists.
+     */
+    private int resolveSeePermission(Player player) {
+        int best = -1;
+        for (var perm : player.getEffectivePermissions()) {
+            String p = perm.getPermission();
+            if (p.startsWith("extendedhorizons.see.") && perm.getValue()) {
+                try {
+                    int val = Integer.parseInt(p.substring("extendedhorizons.see.".length()));
+                    if (val > 0 && val > best) {
+                        best = val;
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        return best;
     }
 
     private int clampDistance(Player player, int value) {
@@ -279,32 +322,25 @@ public class ViewDistanceService {
                     }
                 }, null, 20L);
 
-        org.bukkit.WorldBorder border = player.getWorld().getWorldBorder();
+        WorldBorder border = player.getWorld().getWorldBorder();
         double borderCenterX = border.getCenter().getX();
         double borderCenterZ = border.getCenter().getZ();
         double borderSize = border.getSize();
         int targetDistance = playerView.getTargetDistance();
 
-        // Store UUID to prevent memory leak
-        UUID playerId2 = player.getUniqueId();
-
         org.bukkit.Bukkit.getAsyncScheduler().runNow(ExtendedHorizonsPlugin.getInstance(),
                 (task) -> {
-                    Player p = Bukkit.getPlayer(playerId2);
-                    if (p == null || !p.isOnline())
+                    if (!player.isOnline())
                         return;
 
-                    if (p == null || !p.isOnline())
-                        return;
-
-                    Set<Long> allNeededChunks = chunkService.computeCircularKeys(p, targetDistance + 1);
-                    ChunkClassification classification = classifyChunks(p, allNeededChunks, borderCenterX,
+                    Set<Long> allNeededChunks = chunkService.computeCircularKeys(player, targetDistance + 1);
+                    ChunkClassification classification = classifyChunks(player, allNeededChunks, borderCenterX,
                             borderCenterZ, borderSize);
 
                     if (configService.get().performance().fakeChunks().enabled()
-                            && fakeChunkService.isFakeChunksEnabledForWorld(p.getWorld())
+                            && fakeChunkService.isFakeChunksEnabledForWorld(player.getWorld())
                             && !classification.fakeChunks.isEmpty()) {
-                        fakeChunkService.sendFakeChunks(p, classification.fakeChunks, borderCenterX, borderCenterZ,
+                        fakeChunkService.sendFakeChunks(player, classification.fakeChunks, borderCenterX, borderCenterZ,
                                 borderSize);
                     }
                 });
@@ -335,27 +371,24 @@ public class ViewDistanceService {
         packetService.ensureClientRadius(player, baseTarget);
         packetService.ensureClientSimulationDistance(player, baseTarget);
 
-        org.bukkit.WorldBorder border = player.getWorld().getWorldBorder();
+        WorldBorder border = player.getWorld().getWorldBorder();
         double borderCenterX = border.getCenter().getX();
         double borderCenterZ = border.getCenter().getZ();
         double borderSize = border.getSize();
 
-        UUID playerId = player.getUniqueId();
-
-        org.bukkit.Bukkit.getAsyncScheduler().runNow(ExtendedHorizonsPlugin.getInstance(),
+        Bukkit.getAsyncScheduler().runNow(ExtendedHorizonsPlugin.getInstance(),
                 (task) -> {
-                    Player p = Bukkit.getPlayer(playerId);
-                    if (p == null || !p.isOnline())
+                    if (!player.isOnline())
                         return;
 
-                    Set<Long> allNeededChunks = chunkService.computeCircularKeys(p, baseTarget + 1);
-                    ChunkClassification classification = classifyChunks(p, allNeededChunks, borderCenterX,
+                    Set<Long> allNeededChunks = chunkService.computeCircularKeys(player, baseTarget + 1);
+                    ChunkClassification classification = classifyChunks(player, allNeededChunks, borderCenterX,
                             borderCenterZ, borderSize);
 
                     if (configService.get().performance().fakeChunks().enabled()
-                            && fakeChunkService.isFakeChunksEnabledForWorld(p.getWorld())
+                            && fakeChunkService.isFakeChunksEnabledForWorld(player.getWorld())
                             && !classification.fakeChunks.isEmpty()) {
-                        fakeChunkService.sendFakeChunks(p, classification.fakeChunks, borderCenterX, borderCenterZ,
+                        fakeChunkService.sendFakeChunks(player, classification.fakeChunks, borderCenterX, borderCenterZ,
                                 borderSize);
                     }
                 });

@@ -3,12 +3,9 @@ package me.mapacheee.extendedhorizons.viewdistance.service;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 
 import org.bukkit.entity.Player;
-import org.bukkit.plugin.Plugin;
-import org.bukkit.plugin.java.JavaPlugin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import me.mapacheee.extendedhorizons.viewdistance.service.nms.NMSChunkAccess;
@@ -28,7 +25,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PacketService {
 
     private static final Logger logger = LoggerFactory.getLogger(PacketService.class);
-    private final Plugin plugin = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
 
     private final Map<UUID, Integer> lastSentChunkRadius = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> lastSentSimulationDistance = new ConcurrentHashMap<>();
@@ -108,7 +104,7 @@ public class PacketService {
             return future;
         }
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        player.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (task) -> {
             try {
                 Object nmsChunk = nmsChunkAccess.getNMSChunk(chunk);
                 if (nmsChunk == null) {
@@ -130,7 +126,7 @@ public class PacketService {
                 }
                 future.complete(null);
             }
-        });
+        }, null);
 
         return future;
     }
@@ -145,7 +141,7 @@ public class PacketService {
 
         CompletableFuture<Integer> result = new CompletableFuture<>();
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        player.getScheduler().run(ExtendedHorizonsPlugin.getInstance(), (task) -> {
             int sent = 0;
 
             for (Chunk chunk : chunks) {
@@ -173,7 +169,7 @@ public class PacketService {
             }
 
             result.complete(sent);
-        });
+        }, null);
 
         return result;
     }

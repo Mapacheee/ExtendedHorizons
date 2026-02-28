@@ -44,11 +44,7 @@ public record MainConfig(
                 public record FakeChunksConfig(
                                 boolean enabled,
                                 @Setting("max-cached-packets") int maxCachedPackets,
-                                @Setting("use-compression") boolean useCompression,
-                                @Setting("cache-cleanup-interval") int cacheCleanupInterval,
-                                @Setting("enable-memory-cache") boolean enableMemoryCache,
-                                @Setting("max-memory-cache-size") int maxMemoryCacheSize,
-                                @Setting("packet-cache-ttl-seconds") int packetCacheTtlSeconds,
+                                @Setting("block-change-invalidation") boolean blockChangeInvalidation,
                                 @Setting("anti-xray") AntiXrayConfig antiXray) {
 
                         @ConfigSerializable
@@ -99,7 +95,6 @@ public record MainConfig(
                         @Setting("max-fake-chunks-per-tick") int maxFakeChunksPerTick,
                         @Setting("max-bandwidth-per-player") int maxBandwidthPerPlayer,
                         @Setting("adaptive-rate-limiting") boolean adaptiveRateLimiting,
-                        @Setting("measure-actual-packet-size") boolean measureActualPacketSize,
                         @Setting("estimated-packet-size") int estimatedPacketSize) {
         }
 }

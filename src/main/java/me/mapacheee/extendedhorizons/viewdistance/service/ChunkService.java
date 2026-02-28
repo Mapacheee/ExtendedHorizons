@@ -18,6 +18,7 @@ import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.concurrent.TimeUnit;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -91,10 +92,10 @@ public class ChunkService {
                         })
                         .thenCompose(ignored2 -> {
                             CompletableFuture<Void> delay = new CompletableFuture<>();
-                            Bukkit.getScheduler().runTaskLater(
+                            Bukkit.getAsyncScheduler().runDelayed(
                                     plugin,
-                                    () -> delay.complete(null),
-                                    2L);
+                                    (task) -> delay.complete(null),
+                                    100, TimeUnit.MILLISECONDS);
                             return delay;
                         });
             });

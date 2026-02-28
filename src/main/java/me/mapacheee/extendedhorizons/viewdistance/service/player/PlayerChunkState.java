@@ -17,6 +17,7 @@ import java.util.Deque;
  */
 public class PlayerChunkState {
 
+    private static final int MAX_PENDING_PACKETS = 100;
     private final UUID playerId;
 
     // === Chunk Tracking ===
@@ -181,6 +182,16 @@ public class PlayerChunkState {
 
     public Deque<Object> getPendingPackets() {
         return pendingPackets;
+    }
+
+    /**
+     * Adds a packet to the pending queue, dropping the oldest if the cap is exceeded.
+     */
+    public void addPendingPacket(Object packet) {
+        pendingPackets.addLast(packet);
+        while (pendingPackets.size() > MAX_PENDING_PACKETS) {
+            pendingPackets.pollFirst();
+        }
     }
 
     // --- Bandwidth Tracking ---

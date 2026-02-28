@@ -37,13 +37,11 @@ performance:
 
   # Delay in milliseconds before loading fake chunks after teleport
   # Gives the server time to load real chunks first
-  # During this period + 2 seconds, chunk loading is boosted 3-4x for faster loading
   teleport-warmup-delay: 10
 
   # MSPT (Milliseconds Per Tick) should be ~50ms normally (20 TPS)
   # If MSPT > this value, the server is lagging and chunk loading pauses
   # Recommended: 40-50 for most servers, 0 to disable protection
-  # Note: On Folia, uses TPS-based calculation as fallback
   max-mspt-for-loading: 40.0
 
   # Async Task Throttling: Limits concurrent chunk loading
@@ -58,23 +56,13 @@ performance:
   fake-chunks:
     enabled: true
 
-    # RAM Cache for processed packets (faster resending)
+    # Packet cache for serialized chunk data (faster resending)
     # Higher = more RAM usage, faster chunk resending
     max-cached-packets: 2000
 
-    # Memory cache for NMS chunk objects (reuses loaded chunks)
-    # Recommended: true for small servers, false for large servers or low RAM
-    enable-memory-cache: true
-    max-memory-cache-size: 500
-
-    # Interval (in seconds) to clean up old packets from the memory cache
-    cache-cleanup-interval: 300
-
-    # How long to keep a packet in memory before it is evicted (in seconds)
-    packet-cache-ttl-seconds: 600
-
-    # Compress packets before saving to disk (slower but smaller files)
-    use-compression: false
+    # Invalidate fake chunk cache when blocks change (fixes ghost blocks)
+    # Disable on servers with heavy WorldEdit usage for better performance
+    block-change-invalidation: true
 
     # Anti-Xray for fake chunks
     # True: Ores hidden in distance, higher CPU usage
@@ -109,12 +97,6 @@ bandwidth-saver:
 
   # Reduce packet rate for high-ping players
   adaptive-rate-limiting: true
-
-  # Custom bandwidth limits assignable via permission
-  # Permission: extendedhorizons.bandwidth.<profile_name>
-  bandwidth-profiles:
-    vip: 20000
-    slow: 50
 
   # Estimated chunk packet size in bytes (used for bandwidth calculations)
   estimated-packet-size: 50000

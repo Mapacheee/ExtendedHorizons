@@ -45,11 +45,8 @@ public class ChunkLoaderService {
     private final NMSPacketAccess nmsPacketAccess;
     private final Map<Long, Long> generatingChunks = new ConcurrentHashMap<>();
     private final ExecutorService chunkProcessor;
-    private final Map<ChunkCacheKey, Object> chunkMemoryCache;
     private final Map<ChunkCacheKey, byte[]> packetCache;
 
-    private final AtomicLong memoryCacheHits = new AtomicLong(0);
-    private final AtomicLong memoryCacheMisses = new AtomicLong(0);
     private final AtomicLong diskLoads = new AtomicLong(0);
     private final AtomicLong chunkGenerations = new AtomicLong(0);
 
@@ -75,16 +72,10 @@ public class ChunkLoaderService {
         this.maxGenerationsPerTick = 1;
         this.maxDiskLoadsPerTick = 20;
 
-        int configuredCacheSize = configService.get().performance().fakeChunks().maxMemoryCacheSize();
-        final int maxCacheSize = (configuredCacheSize <= 0) ? 500 : Math.min(500, configuredCacheSize);
-
-        this.chunkMemoryCache = Collections.synchronizedMap(
-                new LinkedHashMap<ChunkCacheKey, Object>(16, 0.75f, true) {
-                    @Override
-                    protected boolean removeEldestEntry(Map.Entry<ChunkCacheKey, Object> eldest) {
-                        return size() > maxCacheSize;
-                    }
-                });
+        int configuredThreads = configService.get().performance().chunkProcessorThreads();
+        int threadCount = configuredThreads > 0
+                ? Math.min(configuredThreads, 8)
+                : Math.min(4, Runtime.getRuntime().availableProcessors());
 
         int maxPacketCacheSize = configService.get().performance().fakeChunks().maxCachedPackets();
         if (maxPacketCacheSize <= 0 || maxPacketCacheSize > 2000) {
@@ -99,11 +90,6 @@ public class ChunkLoaderService {
                         return size() > finalPacketCacheSize;
                     }
                 });
-
-        int configuredThreads = configService.get().performance().chunkProcessorThreads();
-        int threadCount = configuredThreads > 0
-                ? Math.min(configuredThreads, 8)
-                : Math.min(4, Runtime.getRuntime().availableProcessors());
 
         this.chunkProcessor = Executors.newFixedThreadPool(
                 threadCount,
@@ -526,76 +512,52 @@ public class ChunkLoaderService {
 
     public Map<String, Long> getStats() {
         Map<String, Long> stats = new LinkedHashMap<>();
-        stats.put("memory_hits", memoryCacheHits.get());
-        stats.put("memory_misses", memoryCacheMisses.get());
         stats.put("disk_loads", diskLoads.get());
         stats.put("generations", chunkGenerations.get());
+        stats.put("packet_cache_size", (long) packetCache.size());
         return stats;
     }
 
     public void shutdown() {
         chunkProcessor.shutdown();
-        chunkMemoryCache.clear();
-    }
-
-    public void clearMemoryCache() {
-        chunkMemoryCache.clear();
         packetCache.clear();
     }
 
-    public void invalidateRamCache(UUID worldId, int chunkX, int chunkZ) {
+    public void clearPacketCache() {
+        packetCache.clear();
+    }
+
+    /**
+     * Invalidates a cached packet for a specific chunk.
+     * Called when blocks change in that chunk.
+     */
+    public void invalidatePacketCache(UUID worldId, int chunkX, int chunkZ) {
         long chunkKey = ChunkUtils.packChunkKey(chunkX, chunkZ);
         ChunkCacheKey key = new ChunkCacheKey(worldId, chunkKey);
         packetCache.remove(key);
 
         if (DEBUG) {
-            logger.info("[EH] Invalidated cache for {},{}", chunkX, chunkZ);
+            logger.info("[EH] Invalidated packet cache for {},{}", chunkX, chunkZ);
         }
     }
 
-    public int getMemoryCacheSize() {
-        return chunkMemoryCache.size();
-    }
-
-    public void invalidateChunk(UUID worldId, long chunkKey) {
-        ChunkCacheKey key = new ChunkCacheKey(worldId, chunkKey);
-        if (chunkMemoryCache.containsKey(key)) {
-            chunkMemoryCache.remove(key);
-            if (DEBUG) {
-                int x = ChunkUtils.unpackX(chunkKey);
-                int z = ChunkUtils.unpackZ(chunkKey);
-                logger.info("[EH] Invalidated cache for chunk {},{}", x, z);
-            }
-        }
-    }
-
-    public void invalidateWorld(UUID worldId) {
-        int initialSize = chunkMemoryCache.size();
-        synchronized (chunkMemoryCache) {
-            chunkMemoryCache.keySet().removeIf(key -> key.worldId().equals(worldId));
-        }
-        int removed = initialSize - chunkMemoryCache.size();
-        if (removed > 0) {
-            logger.info("[EH] Invalidated {} chunks for world {}", removed, worldId);
-        }
+    public int getPacketCacheSize() {
+        return packetCache.size();
     }
 
     public double getCacheHitRate() {
-        long hits = memoryCacheHits.get();
-        long misses = memoryCacheMisses.get();
-        long total = hits + misses;
-
-        if (total == 0) {
-            return 0.0;
-        }
-
-        return (hits * 100.0) / total;
+        // Packet cache doesn't track hit/miss yet
+        return 0.0;
     }
 
     public double getEstimatedMemoryUsageMB() {
-        int cacheSize = chunkMemoryCache.size();
-        double estimatedBytes = cacheSize * 50_000.0;
-        return estimatedBytes / (1024.0 * 1024.0);
+        long totalBytes = 0;
+        synchronized (packetCache) {
+            for (byte[] data : packetCache.values()) {
+                totalBytes += data.length;
+            }
+        }
+        return totalBytes / (1024.0 * 1024.0);
     }
 
     public record ChunkCacheKey(UUID worldId, long chunkKey) {

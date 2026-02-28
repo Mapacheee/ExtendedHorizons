@@ -3,10 +3,12 @@ package me.mapacheee.extendedhorizons.api;
 import com.google.inject.Inject;
 import me.mapacheee.extendedhorizons.api.event.FakeChunkBatchLoadEvent.ChunkCoordinate;
 import me.mapacheee.extendedhorizons.shared.utils.ChunkUtils;
+import me.mapacheee.extendedhorizons.viewdistance.service.ChunkLoaderService;
 import me.mapacheee.extendedhorizons.viewdistance.service.FakeChunkService;
 import me.mapacheee.extendedhorizons.viewdistance.service.ViewDistanceService;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collections;
@@ -22,12 +24,15 @@ public class ExtendedHorizonsAPIImpl implements ExtendedHorizonsAPI {
 
     private final FakeChunkService fakeChunkService;
     private final ViewDistanceService viewDistanceService;
+    private final ChunkLoaderService chunkLoaderService;
 
     @Inject
     public ExtendedHorizonsAPIImpl(FakeChunkService fakeChunkService,
-            ViewDistanceService viewDistanceService) {
+            ViewDistanceService viewDistanceService,
+            ChunkLoaderService chunkLoaderService) {
         this.fakeChunkService = fakeChunkService;
         this.viewDistanceService = viewDistanceService;
+        this.chunkLoaderService = chunkLoaderService;
     }
 
     @Override
@@ -65,29 +70,29 @@ public class ExtendedHorizonsAPIImpl implements ExtendedHorizonsAPI {
     public void refreshFakeChunks(@NotNull Player player) {
         fakeChunkService.clearPlayerFakeChunks(player, true);
 
-        Bukkit.getScheduler().runTaskLater(
-                me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin.getInstance(),
-                () -> {
+        player.getScheduler().runDelayed(
+                ExtendedHorizonsPlugin.getInstance(),
+                (task) -> {
                     if (player.isOnline()) {
                         viewDistanceService.updatePlayerView(player);
                     }
                 },
-                5L);
+                null, 5L);
     }
 
     @Override
     public int getCacheSize() {
-        return fakeChunkService.getCacheSize();
+        return chunkLoaderService.getPacketCacheSize();
     }
 
     @Override
     public double getCacheHitRate() {
-        return fakeChunkService.getCacheHitRate();
+        return chunkLoaderService.getCacheHitRate();
     }
 
     @Override
     public double getEstimatedMemoryUsageMB() {
-        return fakeChunkService.getEstimatedMemoryUsageMB();
+        return chunkLoaderService.getEstimatedMemoryUsageMB();
     }
 
     @Override
