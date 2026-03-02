@@ -159,8 +159,8 @@ public class BlockChangeListener implements Listener {
         }
         invalidationCooldown.put(chunkKey, now);
 
-        if (invalidationCooldown.size() > 5000) {
-            invalidationCooldown.entrySet().removeIf(e -> (now - e.getValue()) > COOLDOWN_MS * 10);
+        if (invalidationCooldown.size() > 1000) {
+            invalidationCooldown.entrySet().removeIf(e -> (now - e.getValue()) > COOLDOWN_MS * 4);
         }
 
         chunkLoaderService.invalidatePacketCache(worldId, chunkX, chunkZ);

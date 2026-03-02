@@ -78,8 +78,8 @@ public class ChunkLoaderService {
                 : Math.min(4, Runtime.getRuntime().availableProcessors());
 
         int maxPacketCacheSize = configService.get().performance().fakeChunks().maxCachedPackets();
-        if (maxPacketCacheSize <= 0 || maxPacketCacheSize > 2000) {
-            maxPacketCacheSize = 1000;
+        if (maxPacketCacheSize <= 0 || maxPacketCacheSize > 1000) {
+            maxPacketCacheSize = 500;
         }
         final int finalPacketCacheSize = maxPacketCacheSize;
 

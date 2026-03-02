@@ -138,20 +138,25 @@ public class ViewDistanceService {
      * Handles the logic when a player quits the server.
      */
     public void handlePlayerQuit(Player player) {
-        PlayerView playerView = playerViews.remove(player.getUniqueId());
+        UUID playerId = player.getUniqueId();
+        PlayerView playerView = playerViews.remove(playerId);
         if (playerView != null) {
             storageService.savePlayerData(new PlayerData(
-                    player.getUniqueId(), playerView.getPreferredDistance()));
+                    playerId, playerView.getPreferredDistance()));
         }
 
-        fakeChunkService.clearPlayerFakeChunks(player, true,
+        fakeChunkService.cleanupPlayer(player, true,
                 FakeChunkUnloadEvent.UnloadReason.PLAYER_QUIT);
         packetService.cleanupPlayer(player);
-        movementListener.cleanupPlayer(player.getUniqueId());
+        movementListener.cleanupPlayer(playerId);
 
         if (luckPermsService != null && luckPermsService.isEnabled()) {
-            luckPermsService.cleanupPlayer(player.getUniqueId());
+            luckPermsService.cleanupPlayer(playerId);
         }
+
+        // IMPORTANT: Final cleanup of the player state to avoid memory leaks
+        ExtendedHorizonsPlugin.getService(me.mapacheee.extendedhorizons.viewdistance.service.player.PlayerStateManager.class)
+                .remove(playerId);
     }
 
     /**
