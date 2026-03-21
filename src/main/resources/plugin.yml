@@ -1,7 +1,7 @@
 name: ExtendedHorizons
 version: ${version}
 main: me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin
-api-version: '1.21'
+api-version: '1.20'
 folia-supported: true
 description: ${description}
 author: Mapacheee
