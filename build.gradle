@@ -144,25 +144,3 @@ checkstyle {
     configFile = file('checkstyle.xml')
     ignoreFailures = true
 }
-
-task checkLevelVisibility {
-    doLast {
-        def loader = new URLClassLoader(sourceSets.main.compileClasspath.files.collect { it.toURI().toURL() } as URL[], getClass().classLoader)
-        try {
-            def cls = loader.loadClass("net.minecraft.world.level.Level")
-            println "Level constructors:"
-            cls.getDeclaredConstructors().each { c ->
-                println c.toString()
-            }
-        } catch (Exception e) {
-            println "Error loading Level: " + e.message
-        }
-        
-        try {
-            def cls = loader.loadClass("net.minecraft.core.particles.ExplosionParticleInfo")
-            println "ExplosionParticleInfo visibility: " + java.lang.reflect.Modifier.toString(cls.getModifiers())
-        } catch (Exception e) {
-             println "Error loading ExplosionParticleInfo: " + e.message
-        }
-    }
-}
