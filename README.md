@@ -12,7 +12,6 @@
 
 ## Dependencies
 - [PacketEvents](https://github.com/retrooper/packetevents)
-- [LuckPerms](https://luckperms.net/) *(optional)*
 - [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) *(optional)*
 
 ---
@@ -26,7 +25,6 @@
 ---
 ## Messages
 - All texts are in **messages.yml**, with MiniMessage support.
-- The welcome message is controlled by `messages.welcome-message.enabled` in **config.yml**, and its text is in **messages.yml**.
 
 ---
 
@@ -35,28 +33,21 @@ Alias base: `/eh` (also: `extendedhorizons`, `horizons`, `viewdistance`, `vd`)
 
 | Command | Description | Permission |
 |----------|--------------|-------------|
-| `/eh help` | General help | `extendedhorizons.use` |
-| `/eh info` | Plugin information and your current distance | `extendedhorizons.use` |
-| `/eh view` | Shows your current distance | `extendedhorizons.use` |
-| `/eh setme <distance>` | Sets your distance | `extendedhorizons.use` |
-| `/eh reset` | Resets your distance to default | `extendedhorizons.use` |
-| `/eh check <player>` | Checks another player's distance | `extendedhorizons.admin` |
-| `/eh setplayer <player> <distance>` | Sets another player's distance | `extendedhorizons.admin` |
-| `/eh resetplayer <player>` | Resets another player's distance | `extendedhorizons.admin` |
+| `/eh setme <distance>` | Sets your own preferred distance | `extendedhorizons.use` |
+| `/eh set <player> <distance>` | Sets another player's preferred distance | `extendedhorizons.admin` |
 | `/eh reload` | Reloads settings | `extendedhorizons.admin` |
-| `/eh stats` | Displays statistics | `extendedhorizons.admin` |
 
 ---
 
 ## Permissions
 - `extendedhorizons.use` — player commands
 - `extendedhorizons.admin` — admin commands
-- `extendedhorizons.bypass.limits` — ignores boundaries when setting distances
-- `extendedhorizons.max.<distance>` — set max distance for a player
+- `extendedhorizons.max.<distance>` — max distance allowed for `/eh setme`
 
-### LuckPerms Integration
-If `integrations.luckperms.enabled` is true, the plugin will check limits per group/player.  
-You can combine it with `use-group-permissions` and your group policies.
+### Dynamic max distance (`/eh setme`)
+- If a player has one or more `extendedhorizons.max.<number>` permissions, that value is used as their `/eh setme` max.
+- If multiple values exist, the highest numeric value is used.
+- If the player has no `extendedhorizons.max.<number>`, the plugin uses the default max from `fake-chunks.target-view-distance`.
 
 ---
 
@@ -64,38 +55,6 @@ You can combine it with `use-group-permissions` and your group policies.
 - `%extendedhorizons_view_distance%` — current effective distance
 
 ---
-
-## API for Developers
-
-ExtendedHorizons provides a comprehensive API for other plugins to interact with fake chunks.
-
-### Documentation
-- **[Full API Documentation](API-USAGE.md)** - Complete guide with examples
-- **[Example Plugin](examples/)** - Working example showing all API features
-
-### Quick Example
-```java
-// Access the API
-ExtendedHorizonsAPI api = ExtendedHorizonsPlugin.getService(ExtendedHorizonsAPI.class);
-
-// Check if player is looking at a fake chunk
-int chunkX = player.getLocation().getBlockX() >> 4;
-int chunkZ = player.getLocation().getBlockZ() >> 4;
-if (api.isFakeChunk(player, chunkX, chunkZ)) {
-    player.sendMessage("You're in a fake chunk!");
-}
-
-// Get all fake chunks for a player
-Set<ChunkCoordinate> chunks = api.getFakeChunksForPlayer(player);
-player.sendMessage("Loaded: " + chunks.size() + " fake chunks");
-```
-
-### Available Events
-- `FakeChunkLoadEvent` - When a fake chunk is loaded (cancellable)
-- `FakeChunkUnloadEvent` - When a fake chunk is unloaded
-- `FakeChunkBatchLoadEvent` - When multiple chunks are loaded at once
-
-See **[API-USAGE.md](API-USAGE.md)** for complete documentation.
 
 ---
 # Support

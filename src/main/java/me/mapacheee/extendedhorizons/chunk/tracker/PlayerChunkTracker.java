@@ -24,10 +24,6 @@ public class PlayerChunkTracker {
         this.lastChunkZ = chunkZ;
     }
 
-    public boolean isChunkSent(int chunkX, int chunkZ) {
-        return sentChunks.contains(ChunkPos.asLong(chunkX, chunkZ));
-    }
-
     public void markChunkSent(int chunkX, int chunkZ) {
         sentChunks.add(ChunkPos.asLong(chunkX, chunkZ));
     }
@@ -38,9 +34,5 @@ public class PlayerChunkTracker {
 
     public Set<Long> getSentChunks() {
         return Collections.unmodifiableSet(sentChunks);
-    }
-    
-    public void clear() {
-        sentChunks.clear();
     }
 }

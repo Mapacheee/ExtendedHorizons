@@ -1,0 +1,42 @@
+# Enables or disables [EH] debug logs in console.
+debug:
+  enabled: false
+
+# Fake chunk system settings.
+fake-chunks:
+  # Maximum target distance the plugin will advertise/send.
+  # This is also capped by the client-reported view distance.
+  target-view-distance: 32
+  # Maximum fake chunks dispatched per cycle per player.
+  max-send-per-cycle: 25
+  # Maximum concurrent fake-chunk sends per player.
+  max-inflight-per-player: 16
+  # Interval (ms) to recompute the full missing-chunk plan.
+  force-plan-interval-ms: 3000
+  keepalive:
+    # Initial delay of the global keepalive loop on enable.
+    initial-delay-ticks: 20
+    # Period of the global loop that drains queues and maintains state.
+    period-ticks: 10
+  warmup:
+    # Single warmup trigger delay after join/teleport.
+    delay-ticks: 5
+  cache:
+    # Cached fake chunk packet lifetime.
+    ttl-seconds: 15
+    # Maximum chunk packets stored in cache.
+    max-entries: 1500
+    # Temporary cache bypass after real-player interaction in a chunk.
+    bypass-after-real-interaction-ms: 3000
+  # Internal safe-square factor (0.65 = 65% of server view distance).
+  # Fake chunks are not forced inside this area.
+  safe-square-factor: 0.65
+
+# PacketEvents hook settings.
+packet-interceptor:
+  # Upper cap of the distance advertised to clients.
+  max-target-distance: 32
+  # Minimum player lived ticks before intercepting packets.
+  min-player-ticks-lived: 40
+  # Extra chunk margin used to cancel UNLOAD_CHUNK packets.
+  unload-margin-chunks: 1

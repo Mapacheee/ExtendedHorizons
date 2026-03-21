@@ -1,31 +1,42 @@
 package me.mapacheee.extendedhorizons.chunk;
 
 import com.google.inject.Inject;
-import com.google.inject.Provider;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import me.mapacheee.extendedhorizons.chunk.io.RegionFileService;
-import me.mapacheee.extendedhorizons.chunk.pipeline.ChunkPipelineService;
+import me.mapacheee.extendedhorizons.chunk.cache.ChunkPacketCacheService;
 import me.mapacheee.extendedhorizons.chunk.tracker.PlayerChunkTracker;
+import me.mapacheee.extendedhorizons.config.Config;
 import me.mapacheee.extendedhorizons.viewdistance.ClientViewDistanceService;
+import me.mapacheee.extendedhorizons.viewdistance.PlayerDistancePreferenceService;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.ClientboundSetSimulationDistancePacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.craftbukkit.CraftChunk;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
@@ -43,10 +54,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class FakeChunkService {
 
     private static final Logger logger = LoggerFactory.getLogger(FakeChunkService.class);
-    private final Provider<RegionFileService> regionFileServiceProvider;
-    private static final boolean DEBUG = Boolean.parseBoolean(System.getProperty("extendedhorizons.debug", "true"));
-    private final Provider<ChunkPipelineService> chunkPipelineServiceProvider;
+    private final Container<Config> configContainer;
     private final ClientViewDistanceService clientViewDistanceService;
+    private final PlayerDistancePreferenceService playerDistancePreferenceService;
+    private final ChunkPacketCacheService chunkPacketCacheService;
     private final Map<UUID, PlayerChunkTracker> trackers = new ConcurrentHashMap<>();
     private final AtomicBoolean enabled = new AtomicBoolean(false);
     private volatile ScheduledTask keepAliveTask;
@@ -56,21 +67,32 @@ public class FakeChunkService {
     private final Map<UUID, Set<Long>> inflightKeys = new ConcurrentHashMap<>();
     private final Map<String, Long> lastDebugLogMs = new ConcurrentHashMap<>();
     private final Map<String, Long> counters = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> lastSentRadius = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> lastSentSimulationDistance = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastForcedPlanMs = new ConcurrentHashMap<>();
+    private final Map<UUID, UUID> lastKnownWorldId = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> sessionEpoch = new ConcurrentHashMap<>();
+    private final AtomicLong chunkLoadSamples = new AtomicLong();
+    private final AtomicLong chunkLoadTotalMs = new AtomicLong();
+    private final AtomicLong chunkLoadOver100Ms = new AtomicLong();
     
-    private static final int FAKE_VIEW_DISTANCE = 32;
-    private static final int MAX_SEND_PER_CYCLE = 25;
-    private static final int MAX_INFLIGHT_PER_PLAYER = 16;
-
     @Inject
-    public FakeChunkService(Provider<RegionFileService> regionFileServiceProvider, Provider<ChunkPipelineService> chunkPipelineServiceProvider, ClientViewDistanceService clientViewDistanceService) {
-        this.regionFileServiceProvider = regionFileServiceProvider;
-        this.chunkPipelineServiceProvider = chunkPipelineServiceProvider;
+    public FakeChunkService(
+            Container<Config> configContainer,
+            ClientViewDistanceService clientViewDistanceService,
+            PlayerDistancePreferenceService playerDistancePreferenceService,
+            ChunkPacketCacheService chunkPacketCacheService
+    ) {
+        this.configContainer = configContainer;
         this.clientViewDistanceService = clientViewDistanceService;
+        this.playerDistancePreferenceService = playerDistancePreferenceService;
+        this.chunkPacketCacheService = chunkPacketCacheService;
     }
 
     @OnEnable
     public void onEnable() {
         enabled.set(true);
+        chunkPacketCacheService.rebuildCaches();
         for (Player player : Bukkit.getOnlinePlayers()) {
             trackers.put(player.getUniqueId(), new PlayerChunkTracker());
             ensureClientCacheRadius(player);
@@ -94,13 +116,24 @@ public class FakeChunkService {
                                 if (!player.isOnline()) return;
                                 int chunkX = player.getLocation().getBlockX() >> 4;
                                 int chunkZ = player.getLocation().getBlockZ() >> 4;
+                                UUID playerId = player.getUniqueId();
+                                World world = player.getWorld();
+                                lastKnownWorldId.putIfAbsent(playerId, world.getUID());
+
                                 sendPacket(player, new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
 
-                                UUID playerId = player.getUniqueId();
+                                PlayerChunkTracker tracker = trackers.get(playerId);
+                                if (tracker != null) {
+                                    long now = System.currentTimeMillis();
+                                    Long lastPlan = lastForcedPlanMs.get(playerId);
+                                    if (lastPlan == null || now - lastPlan >= config().forcePlanIntervalMs()) {
+                                        updatePlayerChunks(player, playerId, world, chunkX, chunkZ, true);
+                                        lastForcedPlanMs.put(playerId, now);
+                                    }
+                                }
+
                                 Deque<Long> queue = pendingQueues.get(playerId);
                                 if (queue != null && !queue.isEmpty()) {
-                                    World world = player.getWorld();
-                                    PlayerChunkTracker tracker = trackers.get(playerId);
                                     if (tracker != null) {
                                         try {
                                             processQueue(player, world, playerId, chunkX, chunkZ, tracker);
@@ -112,8 +145,8 @@ public class FakeChunkService {
                             });
                         }
                     },
-                    20L,
-                    10L
+                    config().keepAliveInitialDelayTicks(),
+                    config().keepAlivePeriodTicks()
             );
         });
     }
@@ -133,6 +166,11 @@ public class FakeChunkService {
         queuedSets.clear();
         inflightCounts.clear();
         inflightKeys.clear();
+        lastSentRadius.clear();
+        lastSentSimulationDistance.clear();
+        lastForcedPlanMs.clear();
+        lastKnownWorldId.clear();
+        sessionEpoch.clear();
     }
 
     private void scheduleWarmup(Player player) {
@@ -149,48 +187,68 @@ public class FakeChunkService {
                 int chunkZ = player.getLocation().getBlockZ() >> 4;
                 sendPacket(player, new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
                 updatePlayerChunks(player, player.getUniqueId(), player.getWorld(), chunkX, chunkZ, true);
-            }, null, 5L);
-
-            player.getScheduler().runDelayed(plugin, task -> {
-                if (!enabled.get()) return;
-                if (!player.isOnline()) return;
-                ensureClientCacheRadius(player);
-                int chunkX = player.getLocation().getBlockX() >> 4;
-                int chunkZ = player.getLocation().getBlockZ() >> 4;
-                sendPacket(player, new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
-                updatePlayerChunks(player, player.getUniqueId(), player.getWorld(), chunkX, chunkZ, true);
-            }, null, 70L);
+            }, null, config().warmupDelayTicks());
         } catch (Throwable ignored) {
         }
     }
 
     public void handleJoin(Player player) {
-        trackers.put(player.getUniqueId(), new PlayerChunkTracker());
+        UUID playerId = player.getUniqueId();
+        bumpSessionEpoch(playerId);
+        trackers.put(playerId, new PlayerChunkTracker());
+        lastKnownWorldId.put(playerId, player.getWorld().getUID());
         ensureClientCacheRadius(player);
         handleMove(player);
         scheduleWarmup(player);
-        debug(player.getUniqueId(), "join", "[EH] join world=" + player.getWorld().getName());
+        debug(playerId, "join", "[EH] join world=" + player.getWorld().getName());
     }
 
     public void handleQuit(Player player) {
-        trackers.remove(player.getUniqueId());
-        pendingQueues.remove(player.getUniqueId());
-        queuedSets.remove(player.getUniqueId());
-        inflightCounts.remove(player.getUniqueId());
-        inflightKeys.remove(player.getUniqueId());
-        debug(player.getUniqueId(), "quit", "[EH] quit");
+        UUID playerId = player.getUniqueId();
+        resetPlayerState(playerId, true);
+        lastKnownWorldId.remove(playerId);
+        cleanupPlayerDebugState(playerId);
+        debug(playerId, "quit", "[EH] quit");
     }
 
     public void handleTeleport(Player player) {
-        PlayerChunkTracker tracker = trackers.get(player.getUniqueId());
-        if (tracker != null) {
-            tracker.clear();
-            tracker.updatePosition(Integer.MAX_VALUE, Integer.MAX_VALUE);
-        }
+        UUID playerId = player.getUniqueId();
+        resetPlayerState(playerId, true);
+        lastKnownWorldId.put(playerId, player.getWorld().getUID());
         ensureClientCacheRadius(player);
         handleMove(player);
         scheduleWarmup(player);
-        debug(player.getUniqueId(), "tp", "[EH] teleport world=" + player.getWorld().getName());
+        debug(playerId, "tp", "[EH] teleport world=" + player.getWorld().getName());
+    }
+
+    public void handleRealChunkInteraction(World world, int chunkX, int chunkZ) {
+        if (world == null) return;
+        long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+        UUID worldId = world.getUID();
+        chunkPacketCacheService.invalidate(worldId, chunkKey);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (!player.isOnline()) continue;
+            if (!worldId.equals(player.getWorld().getUID())) continue;
+            UUID playerId = player.getUniqueId();
+            PlayerChunkTracker tracker = trackers.get(playerId);
+            if (tracker == null) continue;
+            if (!tracker.getSentChunks().contains(chunkKey)) continue;
+            runForPlayer(player, () -> refreshChunkForPlayer(player, world, tracker, chunkX, chunkZ, chunkKey));
+        }
+    }
+
+    public void applyDistancePreference(Player player, int distance) {
+        if (player == null) return;
+        UUID playerId = player.getUniqueId();
+        playerDistancePreferenceService.set(playerId, distance);
+        runForPlayer(player, () -> {
+            if (!enabled.get()) return;
+            if (!player.isOnline()) return;
+            ensureClientCacheRadius(player);
+            int chunkX = player.getLocation().getBlockX() >> 4;
+            int chunkZ = player.getLocation().getBlockZ() >> 4;
+            updatePlayerChunks(player, playerId, player.getWorld(), chunkX, chunkZ, true);
+        });
     }
 
     public void handleMove(Player player) {
@@ -203,6 +261,13 @@ public class FakeChunkService {
             int chunkZ = player.getLocation().getBlockZ() >> 4;
             World world = player.getWorld();
             UUID playerId = player.getUniqueId();
+            UUID worldId = world.getUID();
+            UUID lastWorldId = lastKnownWorldId.get(playerId);
+            if (lastWorldId == null || !lastWorldId.equals(worldId)) {
+                resetPlayerState(playerId, true);
+                lastKnownWorldId.put(playerId, worldId);
+                debug(playerId, "world_change", "[EH] world change detected to " + world.getName());
+            }
 
             sendPacket(player, new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
 
@@ -227,7 +292,13 @@ public class FakeChunkService {
         int viewDistance = getTargetDistance(playerId);
         int serverDistance;
         try {
-            serverDistance = Bukkit.getServer().getViewDistance();
+            int globalDistance = Bukkit.getServer().getViewDistance();
+            int playerDistance = player.getViewDistance();
+            if (playerDistance > 0) {
+                serverDistance = Math.min(globalDistance, playerDistance);
+            } else {
+                serverDistance = globalDistance;
+            }
         } catch (Throwable ignored) {
             serverDistance = 10;
         }
@@ -236,16 +307,21 @@ public class FakeChunkService {
             debug(playerId, "skip", "[EH] skip target=" + viewDistance + " server=" + serverDistance + " moved=" + moved + " force=" + force);
             return;
         }
-        
+
+        int effectiveRadius = viewDistance + 1;
+        int safeSquareRadius = (int) Math.floor(serverDistance * config().safeSquareFactor());
+        if (safeSquareRadius < 2) safeSquareRadius = 2;
+
         Set<Long> neededChunks = new HashSet<>();
 
-        for (int dx = -viewDistance; dx <= viewDistance; dx++) {
-            for (int dz = -viewDistance; dz <= viewDistance; dz++) {
+        for (int dx = -effectiveRadius; dx <= effectiveRadius; dx++) {
+            for (int dz = -effectiveRadius; dz <= effectiveRadius; dz++) {
                 int cx = chunkX + dx;
                 int cz = chunkZ + dz;
-                
-                if (Math.abs(dx) <= serverDistance && Math.abs(dz) <= serverDistance) continue;
-                if (dx * dx + dz * dz > viewDistance * viewDistance) continue;
+
+                int chebyshev = Math.max(Math.abs(dx), Math.abs(dz));
+                if (chebyshev <= safeSquareRadius) continue;
+                if (dx * dx + dz * dz > effectiveRadius * effectiveRadius) continue;
 
                 neededChunks.add(ChunkPos.asLong(cx, cz));
             }
@@ -316,53 +392,157 @@ public class FakeChunkService {
         }
 
         processQueue(player, world, playerId, chunkX, chunkZ, tracker);
-        debug(playerId, "plan", "[EH] plan moved=" + moved + " force=" + force + " pos=" + chunkX + "," + chunkZ + " target=" + viewDistance + " server=" + serverDistance + " needed=" + neededChunks.size() + " sent=" + tracker.getSentChunks().size() + " unload=" + unloaded + " kept=" + kept + " add=" + toAdd.size() + " queue=" + queue.size() + " inflight=" + inflightCounts.computeIfAbsent(playerId, k -> new AtomicInteger(0)).get());
+        debug(playerId, "plan", "[EH] plan moved=" + moved + " force=" + force + " pos=" + chunkX + "," + chunkZ + " target=" + viewDistance + " server=" + serverDistance + " safe=" + safeSquareRadius + " needed=" + neededChunks.size() + " sent=" + tracker.getSentChunks().size() + " unload=" + unloaded + " kept=" + kept + " add=" + toAdd.size() + " queue=" + queue.size() + " inflight=" + inflightCounts.computeIfAbsent(playerId, k -> new AtomicInteger(0)).get());
     }
 
     private void sendUnloadPacket(Player player, int x, int z) {
         sendPacket(player, new ClientboundForgetLevelChunkPacket(new ChunkPos(x, z)));
     }
 
-    private CompletableFuture<Boolean> sendFakeChunk(Player player, World world, int x, int z, PlayerChunkTracker tracker) {
+    private void resetPlayerState(UUID playerId, boolean resetTracker) {
+        if (playerId == null) return;
+        bumpSessionEpoch(playerId);
+        if (resetTracker) {
+            trackers.put(playerId, new PlayerChunkTracker());
+        }
+        pendingQueues.remove(playerId);
+        queuedSets.remove(playerId);
+        inflightCounts.remove(playerId);
+        inflightKeys.remove(playerId);
+        lastSentRadius.remove(playerId);
+        lastSentSimulationDistance.remove(playerId);
+        lastForcedPlanMs.remove(playerId);
+    }
+
+    private void refreshChunkForPlayer(Player player, World world, PlayerChunkTracker tracker, int chunkX, int chunkZ, long chunkKey) {
+        if (!enabled.get()) return;
+        if (player == null || !player.isOnline()) return;
+        if (world == null) return;
+        UUID playerId = player.getUniqueId();
+        tracker.markChunkUnloaded(chunkX, chunkZ);
+        sendUnloadPacket(player, chunkX, chunkZ);
+        Set<Long> inflight = inflightKeys.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
+        inflight.remove(chunkKey);
+        Set<Long> queued = queuedSets.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
+        Deque<Long> queue = pendingQueues.computeIfAbsent(playerId, k -> new ConcurrentLinkedDeque<>());
+        if (queued.add(chunkKey)) {
+            queue.addFirst(chunkKey);
+        }
+        int playerChunkX = player.getLocation().getBlockX() >> 4;
+        int playerChunkZ = player.getLocation().getBlockZ() >> 4;
+        processQueue(player, world, playerId, playerChunkX, playerChunkZ, tracker);
+    }
+
+    private CompletableFuture<Boolean> sendFakeChunk(Player player, World world, int x, int z, PlayerChunkTracker tracker, UUID expectedWorldId, long expectedEpoch) {
+        long startedNs = System.nanoTime();
         if (!enabled.get()) return CompletableFuture.completedFuture(false);
         if (player == null || !player.isOnline()) return CompletableFuture.completedFuture(false);
         if (world == null) return CompletableFuture.completedFuture(false);
-        RegionFileService regionFileService = regionFileServiceProvider.get();
-        if (!regionFileService.hasChunk(world, x, z)) {
-            inc(player.getUniqueId(), "disk_miss");
-            return CompletableFuture.completedFuture(false);
+        if (!isSessionValid(player, expectedWorldId, expectedEpoch)) return CompletableFuture.completedFuture(false);
+        long chunkKey = ChunkPos.asLong(x, z);
+        if (!chunkPacketCacheService.shouldBypass(expectedWorldId, chunkKey)) {
+            ClientboundLevelChunkWithLightPacket cached = chunkPacketCacheService.get(expectedWorldId, chunkKey);
+            if (cached != null) {
+                sendPacketForSession(player, cached, expectedWorldId, expectedEpoch);
+                if (isSessionValid(player, expectedWorldId, expectedEpoch)) {
+                    tracker.markChunkSent(x, z);
+                    inc(player.getUniqueId(), "fake_sent_cache");
+                    recordChunkLatency(startedNs);
+                    return CompletableFuture.completedFuture(true);
+                }
+            }
         }
-
-        return regionFileService.readChunkData(world, x, z).thenCompose(nbt -> {
-            if (nbt == null) {
-                inc(player.getUniqueId(), "nbt_null");
-                return java.util.concurrent.CompletableFuture.completedFuture(null);
+        return world.getChunkAtAsync(x, z, true).thenCompose(chunk -> {
+            if (!isSessionValid(player, expectedWorldId, expectedEpoch)) {
+                return CompletableFuture.completedFuture(false);
             }
-            ChunkPipelineService chunkPipelineService = chunkPipelineServiceProvider.get();
-            return chunkPipelineService.createPacket(world, x, z, nbt);
-        }).thenApply(packets -> {
-            if (packets == null || packets.chunkPacket() == null || !player.isOnline()) {
-                inc(player.getUniqueId(), "packet_null");
-                return false;
+            if (chunk == null) {
+                inc(player.getUniqueId(), "chunk_async_null");
+                return CompletableFuture.completedFuture(false);
             }
-            sendPacket(player, packets.chunkPacket());
-            if (packets.lightPacket() != null) {
-                sendPacket(player, packets.lightPacket());
-                inc(player.getUniqueId(), "light_sent");
-            } else {
-                inc(player.getUniqueId(), "light_null");
+            CompletableFuture<Boolean> future = new CompletableFuture<>();
+            boolean scheduled = runAtChunk(world, x, z, () -> {
+                if (!enabled.get() || !isSessionValid(player, expectedWorldId, expectedEpoch)) {
+                    future.complete(false);
+                    return;
+                }
+                try {
+                    ChunkAccess access = ((CraftChunk) chunk).getHandle(ChunkStatus.FULL);
+                    if (!(access instanceof LevelChunk nmsChunk)) {
+                        inc(player.getUniqueId(), "chunk_not_full");
+                        future.complete(false);
+                        return;
+                    }
+                    LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
+                    BitSet[] lightMasks = getLightMasks(nmsChunk);
+                    ClientboundLevelChunkWithLightPacket packet = new ClientboundLevelChunkWithLightPacket(
+                            nmsChunk,
+                            lightEngine,
+                            lightMasks[0],
+                            lightMasks[1],
+                            true
+                    );
+                    chunkPacketCacheService.put(expectedWorldId, chunkKey, packet);
+                    sendPacketForSession(player, packet, expectedWorldId, expectedEpoch);
+                    if (!isSessionValid(player, expectedWorldId, expectedEpoch)) {
+                        future.complete(false);
+                        return;
+                    }
+                    tracker.markChunkSent(x, z);
+                    inc(player.getUniqueId(), "fake_sent");
+                    future.complete(true);
+                } catch (Throwable t) {
+                    logger.error("Failed live-chunk packet {},{} for {}", x, z, player.getName(), t);
+                    future.complete(false);
+                }
+            });
+            if (!scheduled) {
+                future.complete(false);
             }
-            tracker.markChunkSent(x, z);
-            inc(player.getUniqueId(), "fake_sent");
-            return true;
+            return future;
         }).exceptionally(e -> {
             logger.error("Failed to send fake chunk {},{} to {}", x, z, player.getName(), e);
             return false;
-        });
+        }).whenComplete((ok, err) -> recordChunkLatency(startedNs));
+    }
+
+    private void recordChunkLatency(long startedNs) {
+        long elapsedMs = (System.nanoTime() - startedNs) / 1_000_000L;
+        chunkLoadSamples.incrementAndGet();
+        chunkLoadTotalMs.addAndGet(elapsedMs);
+        if (elapsedMs > 100L) {
+            chunkLoadOver100Ms.incrementAndGet();
+        }
+        long sample = chunkLoadSamples.get();
+        if (config().debugEnabled() && sample % 250L == 0L) {
+            long avg = sample == 0L ? 0L : chunkLoadTotalMs.get() / sample;
+            logger.info("[EH] chunkLoad avg={}ms over100ms={}/{} cacheSize={} cacheHit={} cacheMiss={}",
+                    avg,
+                    chunkLoadOver100Ms.get(),
+                    sample,
+                    chunkPacketCacheService.estimatedSize(),
+                    chunkPacketCacheService.hitCount(),
+                    chunkPacketCacheService.missCount());
+        }
+    }
+
+    private BitSet[] getLightMasks(LevelChunk chunk) {
+        LevelChunkSection[] sections = chunk.getSections();
+        int sectionCount = sections.length;
+        BitSet skyLight = new BitSet(sectionCount + 2);
+        BitSet blockLight = new BitSet(sectionCount + 2);
+        for (int i = 0; i < sectionCount; i++) {
+            LevelChunkSection section = sections[i];
+            if (section != null && !section.hasOnlyAir()) {
+                skyLight.set(i + 1);
+                blockLight.set(i + 1);
+            }
+        }
+        return new BitSet[]{skyLight, blockLight};
     }
 
     private void debug(UUID playerId, String tag, String msg) {
-        if (!DEBUG) return;
+        if (!config().debugEnabled()) return;
         if (playerId == null || tag == null || msg == null) return;
         long now = System.currentTimeMillis();
         String key = playerId + ":" + tag;
@@ -373,7 +553,7 @@ public class FakeChunkService {
     }
 
     private void inc(UUID playerId, String metric) {
-        if (!DEBUG) return;
+        if (!config().debugEnabled()) return;
         if (playerId == null || metric == null) return;
         String key = playerId + ":" + metric;
         counters.merge(key, 1L, Long::sum);
@@ -386,6 +566,8 @@ public class FakeChunkService {
     private void processQueue(Player player, World world, UUID playerId, int chunkX, int chunkZ, PlayerChunkTracker tracker) {
         if (!enabled.get()) return;
         if (player == null || !player.isOnline()) return;
+        UUID expectedWorldId = world.getUID();
+        long expectedEpoch = getSessionEpoch(playerId);
 
         Deque<Long> queue = pendingQueues.get(playerId);
         if (queue == null) return;
@@ -395,7 +577,7 @@ public class FakeChunkService {
         Set<Long> inflightSet = inflightKeys.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
 
         int sentThisCycle = 0;
-        while (sentThisCycle < MAX_SEND_PER_CYCLE && inflight.get() < MAX_INFLIGHT_PER_PLAYER) {
+        while (sentThisCycle < config().maxSendPerCycle() && inflight.get() < config().maxInflightPerPlayer()) {
             Long key = queue.pollFirst();
             if (key == null) break;
             queued.remove(key);
@@ -405,7 +587,7 @@ public class FakeChunkService {
             int cz = ChunkPos.getZ(key);
             inflightSet.add(key);
             inflight.incrementAndGet();
-            sendFakeChunk(player, world, cx, cz, tracker).whenComplete((ok, err) -> {
+            sendFakeChunk(player, world, cx, cz, tracker, expectedWorldId, expectedEpoch).whenComplete((ok, err) -> {
                 inflight.decrementAndGet();
                 inflightSet.remove(key);
             });
@@ -413,46 +595,53 @@ public class FakeChunkService {
         }
     }
 
-    public boolean shouldCancelUnload(UUID playerId, int chunkX, int chunkZ) {
-        if (playerId == null) return false;
-        long key = ChunkPos.asLong(chunkX, chunkZ);
-
-        PlayerChunkTracker tracker = trackers.get(playerId);
-        if (tracker != null && tracker.getSentChunks().contains(key)) return true;
-
-        Set<Long> queued = queuedSets.get(playerId);
-        if (queued != null && queued.contains(key)) return true;
-
-        Set<Long> inflight = inflightKeys.get(playerId);
-        return inflight != null && inflight.contains(key);
-    }
-
     private void ensureClientCacheRadius(Player player) {
         runForPlayer(player, () -> {
             if (!enabled.get()) return;
             if (!player.isOnline()) return;
-            int target = getTargetDistance(player.getUniqueId());
-            sendPacket(player, new ClientboundSetChunkCacheRadiusPacket(target));
-            sendPacket(player, new ClientboundSetSimulationDistancePacket(target));
+            UUID playerId = player.getUniqueId();
+            int desired = getTargetDistance(playerId);
             int serverDistance;
             try {
                 serverDistance = Bukkit.getServer().getViewDistance();
             } catch (Throwable ignored) {
-                serverDistance = -1;
+                serverDistance = 10;
             }
-            debug(player.getUniqueId(), "radius", "[EH] radius target=" + target + " server=" + serverDistance);
+            if (serverDistance < 2) serverDistance = 2;
+            int target = desired;
+
+            Integer lastRadius = lastSentRadius.get(playerId);
+            if (lastRadius == null || lastRadius != target) {
+                sendPacket(player, new ClientboundSetChunkCacheRadiusPacket(target));
+                lastSentRadius.put(playerId, target);
+            }
+
+            Integer lastSimulation = lastSentSimulationDistance.get(playerId);
+            if (lastSimulation == null || lastSimulation != target) {
+                sendPacket(player, new ClientboundSetSimulationDistancePacket(target));
+                lastSentSimulationDistance.put(playerId, target);
+            }
+
+            debug(playerId, "radius", "[EH] radius target=" + target + " server=" + serverDistance);
         });
     }
 
     private int getTargetDistance(UUID playerId) {
-        int target = FAKE_VIEW_DISTANCE;
+        int target = config().fakeTargetViewDistance();
         try {
-            int client = clientViewDistanceService.getOrDefault(playerId, FAKE_VIEW_DISTANCE);
-            target = Math.min(target, client);
+            int preferred = playerDistancePreferenceService.getOrDefault(
+                    playerId,
+                    clientViewDistanceService.getOrDefault(playerId, config().fakeTargetViewDistance())
+            );
+            target = Math.min(target, preferred);
         } catch (Throwable ignored) {
         }
         if (target < 2) target = 2;
         return target;
+    }
+
+    public int getAdvertisedDistance(UUID playerId) {
+        return getTargetDistance(playerId);
     }
 
     private void sendPacket(Player player, Packet<?> packet) {
@@ -467,6 +656,45 @@ public class FakeChunkService {
                 logger.error("Error sending packet to {}", player.getName(), e);
             }
         });
+    }
+
+    private void sendPacketForSession(Player player, Packet<?> packet, UUID expectedWorldId, long expectedEpoch) {
+        if (packet == null) return;
+        runForPlayer(player, () -> {
+            if (!enabled.get()) return;
+            if (!isSessionValid(player, expectedWorldId, expectedEpoch)) return;
+            try {
+                ServerPlayer serverPlayer = ((CraftPlayer) player).getHandle();
+                serverPlayer.connection.send(packet);
+            } catch (Exception e) {
+                logger.error("Error sending packet to {}", player.getName(), e);
+            }
+        });
+    }
+
+    private boolean isSessionValid(Player player, UUID expectedWorldId, long expectedEpoch) {
+        if (player == null || !player.isOnline()) return false;
+        if (expectedWorldId == null || !expectedWorldId.equals(player.getWorld().getUID())) return false;
+        UUID playerId = player.getUniqueId();
+        long currentEpoch = getSessionEpoch(playerId);
+        return currentEpoch == expectedEpoch;
+    }
+
+    private long bumpSessionEpoch(UUID playerId) {
+        if (playerId == null) return 0L;
+        return sessionEpoch.merge(playerId, 1L, Long::sum);
+    }
+
+    private long getSessionEpoch(UUID playerId) {
+        if (playerId == null) return 0L;
+        return sessionEpoch.getOrDefault(playerId, 0L);
+    }
+
+    private void cleanupPlayerDebugState(UUID playerId) {
+        if (playerId == null) return;
+        String prefix = playerId + ":";
+        lastDebugLogMs.keySet().removeIf(key -> key != null && key.startsWith(prefix));
+        counters.keySet().removeIf(key -> key != null && key.startsWith(prefix));
     }
 
     private void runForPlayer(Player player, Runnable runnable) {
@@ -487,10 +715,24 @@ public class FakeChunkService {
         try {
             Bukkit.getServer().getGlobalRegionScheduler().execute(plugin, runnable);
         } catch (Throwable ignored) {
-            try {
-                Bukkit.getServer().getGlobalRegionScheduler().execute(plugin, runnable);
-            } catch (Throwable ignored2) {
-            }
         }
+    }
+
+    private boolean runAtChunk(World world, int chunkX, int chunkZ, Runnable runnable) {
+        if (world == null || runnable == null) return false;
+        var plugin = ExtendedHorizonsPlugin.getInstance();
+        if (plugin == null || !plugin.isEnabled()) return false;
+        try {
+            Location loc = new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8);
+            Bukkit.getServer().getRegionScheduler().execute(plugin, loc, runnable);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private Config config() {
+        Config cfg = configContainer.get();
+        return cfg == null ? new Config(null, null, null) : cfg;
     }
 }

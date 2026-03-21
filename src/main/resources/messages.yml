@@ -1,0 +1,11 @@
+prefix: "<gradient:#7F5AF0:#2CB67D><bold>ExtendedHorizons</bold></gradient> <#7F5AF0>»</#7F5AF0> "
+commands:
+  reloaded: "<#2CB67D>Configuration reloaded successfully.</#2CB67D>"
+  player-only: "<#EF4565>This command can only be used by players.</#EF4565>"
+  setme-updated: "<#2CB67D>Your fake chunk distance is now <#7F5AF0>{distance}</#7F5AF0> chunks.</#2CB67D>"
+  set-updated: "<#2CB67D><#7F5AF0>{player}</#7F5AF0> fake chunk distance is now <#7F5AF0>{distance}</#7F5AF0> chunks.</#2CB67D>"
+  min-distance: "<#EF4565>Minimum allowed distance is <#7F5AF0>{distance}</#7F5AF0> chunks.</#EF4565>"
+  max-distance: "<#EF4565>Maximum allowed distance is <#7F5AF0>{distance}</#7F5AF0> chunks.</#EF4565>"
+
+general:
+  player-not-found: "<#EF4565>Player <#7F5AF0>{player}</#7F5AF0> is not online.</#EF4565>"
