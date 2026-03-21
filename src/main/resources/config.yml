@@ -1,3 +1,13 @@
+###############################################################
+#                                                             #
+#                    ExtendedHorizons                         #
+#                           V3                                #
+#                                                             #
+#     Get support here: https://discord.gg/yA3vD2S8Zj         #
+#  Source code: https://github.com/Mapacheee/ExtendedHorizons #
+# Consider donate: https://www.paypal.com/paypalme/mapachedou #
+###############################################################
+
 # Enables or disables [EH] debug logs in console.
 debug:
   enabled: false
