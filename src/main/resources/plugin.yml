@@ -7,9 +7,6 @@ description: ${description}
 author: Mapacheee
 website: https://github.com/mapacheee/extendedhorizons
 
-libraries:
- - org.xerial:sqlite-jdbc:3.51.1.0
-
 depend: [packetevents]
 softdepend: [PlaceholderAPI]
 
