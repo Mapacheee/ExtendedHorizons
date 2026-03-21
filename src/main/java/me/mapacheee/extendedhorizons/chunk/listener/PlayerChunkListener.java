@@ -46,7 +46,7 @@ public class PlayerChunkListener implements Listener {
 
     @EventHandler
     public void onTeleport(PlayerTeleportEvent event) {
-        fakeChunkService.handleTeleport(event.getPlayer());
+        fakeChunkService.handleTeleport(event.getPlayer(), event.getTo());
     }
 
     @EventHandler

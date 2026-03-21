@@ -212,13 +212,33 @@ public class FakeChunkService {
     }
 
     public void handleTeleport(Player player) {
+        handleTeleport(player, null);
+    }
+
+    public void handleTeleport(Player player, Location target) {
+        if (player == null) return;
         UUID playerId = player.getUniqueId();
         resetPlayerState(playerId, true);
-        lastKnownWorldId.put(playerId, player.getWorld().getUID());
+        World targetWorld = target == null ? player.getWorld() : target.getWorld();
+        if (targetWorld == null) targetWorld = player.getWorld();
+        lastKnownWorldId.put(playerId, targetWorld.getUID());
         ensureClientCacheRadius(player);
         handleMove(player);
+        Location finalTarget = target;
+        runForPlayerDelayed(player, () -> {
+            if (!enabled.get()) return;
+            if (!player.isOnline()) return;
+            Location base = finalTarget != null ? finalTarget : player.getLocation();
+            World world = base.getWorld();
+            if (world == null) return;
+            int chunkX = base.getBlockX() >> 4;
+            int chunkZ = base.getBlockZ() >> 4;
+            sendPacket(player, new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
+            updatePlayerChunks(player, playerId, world, chunkX, chunkZ, true);
+            world.getChunkAtAsync(chunkX, chunkZ, true);
+        }, 1L);
         scheduleWarmup(player);
-        debug(playerId, "tp", "[EH] teleport world=" + player.getWorld().getName());
+        debug(playerId, "tp", "[EH] teleport world=" + targetWorld.getName());
     }
 
     public void handleRealChunkInteraction(World world, int chunkX, int chunkZ) {
@@ -705,6 +725,18 @@ public class FakeChunkService {
             player.getScheduler().run(plugin, task -> runnable.run(), null);
         } catch (Throwable ignored) {
             debug(player.getUniqueId(), "sched_fail", "[EH] runForPlayer failed (ignored)");
+        }
+    }
+
+    private void runForPlayerDelayed(Player player, Runnable runnable, long delayTicks) {
+        if (player == null || runnable == null) return;
+        var plugin = ExtendedHorizonsPlugin.getInstance();
+        if (plugin == null || !plugin.isEnabled()) return;
+        long delay = Math.max(1L, delayTicks);
+        try {
+            player.getScheduler().runDelayed(plugin, task -> runnable.run(), null, delay);
+        } catch (Throwable ignored) {
+            debug(player.getUniqueId(), "sched_delay_fail", "[EH] runForPlayerDelayed failed (ignored)");
         }
     }
 
