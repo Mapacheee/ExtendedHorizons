@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'me.mapacheee'
-version = '2.3.4'
+version = '3.0.0'
 description = 'ExtendedHorizons - Advanced view distance extension plugin'
 
 java {
@@ -15,26 +15,19 @@ java {
 
 repositories {
     mavenCentral()
-    
-    // PaperMC
+    mavenLocal()    
     maven {
         name = 'papermc-repo'
         url = 'https://repo.papermc.io/repository/maven-public/'
     }
-    
-    // Sonatype
-    maven {
+        maven {
         name = 'sonatype'
         url = 'https://oss.sonatype.org/content/groups/public/'
     }
-    
-    // PlaceholderAPI
     maven {
         name = 'placeholderapi'
         url = 'https://repo.extendedclip.com/content/repositories/placeholderapi/'
     }
-    
-    // CodeMC
     maven {
         name = 'codemc-repo'
         url = 'https://repo.codemc.org/repository/maven-public/'
@@ -43,21 +36,9 @@ repositories {
         name = 'codemc-snapshots'
         url = 'https://repo.codemc.io/repository/maven-snapshots/'
     }
-
-    // LuckPerms
-    maven {
-        name = 'luckperms'
-        url = 'https://repo.luckperms.net/'
-    }
-
-    // EngineHub (WorldEdit)
-    maven {
-        url = 'https://maven.enginehub.org/repo/'
-    }
 }
 
 dependencies {
-    // Winter Framework
     api("com.thewinterframework:paper:1.0.4") {
         exclude group: 'io.papermc.paper', module: 'paper-api'
         exclude group: 'com.google.guava', module: 'guava'
@@ -70,7 +51,6 @@ dependencies {
     }
     annotationProcessor('com.thewinterframework:configuration:1.0.2')
     
-    // Winter Command
     api('com.thewinterframework:command:1.0.1') {
         exclude group: 'io.papermc.paper', module: 'paper-api'
         exclude group: 'org.incendo', module: 'cloud-paper'
@@ -80,27 +60,14 @@ dependencies {
     }
     annotationProcessor('com.thewinterframework:command:1.0.1')
     
-    // Cloud Command Framework
     api('org.incendo:cloud-paper:2.0.0-beta.10')
     api('org.incendo:cloud-annotations:2.0.0')
     
-    // Paper API
     paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
 
-    // PacketEvents
-    compileOnly("com.github.retrooper:packetevents-spigot:2.11.2")
-
-    // SQLite
-    compileOnly("org.xerial:sqlite-jdbc:3.51.1.0")
-
-    // PlaceholderAPI
     compileOnly("me.clip:placeholderapi:2.11.7")
-
-    // LuckPerms API
-    compileOnly("net.luckperms:api:5.4")
-
-    // WorldEdit
-    compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.3.0")
+    compileOnly("com.github.retrooper:packetevents-spigot:2.11.2")
+    implementation("com.github.ben-manes.caffeine:caffeine:3.2.3")
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -114,6 +81,7 @@ shadowJar {
         exclude(dependency('com.google.inject:.*'))
         exclude(dependency('com.thewinterframework:configuration:.*'))
         exclude(dependency('org.incendo:.*'))
+        exclude(dependency('com.github.ben-manes.caffeine:.*'))
     }
     
     relocate 'com.thewinterframework', 'me.mapacheee.extendedhorizons.libs.winter'
@@ -175,4 +143,26 @@ checkstyle {
     toolVersion = '10.12.5'
     configFile = file('checkstyle.xml')
     ignoreFailures = true
+}
+
+task checkLevelVisibility {
+    doLast {
+        def loader = new URLClassLoader(sourceSets.main.compileClasspath.files.collect { it.toURI().toURL() } as URL[], getClass().classLoader)
+        try {
+            def cls = loader.loadClass("net.minecraft.world.level.Level")
+            println "Level constructors:"
+            cls.getDeclaredConstructors().each { c ->
+                println c.toString()
+            }
+        } catch (Exception e) {
+            println "Error loading Level: " + e.message
+        }
+        
+        try {
+            def cls = loader.loadClass("net.minecraft.core.particles.ExplosionParticleInfo")
+            println "ExplosionParticleInfo visibility: " + java.lang.reflect.Modifier.toString(cls.getModifiers())
+        } catch (Exception e) {
+             println "Error loading ExplosionParticleInfo: " + e.message
+        }
+    }
 }
