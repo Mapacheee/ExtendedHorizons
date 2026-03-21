@@ -2,9 +2,9 @@ name: Build ExtendedHorizons
 
 on:
   push:
-    branches: [ "v2", "dev" ]
+    branches: [ "v3", "dev" ]
   pull_request:
-    branches: [ "v2", "dev" ]
+    branches: [ "v3", "dev" ]
   workflow_dispatch: 
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build with Gradle
-        run: ./gradlew build --no-daemon
+        run: ./gradlew shadowJar --no-daemon
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
