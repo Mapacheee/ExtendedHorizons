@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.hooks.placeholderapi;
 
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
+import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
@@ -10,10 +11,13 @@ import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class ExtendedHorizonsPlaceholderExpansion extends PlaceholderExpansion {
 
+    private static final Logger logger = LoggerFactory.getLogger(ExtendedHorizonsPlaceholderExpansion.class);
     private final FakeChunkService fakeChunkService;
 
     @Inject
@@ -24,7 +28,24 @@ public class ExtendedHorizonsPlaceholderExpansion extends PlaceholderExpansion {
     @OnEnable
     public void registerExpansion() {
         if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return;
-        this.register();
+        try {
+            if (!isRegistered()) {
+                this.register();
+            }
+        } catch (Throwable t) {
+            logger.error("Failed to register PlaceholderAPI expansion", t);
+        }
+    }
+
+    @OnDisable
+    public void unregisterExpansion() {
+        try {
+            if (isRegistered()) {
+                this.unregister();
+            }
+        } catch (Throwable t) {
+            logger.error("Failed to unregister PlaceholderAPI expansion", t);
+        }
     }
 
     @Override
@@ -51,9 +72,15 @@ public class ExtendedHorizonsPlaceholderExpansion extends PlaceholderExpansion {
 
     @Override
     public @Nullable String onRequest(OfflinePlayer player, @NotNull String params) {
-        if (player == null) return null;
-        if ("view_distance".equalsIgnoreCase(params)) {
-            return String.valueOf(fakeChunkService.getAdvertisedDistance(player.getUniqueId()));
+        try {
+            if (player == null) return null;
+            if ("view_distance".equalsIgnoreCase(params)) {
+                if (player.getUniqueId() == null) return "0";
+                return String.valueOf(fakeChunkService.getAdvertisedDistance(player.getUniqueId()));
+            }
+        } catch (Throwable t) {
+            logger.error("Placeholder request failed for params={}", params, t);
+            return "0";
         }
         return null;
     }
