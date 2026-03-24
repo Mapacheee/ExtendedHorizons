@@ -56,21 +56,15 @@ public class ViewDistancePacketInterceptor {
                 if (!player.isOnline()) return;
                 if (player.getTicksLived() < config().interceptorMinPlayerTicksLived()) return;
 
-                int targetDistance;
-                try {
-                    int client = clientViewDistanceService.get().getOrDefault(player.getUniqueId(), config().interceptorMaxTargetDistance());
-                    targetDistance = Math.min(config().interceptorMaxTargetDistance(), client);
-                } catch (Throwable ignored) {
-                    targetDistance = config().interceptorMaxTargetDistance();
-                }
-                if (targetDistance < 2) targetDistance = 2;
-                int advertisedDistance = targetDistance;
+                int maxDistance = config().interceptorMaxTargetDistance();
+                if (maxDistance < 2) maxDistance = 2;
+                int advertisedDistance = maxDistance;
                 try {
                     advertisedDistance = fakeChunkServiceProvider.get().getAdvertisedDistance(player.getUniqueId());
                 } catch (Throwable ignored) {
                 }
                 if (advertisedDistance < 2) advertisedDistance = 2;
-                if (advertisedDistance > targetDistance) advertisedDistance = targetDistance;
+                if (advertisedDistance > maxDistance) advertisedDistance = maxDistance;
                 final int effectiveTargetDistance = advertisedDistance;
 
                 if (event.getPacketType() == PacketType.Play.Server.UNLOAD_CHUNK) {

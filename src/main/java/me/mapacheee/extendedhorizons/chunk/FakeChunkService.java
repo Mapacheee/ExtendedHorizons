@@ -30,6 +30,7 @@ import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftChunk;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
+import org.bukkit.permissions.PermissionAttachmentInfo;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -649,17 +650,43 @@ public class FakeChunkService {
     }
 
     private int getTargetDistance(UUID playerId) {
-        int target = config().fakeTargetViewDistance();
+        int configuredDefault = config().fakeTargetViewDistance();
+        int target = getPermissionDistanceCap(playerId, configuredDefault);
         try {
-            int preferred = playerDistancePreferenceService.getOrDefault(
-                    playerId,
-                    clientViewDistanceService.getOrDefault(playerId, config().fakeTargetViewDistance())
-            );
+            Integer preferredValue = playerDistancePreferenceService.get(playerId);
+            int preferred;
+            if (preferredValue != null && preferredValue >= 2) {
+                preferred = preferredValue;
+            } else {
+                preferred = target;
+            }
             target = Math.min(target, preferred);
         } catch (Throwable ignored) {
         }
         if (target < 2) target = 2;
         return target;
+    }
+
+    private int getPermissionDistanceCap(UUID playerId, int fallback) {
+        if (playerId == null) return fallback;
+        Player player = Bukkit.getPlayer(playerId);
+        if (player == null || !player.isOnline()) return fallback;
+        int permissionMax = Integer.MIN_VALUE;
+        String prefix = "extendedhorizons.max.";
+        for (PermissionAttachmentInfo permissionInfo : player.getEffectivePermissions()) {
+            if (permissionInfo == null || !permissionInfo.getValue()) continue;
+            String permission = permissionInfo.getPermission();
+            if (permission == null || !permission.startsWith(prefix)) continue;
+            String rawValue = permission.substring(prefix.length());
+            try {
+                int value = Integer.parseInt(rawValue);
+                if (value >= 2 && value > permissionMax) {
+                    permissionMax = value;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return permissionMax == Integer.MIN_VALUE ? fallback : permissionMax;
     }
 
     public int getAdvertisedDistance(UUID playerId) {
