@@ -16,7 +16,6 @@ import com.thewinterframework.service.annotation.lifecycle.OnEnable;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.chunk.FakeChunkService;
 import me.mapacheee.extendedhorizons.config.Config;
-import me.mapacheee.extendedhorizons.viewdistance.ClientViewDistanceService;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.server.level.ServerPlayer;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -31,17 +30,14 @@ public class ViewDistancePacketInterceptor {
     private final java.util.concurrent.ConcurrentHashMap<String, Long> lastLogMs = new java.util.concurrent.ConcurrentHashMap<>();
 
     private PacketListenerAbstract listener;
-    private final Provider<ClientViewDistanceService> clientViewDistanceService;
     private final Provider<FakeChunkService> fakeChunkServiceProvider;
     private final Container<Config> configContainer;
 
     @Inject
     public ViewDistancePacketInterceptor(
-            Provider<ClientViewDistanceService> clientViewDistanceService,
             Provider<FakeChunkService> fakeChunkServiceProvider,
             Container<Config> configContainer
     ) {
-        this.clientViewDistanceService = clientViewDistanceService;
         this.fakeChunkServiceProvider = fakeChunkServiceProvider;
         this.configContainer = configContainer;
     }

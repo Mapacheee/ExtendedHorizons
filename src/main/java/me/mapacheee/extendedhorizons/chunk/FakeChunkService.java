@@ -9,7 +9,6 @@ import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.chunk.cache.ChunkPacketCacheService;
 import me.mapacheee.extendedhorizons.chunk.tracker.PlayerChunkTracker;
 import me.mapacheee.extendedhorizons.config.Config;
-import me.mapacheee.extendedhorizons.viewdistance.ClientViewDistanceService;
 import me.mapacheee.extendedhorizons.viewdistance.PlayerDistancePreferenceService;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
@@ -56,7 +55,6 @@ public class FakeChunkService {
 
     private static final Logger logger = LoggerFactory.getLogger(FakeChunkService.class);
     private final Container<Config> configContainer;
-    private final ClientViewDistanceService clientViewDistanceService;
     private final PlayerDistancePreferenceService playerDistancePreferenceService;
     private final ChunkPacketCacheService chunkPacketCacheService;
     private final Map<UUID, PlayerChunkTracker> trackers = new ConcurrentHashMap<>();
@@ -80,12 +78,10 @@ public class FakeChunkService {
     @Inject
     public FakeChunkService(
             Container<Config> configContainer,
-            ClientViewDistanceService clientViewDistanceService,
             PlayerDistancePreferenceService playerDistancePreferenceService,
             ChunkPacketCacheService chunkPacketCacheService
     ) {
         this.configContainer = configContainer;
-        this.clientViewDistanceService = clientViewDistanceService;
         this.playerDistancePreferenceService = playerDistancePreferenceService;
         this.chunkPacketCacheService = chunkPacketCacheService;
     }
