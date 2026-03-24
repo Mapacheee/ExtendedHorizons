@@ -105,6 +105,8 @@ public class FakeChunkService {
                 keepAliveTask = null;
             }
             var plugin = ExtendedHorizonsPlugin.getInstance();
+            int initialDelay = Math.max(1, config().keepAliveInitialDelayTicks());
+            int period = Math.max(1, config().keepAlivePeriodTicks());
             keepAliveTask = Bukkit.getServer().getGlobalRegionScheduler().runAtFixedRate(
                     plugin,
                     task -> {
@@ -145,8 +147,8 @@ public class FakeChunkService {
                             });
                         }
                     },
-                    config().keepAliveInitialDelayTicks(),
-                    config().keepAlivePeriodTicks()
+                    initialDelay,
+                    period
             );
         });
     }

@@ -33,17 +33,17 @@ public record Config(
 
     public int keepAliveInitialDelayTicks() {
         if (fakeChunks == null || fakeChunks.keepalive() == null) return 20;
-        return fakeChunks.keepalive().initialDelayTicks();
+        return Math.max(1, fakeChunks.keepalive().initialDelayTicks());
     }
 
     public int keepAlivePeriodTicks() {
         if (fakeChunks == null || fakeChunks.keepalive() == null) return 10;
-        return fakeChunks.keepalive().periodTicks();
+        return Math.max(1, fakeChunks.keepalive().periodTicks());
     }
 
     public int warmupDelayTicks() {
         if (fakeChunks == null || fakeChunks.warmup() == null) return 5;
-        return fakeChunks.warmup().delayTicks();
+        return Math.max(1, fakeChunks.warmup().delayTicks());
     }
 
     public double safeSquareFactor() {
