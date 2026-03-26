@@ -65,6 +65,21 @@ public record Config(
         return fakeChunks.cache().bypassAfterRealInteractionMs();
     }
 
+    public boolean autoRefreshEnabled() {
+        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return true;
+        return fakeChunks.liveRefresh().enabled();
+    }
+
+    public long autoRefreshPeriodMs() {
+        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 2000L;
+        return Math.max(250L, fakeChunks.liveRefresh().periodMs());
+    }
+
+    public int autoRefreshChunksPerCycle() {
+        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 1;
+        return Math.max(1, fakeChunks.liveRefresh().chunksPerCycle());
+    }
+
     public int interceptorMaxTargetDistance() {
         return packetInterceptor == null ? 32 : packetInterceptor.maxTargetDistance();
     }
@@ -90,6 +105,7 @@ public record Config(
             KeepAliveConfig keepalive,
             WarmupConfig warmup,
             CacheConfig cache,
+            @Setting("live-refresh") LiveRefreshConfig liveRefresh,
             @Setting("safe-square-factor") double safeSquareFactor
     ) {
         @ConfigSerializable
@@ -110,6 +126,14 @@ public record Config(
                 @Setting("ttl-seconds") int ttlSeconds,
                 @Setting("max-entries") int maxEntries,
                 @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs
+        ) {
+        }
+
+        @ConfigSerializable
+        public record LiveRefreshConfig(
+                boolean enabled,
+                @Setting("period-ms") long periodMs,
+                @Setting("chunks-per-cycle") int chunksPerCycle
         ) {
         }
 

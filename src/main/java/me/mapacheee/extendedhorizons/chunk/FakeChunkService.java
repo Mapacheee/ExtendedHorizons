@@ -69,6 +69,8 @@ public class FakeChunkService {
     private final Map<UUID, Integer> lastSentRadius = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> lastSentSimulationDistance = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastForcedPlanMs = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastAutoRefreshMs = new ConcurrentHashMap<>();
+    private final Map<UUID, AtomicInteger> autoRefreshCursor = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> lastKnownWorldId = new ConcurrentHashMap<>();
     private final Map<UUID, Long> sessionEpoch = new ConcurrentHashMap<>();
     private final AtomicLong chunkLoadSamples = new AtomicLong();
@@ -141,6 +143,9 @@ public class FakeChunkService {
                                         }
                                     }
                                 }
+                                if (tracker != null) {
+                                    maybeAutoRefreshSentChunks(world, playerId, tracker);
+                                }
                             });
                         }
                     },
@@ -168,6 +173,8 @@ public class FakeChunkService {
         lastSentRadius.clear();
         lastSentSimulationDistance.clear();
         lastForcedPlanMs.clear();
+        lastAutoRefreshMs.clear();
+        autoRefreshCursor.clear();
         lastKnownWorldId.clear();
         sessionEpoch.clear();
     }
@@ -431,6 +438,34 @@ public class FakeChunkService {
         lastSentRadius.remove(playerId);
         lastSentSimulationDistance.remove(playerId);
         lastForcedPlanMs.remove(playerId);
+        lastAutoRefreshMs.remove(playerId);
+        autoRefreshCursor.remove(playerId);
+    }
+
+    private void maybeAutoRefreshSentChunks(World world, UUID playerId, PlayerChunkTracker tracker) {
+        if (!config().autoRefreshEnabled()) return;
+        if (world == null || playerId == null || tracker == null) return;
+        Set<Long> sent = tracker.getSentChunks();
+        if (sent.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        long periodMs = config().autoRefreshPeriodMs();
+        Long last = lastAutoRefreshMs.get(playerId);
+        if (last != null && now - last < periodMs) return;
+
+        List<Long> sentList = new ArrayList<>(sent);
+        int size = sentList.size();
+        if (size == 0) return;
+
+        int perCycle = Math.min(config().autoRefreshChunksPerCycle(), size);
+        AtomicInteger cursor = autoRefreshCursor.computeIfAbsent(playerId, k -> new AtomicInteger(0));
+        for (int i = 0; i < perCycle; i++) {
+            int idx = Math.floorMod(cursor.getAndIncrement(), size);
+            long chunkKey = sentList.get(idx);
+            int cx = ChunkPos.getX(chunkKey);
+            int cz = ChunkPos.getZ(chunkKey);
+            handleRealChunkInteraction(world, cx, cz);
+        }
+        lastAutoRefreshMs.put(playerId, now);
     }
 
     private void refreshChunkForPlayer(Player player, World world, PlayerChunkTracker tracker, int chunkX, int chunkZ, long chunkKey) {

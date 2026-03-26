@@ -38,6 +38,13 @@ fake-chunks:
     max-entries: 1500
     # Temporary cache bypass after real-player interaction in a chunk.
     bypass-after-real-interaction-ms: 3000
+  live-refresh:
+    # Periodically refreshes already-sent fake chunks to sync edits (e.g. WorldEdit) and activity.
+    enabled: true
+    # Minimum delay between refresh cycles per player.
+    period-ms: 2000
+    # Number of sent fake chunks refreshed per cycle.
+    chunks-per-cycle: 1
   # Internal safe-square factor (0.65 = 65% of server view distance).
   # Fake chunks are not forced inside this area.
   safe-square-factor: 0.65
