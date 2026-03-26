@@ -71,6 +71,8 @@ public class FakeChunkService {
     private final Map<UUID, Long> lastForcedPlanMs = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastAutoRefreshMs = new ConcurrentHashMap<>();
     private final Map<UUID, AtomicInteger> autoRefreshCursor = new ConcurrentHashMap<>();
+    private final Map<ChunkPacketCacheService.ChunkKey, Set<UUID>> fakeChunkSubscribers = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<ChunkPacketCacheService.ChunkKey>> playerFakeChunkIndex = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> lastKnownWorldId = new ConcurrentHashMap<>();
     private final Map<UUID, Long> sessionEpoch = new ConcurrentHashMap<>();
     private final AtomicLong chunkLoadSamples = new AtomicLong();
@@ -175,6 +177,8 @@ public class FakeChunkService {
         lastForcedPlanMs.clear();
         lastAutoRefreshMs.clear();
         autoRefreshCursor.clear();
+        fakeChunkSubscribers.clear();
+        playerFakeChunkIndex.clear();
         lastKnownWorldId.clear();
         sessionEpoch.clear();
     }
@@ -252,13 +256,24 @@ public class FakeChunkService {
         long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
         UUID worldId = world.getUID();
         chunkPacketCacheService.invalidate(worldId, chunkKey);
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (!player.isOnline()) continue;
-            if (!worldId.equals(player.getWorld().getUID())) continue;
-            UUID playerId = player.getUniqueId();
+        ChunkPacketCacheService.ChunkKey key = new ChunkPacketCacheService.ChunkKey(worldId, chunkKey);
+        Set<UUID> subscribers = fakeChunkSubscribers.get(key);
+        if (subscribers == null || subscribers.isEmpty()) return;
+        for (UUID playerId : new ArrayList<>(subscribers)) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null || !player.isOnline()) {
+                removeFakeChunkSubscription(playerId, worldId, chunkKey);
+                continue;
+            }
+            if (!worldId.equals(player.getWorld().getUID())) {
+                removeFakeChunkSubscription(playerId, worldId, chunkKey);
+                continue;
+            }
             PlayerChunkTracker tracker = trackers.get(playerId);
-            if (tracker == null) continue;
-            if (!tracker.getSentChunks().contains(chunkKey)) continue;
+            if (tracker == null || !tracker.getSentChunks().contains(chunkKey)) {
+                removeFakeChunkSubscription(playerId, worldId, chunkKey);
+                continue;
+            }
             runForPlayer(player, () -> refreshChunkForPlayer(player, world, tracker, chunkX, chunkZ, chunkKey));
         }
     }
@@ -360,6 +375,7 @@ public class FakeChunkService {
                 int cx = ChunkPos.getX(chunkKey);
                 int cz = ChunkPos.getZ(chunkKey);
                 tracker.markChunkUnloaded(cx, cz);
+                removeFakeChunkSubscription(playerId, world.getUID(), chunkKey);
                 unloaded++;
             }
         }
@@ -431,6 +447,7 @@ public class FakeChunkService {
         if (resetTracker) {
             trackers.put(playerId, new PlayerChunkTracker());
         }
+        clearPlayerFakeChunkSubscriptions(playerId);
         pendingQueues.remove(playerId);
         queuedSets.remove(playerId);
         inflightCounts.remove(playerId);
@@ -440,6 +457,40 @@ public class FakeChunkService {
         lastForcedPlanMs.remove(playerId);
         lastAutoRefreshMs.remove(playerId);
         autoRefreshCursor.remove(playerId);
+    }
+
+    private void addFakeChunkSubscription(UUID playerId, UUID worldId, long chunkKey) {
+        if (playerId == null || worldId == null) return;
+        ChunkPacketCacheService.ChunkKey key = new ChunkPacketCacheService.ChunkKey(worldId, chunkKey);
+        fakeChunkSubscribers.computeIfAbsent(key, k -> ConcurrentHashMap.newKeySet()).add(playerId);
+        playerFakeChunkIndex.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet()).add(key);
+    }
+
+    private void removeFakeChunkSubscription(UUID playerId, UUID worldId, long chunkKey) {
+        if (playerId == null || worldId == null) return;
+        ChunkPacketCacheService.ChunkKey key = new ChunkPacketCacheService.ChunkKey(worldId, chunkKey);
+        Set<UUID> subscribers = fakeChunkSubscribers.get(key);
+        if (subscribers != null) {
+            subscribers.remove(playerId);
+            if (subscribers.isEmpty()) fakeChunkSubscribers.remove(key);
+        }
+        Set<ChunkPacketCacheService.ChunkKey> keys = playerFakeChunkIndex.get(playerId);
+        if (keys != null) {
+            keys.remove(key);
+            if (keys.isEmpty()) playerFakeChunkIndex.remove(playerId);
+        }
+    }
+
+    private void clearPlayerFakeChunkSubscriptions(UUID playerId) {
+        if (playerId == null) return;
+        Set<ChunkPacketCacheService.ChunkKey> keys = playerFakeChunkIndex.remove(playerId);
+        if (keys == null || keys.isEmpty()) return;
+        for (ChunkPacketCacheService.ChunkKey key : keys) {
+            Set<UUID> subscribers = fakeChunkSubscribers.get(key);
+            if (subscribers == null) continue;
+            subscribers.remove(playerId);
+            if (subscribers.isEmpty()) fakeChunkSubscribers.remove(key);
+        }
     }
 
     private void maybeAutoRefreshSentChunks(World world, UUID playerId, PlayerChunkTracker tracker) {
@@ -458,13 +509,28 @@ public class FakeChunkService {
         sentList.sort(Long::compareTo);
 
         int perCycle = Math.min(config().autoRefreshChunksPerCycle(), size);
-        AtomicInteger cursor = autoRefreshCursor.computeIfAbsent(playerId, k -> new AtomicInteger(0));
-        for (int i = 0; i < perCycle; i++) {
-            int idx = Math.floorMod(cursor.getAndIncrement(), size);
-            long chunkKey = sentList.get(idx);
+        UUID worldId = world.getUID();
+        int refreshed = 0;
+
+        for (Long chunkKey : sentList) {
+            if (refreshed >= perCycle) break;
+            if (!chunkPacketCacheService.hasRealPlayers(worldId, chunkKey)) continue;
             int cx = ChunkPos.getX(chunkKey);
             int cz = ChunkPos.getZ(chunkKey);
             handleRealChunkInteraction(world, cx, cz);
+            refreshed++;
+        }
+
+        if (refreshed < perCycle) {
+            AtomicInteger cursor = autoRefreshCursor.computeIfAbsent(playerId, k -> new AtomicInteger(0));
+            int remaining = perCycle - refreshed;
+            for (int i = 0; i < remaining; i++) {
+                int idx = Math.floorMod(cursor.getAndIncrement(), size);
+                long chunkKey = sentList.get(idx);
+                int cx = ChunkPos.getX(chunkKey);
+                int cz = ChunkPos.getZ(chunkKey);
+                handleRealChunkInteraction(world, cx, cz);
+            }
         }
         lastAutoRefreshMs.put(playerId, now);
     }
@@ -475,6 +541,7 @@ public class FakeChunkService {
         if (world == null) return;
         UUID playerId = player.getUniqueId();
         tracker.markChunkUnloaded(chunkX, chunkZ);
+        removeFakeChunkSubscription(playerId, world.getUID(), chunkKey);
         sendUnloadPacket(player, chunkX, chunkZ);
         Set<Long> inflight = inflightKeys.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
         inflight.remove(chunkKey);
@@ -501,6 +568,7 @@ public class FakeChunkService {
                 sendPacketForSession(player, cached, expectedWorldId, expectedEpoch);
                 if (isSessionValid(player, expectedWorldId, expectedEpoch)) {
                     tracker.markChunkSent(x, z);
+                    addFakeChunkSubscription(player.getUniqueId(), expectedWorldId, chunkKey);
                     inc(player.getUniqueId(), "fake_sent_cache");
                     recordChunkLatency(startedNs);
                     return CompletableFuture.completedFuture(true);
@@ -544,6 +612,7 @@ public class FakeChunkService {
                         return;
                     }
                     tracker.markChunkSent(x, z);
+                    addFakeChunkSubscription(player.getUniqueId(), expectedWorldId, chunkKey);
                     inc(player.getUniqueId(), "fake_sent");
                     future.complete(true);
                 } catch (Throwable t) {

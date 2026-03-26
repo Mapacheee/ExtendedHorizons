@@ -90,6 +90,12 @@ public class ChunkPacketCacheService {
         return players != null && !players.isEmpty();
     }
 
+    public boolean hasRealPlayers(UUID worldId, long chunkKey) {
+        if (worldId == null) return false;
+        Set<UUID> players = realPlayersByChunk.get(new ChunkKey(worldId, chunkKey));
+        return players != null && !players.isEmpty();
+    }
+
     public void onPlayerChunk(UUID playerId, UUID worldId, int chunkX, int chunkZ) {
         if (playerId == null || worldId == null) return;
         ChunkKey newKey = new ChunkKey(worldId, ChunkPos.asLong(chunkX, chunkZ));
