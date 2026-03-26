@@ -73,6 +73,7 @@ public class FakeChunkService {
     private final Map<UUID, AtomicInteger> autoRefreshCursor = new ConcurrentHashMap<>();
     private final Map<ChunkPacketCacheService.ChunkKey, Set<UUID>> fakeChunkSubscribers = new ConcurrentHashMap<>();
     private final Map<UUID, Set<ChunkPacketCacheService.ChunkKey>> playerFakeChunkIndex = new ConcurrentHashMap<>();
+    private final Map<ChunkPacketCacheService.ChunkKey, Long> dirtyFakeChunks = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> lastKnownWorldId = new ConcurrentHashMap<>();
     private final Map<UUID, Long> sessionEpoch = new ConcurrentHashMap<>();
     private final AtomicLong chunkLoadSamples = new AtomicLong();
@@ -146,7 +147,7 @@ public class FakeChunkService {
                                     }
                                 }
                                 if (tracker != null) {
-                                    maybeAutoRefreshSentChunks(world, playerId, tracker);
+                                    maybeAutoRefreshSentChunks(player, world, playerId, tracker);
                                 }
                             });
                         }
@@ -179,6 +180,7 @@ public class FakeChunkService {
         autoRefreshCursor.clear();
         fakeChunkSubscribers.clear();
         playerFakeChunkIndex.clear();
+        dirtyFakeChunks.clear();
         lastKnownWorldId.clear();
         sessionEpoch.clear();
     }
@@ -255,11 +257,26 @@ public class FakeChunkService {
         if (world == null) return;
         long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
         UUID worldId = world.getUID();
-        chunkPacketCacheService.invalidate(worldId, chunkKey);
         ChunkPacketCacheService.ChunkKey key = new ChunkPacketCacheService.ChunkKey(worldId, chunkKey);
+        dirtyFakeChunks.put(key, System.currentTimeMillis());
+        chunkPacketCacheService.invalidate(worldId, chunkKey);
+        Set<UUID> targets = new HashSet<>();
         Set<UUID> subscribers = fakeChunkSubscribers.get(key);
-        if (subscribers == null || subscribers.isEmpty()) return;
-        for (UUID playerId : new ArrayList<>(subscribers)) {
+        if (subscribers != null && !subscribers.isEmpty()) {
+            targets.addAll(new ArrayList<>(subscribers));
+        }
+
+        for (Map.Entry<UUID, PlayerChunkTracker> entry : trackers.entrySet()) {
+            UUID playerId = entry.getKey();
+            PlayerChunkTracker tracker = entry.getValue();
+            if (tracker == null) continue;
+            if (!tracker.getSentChunks().contains(chunkKey)) continue;
+            targets.add(playerId);
+            addFakeChunkSubscription(playerId, worldId, chunkKey);
+        }
+
+        if (targets.isEmpty()) return;
+        for (UUID playerId : targets) {
             Player player = Bukkit.getPlayer(playerId);
             if (player == null || !player.isOnline()) {
                 removeFakeChunkSubscription(playerId, worldId, chunkKey);
@@ -493,9 +510,9 @@ public class FakeChunkService {
         }
     }
 
-    private void maybeAutoRefreshSentChunks(World world, UUID playerId, PlayerChunkTracker tracker) {
+    private void maybeAutoRefreshSentChunks(Player player, World world, UUID playerId, PlayerChunkTracker tracker) {
         if (!config().autoRefreshEnabled()) return;
-        if (world == null || playerId == null || tracker == null) return;
+        if (player == null || world == null || playerId == null || tracker == null) return;
         Set<Long> sent = tracker.getSentChunks();
         if (sent.isEmpty()) return;
         long now = System.currentTimeMillis();
@@ -511,13 +528,29 @@ public class FakeChunkService {
         int perCycle = Math.min(config().autoRefreshChunksPerCycle(), size);
         UUID worldId = world.getUID();
         int refreshed = 0;
+        long dirtyTtlMs = Math.max(3000L, periodMs * 10L);
+
+        for (Long chunkKey : sentList) {
+            if (refreshed >= perCycle) break;
+            ChunkPacketCacheService.ChunkKey key = new ChunkPacketCacheService.ChunkKey(worldId, chunkKey);
+            Long dirtySince = dirtyFakeChunks.get(key);
+            if (dirtySince == null) continue;
+            if (now - dirtySince > dirtyTtlMs) {
+                dirtyFakeChunks.remove(key);
+                continue;
+            }
+            int cx = ChunkPos.getX(chunkKey);
+            int cz = ChunkPos.getZ(chunkKey);
+            refreshChunkForPlayer(player, world, tracker, cx, cz, chunkKey);
+            refreshed++;
+        }
 
         for (Long chunkKey : sentList) {
             if (refreshed >= perCycle) break;
             if (!chunkPacketCacheService.hasRealPlayers(worldId, chunkKey)) continue;
             int cx = ChunkPos.getX(chunkKey);
             int cz = ChunkPos.getZ(chunkKey);
-            handleRealChunkInteraction(world, cx, cz);
+            refreshChunkForPlayer(player, world, tracker, cx, cz, chunkKey);
             refreshed++;
         }
 
@@ -541,7 +574,6 @@ public class FakeChunkService {
         if (world == null) return;
         UUID playerId = player.getUniqueId();
         tracker.markChunkUnloaded(chunkX, chunkZ);
-        removeFakeChunkSubscription(playerId, world.getUID(), chunkKey);
         sendUnloadPacket(player, chunkX, chunkZ);
         Set<Long> inflight = inflightKeys.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
         inflight.remove(chunkKey);
