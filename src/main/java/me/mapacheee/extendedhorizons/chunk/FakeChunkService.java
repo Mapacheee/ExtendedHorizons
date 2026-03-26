@@ -455,6 +455,7 @@ public class FakeChunkService {
         List<Long> sentList = new ArrayList<>(sent);
         int size = sentList.size();
         if (size == 0) return;
+        sentList.sort(Long::compareTo);
 
         int perCycle = Math.min(config().autoRefreshChunksPerCycle(), size);
         AtomicInteger cursor = autoRefreshCursor.computeIfAbsent(playerId, k -> new AtomicInteger(0));

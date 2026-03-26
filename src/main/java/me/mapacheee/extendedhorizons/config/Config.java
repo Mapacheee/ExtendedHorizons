@@ -71,12 +71,12 @@ public record Config(
     }
 
     public long autoRefreshPeriodMs() {
-        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 2000L;
+        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 1000L;
         return Math.max(250L, fakeChunks.liveRefresh().periodMs());
     }
 
     public int autoRefreshChunksPerCycle() {
-        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 1;
+        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 4;
         return Math.max(1, fakeChunks.liveRefresh().chunksPerCycle());
     }
 
