@@ -40,6 +40,7 @@ public class PlayerChunkListener implements Listener {
 
     @EventHandler
     public void onMove(PlayerMoveEvent event) {
+        if (event.getTo() == null || event.getFrom() == null) return;
         if (event.getTo().getChunk().equals(event.getFrom().getChunk())) return;
         fakeChunkService.handleMove(event.getPlayer());
     }

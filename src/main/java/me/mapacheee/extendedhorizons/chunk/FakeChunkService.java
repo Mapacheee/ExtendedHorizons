@@ -275,7 +275,11 @@ public class FakeChunkService {
             addFakeChunkSubscription(playerId, worldId, chunkKey);
         }
 
-        if (targets.isEmpty()) return;
+        if (targets.isEmpty()) {
+            dirtyFakeChunks.remove(key);
+            return;
+        }
+        
         for (UUID playerId : targets) {
             Player player = Bukkit.getPlayer(playerId);
             if (player == null || !player.isOnline()) {
