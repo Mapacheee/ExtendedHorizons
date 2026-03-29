@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.chunk;
 
 import com.thewinterframework.configurate.Container;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -70,12 +71,12 @@ public class FakeChunkRefreshLoopService {
     List<Long> sentList = new ArrayList<>(sent);
     int size = sentList.size();
     if (size == 0) return;
-    sentList.sort(Long::compareTo);
 
     int perCycle = Math.min(config().autoRefreshChunksPerCycle(), size);
     UUID worldId = world.getUID();
     int refreshed = 0;
     long dirtyTtlMs = Math.max(3000L, periodMs * 10L);
+    Set<Long> refreshedKeys = new HashSet<>();
 
     for (Long chunkKey : sentList) {
       if (refreshed >= perCycle) break;
@@ -88,24 +89,30 @@ public class FakeChunkRefreshLoopService {
       int cx = ChunkPos.getX(chunkKey);
       int cz = ChunkPos.getZ(chunkKey);
       actions.refreshChunkForPlayer(player, world, tracker, cx, cz, chunkKey);
+      refreshedKeys.add(chunkKey);
       refreshed++;
     }
 
     for (Long chunkKey : sentList) {
       if (refreshed >= perCycle) break;
+      if (refreshedKeys.contains(chunkKey)) continue;
       if (!chunkPacketCacheService.hasRealPlayers(worldId, chunkKey)) continue;
       int cx = ChunkPos.getX(chunkKey);
       int cz = ChunkPos.getZ(chunkKey);
       actions.refreshChunkForPlayer(player, world, tracker, cx, cz, chunkKey);
+      refreshedKeys.add(chunkKey);
       refreshed++;
     }
 
-    if (refreshed < perCycle) {
+    boolean fallbackEnabled = config().autoRefreshInvalidateFallbackEnabled();
+    int fallbackCap = config().autoRefreshInvalidateFallbackMaxPerCycle();
+    if (fallbackEnabled && fallbackCap > 0 && refreshed < perCycle) {
       AtomicInteger cursor = autoRefreshCursor.computeIfAbsent(playerId, k -> new AtomicInteger(0));
-      int remaining = perCycle - refreshed;
+      int remaining = Math.min(perCycle - refreshed, fallbackCap);
       for (int i = 0; i < remaining; i++) {
         int idx = Math.floorMod(cursor.getAndIncrement(), size);
         long chunkKey = sentList.get(idx);
+        if (refreshedKeys.contains(chunkKey)) continue;
         int cx = ChunkPos.getX(chunkKey);
         int cz = ChunkPos.getZ(chunkKey);
         actions.handleRealChunkInteraction(world, cx, cz);

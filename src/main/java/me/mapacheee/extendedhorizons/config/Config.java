@@ -85,6 +85,11 @@ public record Config(
     return fakeChunks.cache().bypassAfterRealInteractionMs();
   }
 
+  public boolean cacheBypassWhenRealPlayers() {
+    if (fakeChunks == null || fakeChunks.cache() == null) return false;
+    return fakeChunks.cache().bypassWhenRealPlayers();
+  }
+
   public boolean autoRefreshEnabled() {
     if (fakeChunks == null || fakeChunks.liveRefresh() == null) return true;
     return fakeChunks.liveRefresh().enabled();
@@ -98,6 +103,21 @@ public record Config(
   public int autoRefreshChunksPerCycle() {
     if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 4;
     return Math.max(1, fakeChunks.liveRefresh().chunksPerCycle());
+  }
+
+  public boolean autoRefreshInvalidateFallbackEnabled() {
+    if (fakeChunks == null || fakeChunks.liveRefresh() == null) return false;
+    return fakeChunks.liveRefresh().invalidateFallbackEnabled();
+  }
+
+  public int autoRefreshInvalidateFallbackMaxPerCycle() {
+    if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 1;
+    return Math.max(0, fakeChunks.liveRefresh().invalidateFallbackMaxPerCycle());
+  }
+
+  public long autoRefreshMinInvalidateIntervalMs() {
+    if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 250L;
+    return Math.max(0L, fakeChunks.liveRefresh().minInvalidateIntervalMs());
   }
 
   public int interceptorMaxTargetDistance() {
@@ -157,14 +177,18 @@ public record Config(
     public record CacheConfig(
         @Setting("ttl-seconds") int ttlSeconds,
         @Setting("max-entries") int maxEntries,
-        @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs
+        @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs,
+        @Setting("bypass-when-real-players") boolean bypassWhenRealPlayers
     ) {}
 
     @ConfigSerializable
     public record LiveRefreshConfig(
         boolean enabled,
         @Setting("period-ms") long periodMs,
-        @Setting("chunks-per-cycle") int chunksPerCycle
+        @Setting("chunks-per-cycle") int chunksPerCycle,
+        @Setting("invalidate-fallback-enabled") boolean invalidateFallbackEnabled,
+        @Setting("invalidate-fallback-max-per-cycle") int invalidateFallbackMaxPerCycle,
+        @Setting("min-invalidate-interval-ms") long minInvalidateIntervalMs
     ) {}
   }
 

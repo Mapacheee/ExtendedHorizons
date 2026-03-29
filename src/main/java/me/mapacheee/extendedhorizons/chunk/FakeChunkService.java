@@ -282,6 +282,12 @@ public class FakeChunkService {
     if (world == null) return;
     long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
     UUID worldId = world.getUID();
+    long now = System.currentTimeMillis();
+    Long previousDirty = refreshCoordinator.getDirtySince(worldId, chunkKey);
+    long minInvalidateIntervalMs = config().autoRefreshMinInvalidateIntervalMs();
+    if (previousDirty != null && now - previousDirty < minInvalidateIntervalMs) {
+      return;
+    }
     refreshCoordinator.markDirty(worldId, chunkKey);
     chunkPacketCacheService.invalidate(worldId, chunkKey);
     Set<UUID> targets = refreshCoordinator.collectTargets(worldId, chunkKey, trackers);
@@ -506,11 +512,13 @@ public class FakeChunkService {
     if (player == null || !player.isOnline()) return;
     if (world == null) return;
     UUID playerId = player.getUniqueId();
+    Set<Long> queued = queuedSets.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
+    if (queued.contains(chunkKey)) return;
+    Set<Long> inflight = inflightKeys.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
+    if (inflight.contains(chunkKey)) return;
     tracker.markChunkUnloaded(chunkX, chunkZ);
     sendUnloadPacket(player, chunkX, chunkZ);
-    Set<Long> inflight = inflightKeys.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
     inflight.remove(chunkKey);
-    Set<Long> queued = queuedSets.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
     Deque<Long> queue = pendingQueues.computeIfAbsent(playerId, k -> new ConcurrentLinkedDeque<>());
     if (queued.add(chunkKey)) {
       queue.addFirst(chunkKey);

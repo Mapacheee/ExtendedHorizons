@@ -1,12 +1,12 @@
-###############################################################
-#                                                             #
-#                    ExtendedHorizons                         #
-#                           V3                                #
-#                                                             #
-#     Get support here: https://discord.gg/yA3vD2S8Zj         #
-#  Source code: https://github.com/Mapacheee/ExtendedHorizons #
-# Consider donate: https://www.paypal.com/paypalme/mapachedou #
-###############################################################
+#################################################################
+#                                                               #
+#                    ExtendedHorizons                           #
+#                           V3                                  #
+#                                                               #
+#      Get support here: https://discord.gg/yA3vD2S8Zj          #
+#   Source code: https://github.com/Mapacheee/ExtendedHorizons  #
+#  Consider donate: https://www.paypal.com/paypalme/mapachedou  #
+#################################################################
 
 # Enables or disables [EH] debug logs in console.
 debug:
@@ -38,6 +38,8 @@ fake-chunks:
     max-entries: 1500
     # Temporary cache bypass after real-player interaction in a chunk.
     bypass-after-real-interaction-ms: 3000
+    # If true, cache is bypassed whenever real players are inside that chunk.
+    bypass-when-real-players: false
   live-refresh:
     # Periodically refreshes already-sent fake chunks to sync edits (e.g. WorldEdit) and activity.
     enabled: true
@@ -45,6 +47,13 @@ fake-chunks:
     period-ms: 1000
     # Number of sent fake chunks refreshed per cycle.
     chunks-per-cycle: 4
+    # Fallback that force-invalidates chunks when there is no dirty/activity evidence.
+    # Keep this disabled for best CPU usage (enabling may increase packet build cost).
+    invalidate-fallback-enabled: false
+    # Max chunks force-invalidated by fallback when enabled.
+    invalidate-fallback-max-per-cycle: 1
+    # Debounce for repeated invalidations of the same chunk.
+    min-invalidate-interval-ms: 250
   # Internal safe-square factor (0.65 = 65% of server view distance).
   # Fake chunks are not forced inside this area.
   safe-square-factor: 0.65

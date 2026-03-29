@@ -89,6 +89,7 @@ public class ChunkPacketCacheService {
     if (worldId == null) return true;
     ChunkKey key = new ChunkKey(worldId, chunkKey);
     if (Boolean.TRUE.equals(bypassCache.getIfPresent(key))) return true;
+    if (!config().cacheBypassWhenRealPlayers()) return false;
     Set<UUID> players = realPlayersByChunk.get(key);
     return players != null && !players.isEmpty();
   }
