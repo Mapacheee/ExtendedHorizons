@@ -58,13 +58,33 @@ fake-chunks:
   # Fake chunks are not forced inside this area.
   safe-square-factor: 0.65
 
+# Per-world overrides.
+# - World names are case-insensitive.
+# - Any world not listed here uses global fake-chunks defaults:
+#   enable-fakechunks=true and target-distance=fake-chunks.target-view-distance.
 world-settings:
   world:
+    # Enables fake chunks in this world.
     enable-fakechunks: true
+    # Target fake distance only for this world.
     target-distance: 32
   world_nether:
     enable-fakechunks: false
     target-distance: 16
+
+# Far player sync in fake-chunk range (players only).
+# This mirrors remote players outside vanilla tracking distance.
+far-players:
+  # Master toggle for far-player rendering.
+  enabled: true
+  # Max distance (in chunks) where remote players can be mirrored.
+  max-distance-chunks: 32
+  # Sync loop period in ticks (lower = smoother, higher CPU/network usage).
+  update-interval-ticks: 4
+  # Maximum new mirrored players spawned per viewer per tick.
+  spawn-burst-per-tick: 10
+  # Hard cap of mirrored players shown simultaneously per viewer.
+  max-synced-per-viewer: 40
 
 # PacketEvents hook settings.
 packet-interceptor:

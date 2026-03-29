@@ -11,10 +11,11 @@ public record Config(
     DebugConfig debug,
     @Setting("fake-chunks") FakeChunksConfig fakeChunks,
     @Setting("packet-interceptor") PacketInterceptorConfig packetInterceptor,
-    @Setting("world-settings") Map<String, WorldSettingsConfig> worldSettings
+    @Setting("world-settings") Map<String, WorldSettingsConfig> worldSettings,
+    @Setting("far-players") FarPlayersConfig farPlayers
 ) {
   public static Config empty() {
-    return new Config(null, null, null, null);
+    return new Config(null, null, null, null, null);
   }
 
   public boolean debugEnabled() {
@@ -132,6 +133,30 @@ public record Config(
     return packetInterceptor == null ? 1 : packetInterceptor.unloadMarginChunks();
   }
 
+  public boolean farPlayersEnabled() {
+    return farPlayers != null && farPlayers.enabled();
+  }
+
+  public int farPlayersMaxDistanceChunks() {
+    if (farPlayers == null) return 32;
+    return Math.max(2, farPlayers.maxDistanceChunks());
+  }
+
+  public int farPlayersUpdateIntervalTicks() {
+    if (farPlayers == null) return 4;
+    return Math.max(1, farPlayers.updateIntervalTicks());
+  }
+
+  public int farPlayersSpawnBurstPerTick() {
+    if (farPlayers == null) return 10;
+    return Math.max(1, farPlayers.spawnBurstPerTick());
+  }
+
+  public int farPlayersMaxSyncedPerViewer() {
+    if (farPlayers == null) return 40;
+    return Math.max(1, farPlayers.maxSyncedPerViewer());
+  }
+
   private WorldSettingsConfig worldConfig(String worldName) {
     if (worldSettings == null || worldSettings.isEmpty() || worldName == null || worldName.isBlank()) {
       return null;
@@ -203,5 +228,14 @@ public record Config(
   public record WorldSettingsConfig(
       @Setting("enable-fakechunks") boolean enableFakechunks,
       @Setting("target-distance") int targetDistance
+  ) {}
+
+  @ConfigSerializable
+  public record FarPlayersConfig(
+      boolean enabled,
+      @Setting("max-distance-chunks") int maxDistanceChunks,
+      @Setting("update-interval-ticks") int updateIntervalTicks,
+      @Setting("spawn-burst-per-tick") int spawnBurstPerTick,
+      @Setting("max-synced-per-viewer") int maxSyncedPerViewer
   ) {}
 }
