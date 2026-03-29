@@ -176,6 +176,6 @@ public class ViewDistancePacketInterceptor {
 
   private Config config() {
     Config cfg = configContainer.get();
-    return cfg == null ? new Config(null, null, null) : cfg;
+    return cfg == null ? Config.empty() : cfg;
   }
 }

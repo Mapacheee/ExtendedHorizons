@@ -363,12 +363,16 @@ public class FakeChunkService {
 
     PlayerChunkTracker tracker = trackers.get(playerId);
     if (tracker == null) return;
+    if (!isFakeChunksEnabled(world)) {
+      disableFakeChunksForPlayer(player, playerId, world, tracker);
+      return;
+    }
 
     boolean moved = tracker.hasMovedChunk(chunkX, chunkZ);
     if (!moved && !force) return;
     if (moved) tracker.updatePosition(chunkX, chunkZ);
 
-    int viewDistance = getTargetDistance(playerId);
+    int viewDistance = getTargetDistance(player);
     int serverDistance;
     try {
       int globalDistance = Bukkit.getServer().getViewDistance();
@@ -565,7 +569,7 @@ public class FakeChunkService {
           if (!enabled.get()) return;
           if (!player.isOnline()) return;
           UUID playerId = player.getUniqueId();
-          int desired = getTargetDistance(playerId);
+          int desired = getTargetDistance(player);
           int serverDistance;
           try {
             serverDistance = Bukkit.getServer().getViewDistance();
@@ -573,7 +577,7 @@ public class FakeChunkService {
             serverDistance = 10;
           }
           if (serverDistance < 2) serverDistance = 2;
-          int target = desired;
+          int target = isFakeChunksEnabled(player.getWorld()) ? desired : serverDistance;
 
           Integer lastRadius = lastSentRadius.get(playerId);
           if (lastRadius == null || lastRadius != target) {
@@ -591,8 +595,12 @@ public class FakeChunkService {
         });
   }
 
-  private int getTargetDistance(UUID playerId) {
-    int configuredDefault = config().fakeTargetViewDistance();
+  private int getTargetDistance(Player player) {
+    if (player == null) return config().fakeTargetViewDistance();
+    UUID playerId = player.getUniqueId();
+    World world = player.getWorld();
+    String worldName = world == null ? null : world.getName();
+    int configuredDefault = config().fakeTargetViewDistance(worldName);
     int target = getPermissionDistanceCap(playerId, configuredDefault);
     try {
       Integer preferredValue = playerDistancePreferenceService.get(playerId);
@@ -632,7 +640,10 @@ public class FakeChunkService {
   }
 
   public int getAdvertisedDistance(UUID playerId) {
-    return getTargetDistance(playerId);
+    if (playerId == null) return config().fakeTargetViewDistance();
+    Player player = Bukkit.getPlayer(playerId);
+    if (player == null || !player.isOnline()) return config().fakeTargetViewDistance();
+    return getTargetDistance(player);
   }
 
   private void sendPacket(Player player, Packet<?> packet) {
@@ -742,7 +753,30 @@ public class FakeChunkService {
 
   private Config config() {
     Config cfg = configContainer.get();
-    return cfg == null ? new Config(null, null, null) : cfg;
+    return cfg == null ? Config.empty() : cfg;
+  }
+
+  private boolean isFakeChunksEnabled(World world) {
+    if (world == null) return false;
+    return config().fakeChunksEnabledForWorld(world.getName());
+  }
+
+  private void disableFakeChunksForPlayer(
+      Player player, UUID playerId, World world, PlayerChunkTracker tracker) {
+    if (player == null || playerId == null || world == null || tracker == null) return;
+    Set<Long> sent = new HashSet<>(tracker.getSentChunks());
+    for (Long chunkKey : sent) {
+      int cx = ChunkPos.getX(chunkKey);
+      int cz = ChunkPos.getZ(chunkKey);
+      tracker.markChunkUnloaded(cx, cz);
+      sendUnloadPacket(player, cx, cz);
+      refreshCoordinator.removeSubscription(playerId, world.getUID(), chunkKey);
+    }
+    pendingQueues.remove(playerId);
+    queuedSets.remove(playerId);
+    inflightCounts.remove(playerId);
+    inflightKeys.remove(playerId);
+    debug(playerId, "world_disabled", "[EH] fakechunks disabled for world=" + world.getName());
   }
 
   private final class RefreshLoopActionsImpl implements FakeChunkRefreshLoopService.Actions {

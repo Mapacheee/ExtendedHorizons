@@ -49,6 +49,14 @@ fake-chunks:
   # Fake chunks are not forced inside this area.
   safe-square-factor: 0.65
 
+world-settings:
+  world:
+    enable-fakechunks: true
+    target-distance: 32
+  world_nether:
+    enable-fakechunks: false
+    target-distance: 16
+
 # PacketEvents hook settings.
 packet-interceptor:
   # Upper cap of the distance advertised to clients.

@@ -6,6 +6,7 @@ import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.ReloadServiceManager;
 import me.mapacheee.extendedhorizons.chunk.FakeChunkService;
 import me.mapacheee.extendedhorizons.config.Config;
+import me.mapacheee.extendedhorizons.config.ConfigMigrationService;
 import me.mapacheee.extendedhorizons.messages.Messages;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
@@ -21,6 +22,7 @@ public class ExtendedHorizonsCommand {
 
   private final ReloadServiceManager reloadServiceManager;
   private final FakeChunkService fakeChunkService;
+  private final ConfigMigrationService configMigrationService;
   private final Container<Config> configContainer;
   private final Messages messages;
 
@@ -28,10 +30,12 @@ public class ExtendedHorizonsCommand {
   public ExtendedHorizonsCommand(
       ReloadServiceManager reloadServiceManager,
       FakeChunkService fakeChunkService,
+      ConfigMigrationService configMigrationService,
       Container<Config> configContainer,
       Messages messages) {
     this.reloadServiceManager = reloadServiceManager;
     this.fakeChunkService = fakeChunkService;
+    this.configMigrationService = configMigrationService;
     this.configContainer = configContainer;
     this.messages = messages;
   }
@@ -39,6 +43,7 @@ public class ExtendedHorizonsCommand {
   @Command("eh|extendedhorizons|horizons|viewdistance|vd reload")
   @Permission("extendedhorizons.admin")
   public void reload(Source source) {
+    configMigrationService.syncAll();
     reloadServiceManager.reload();
     messages.sendReloaded(source.source());
   }
@@ -79,7 +84,7 @@ public class ExtendedHorizonsCommand {
     }
 
     int minDistance = getServerMinDistance(target);
-    int maxDistance = config().fakeTargetViewDistance();
+    int maxDistance = config().fakeTargetViewDistance(target.getWorld().getName());
 
     if (distance < minDistance) {
       messages.sendMinDistance(sender, minDistance);
@@ -102,7 +107,8 @@ public class ExtendedHorizonsCommand {
   }
 
   private int getSetMeMaxDistance(Player player) {
-    int defaultMax = config().fakeTargetViewDistance();
+    String worldName = player != null && player.getWorld() != null ? player.getWorld().getName() : null;
+    int defaultMax = config().fakeTargetViewDistance(worldName);
     if (player == null) return defaultMax;
     int permissionMax = Integer.MIN_VALUE;
     String prefix = "extendedhorizons.max.";
@@ -126,6 +132,6 @@ public class ExtendedHorizonsCommand {
 
   private Config config() {
     Config cfg = configContainer.get();
-    return cfg == null ? new Config(null, null, null) : cfg;
+    return cfg == null ? Config.empty() : cfg;
   }
 }
