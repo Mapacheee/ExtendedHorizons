@@ -9,8 +9,7 @@ import org.spongepowered.configurate.objectmapping.meta.Setting;
 public record Config(
         DebugConfig debug,
         @Setting("fake-chunks") FakeChunksConfig fakeChunks,
-        @Setting("packet-interceptor") PacketInterceptorConfig packetInterceptor
-) {
+        @Setting("packet-interceptor") PacketInterceptorConfig packetInterceptor) {
     public boolean debugEnabled() {
         return debug == null || debug.enabled();
     }
@@ -32,17 +31,20 @@ public record Config(
     }
 
     public int keepAliveInitialDelayTicks() {
-        if (fakeChunks == null || fakeChunks.keepalive() == null) return 20;
+        if (fakeChunks == null || fakeChunks.keepalive() == null)
+            return 20;
         return Math.max(1, fakeChunks.keepalive().initialDelayTicks());
     }
 
     public int keepAlivePeriodTicks() {
-        if (fakeChunks == null || fakeChunks.keepalive() == null) return 10;
+        if (fakeChunks == null || fakeChunks.keepalive() == null)
+            return 10;
         return Math.max(1, fakeChunks.keepalive().periodTicks());
     }
 
     public int warmupDelayTicks() {
-        if (fakeChunks == null || fakeChunks.warmup() == null) return 5;
+        if (fakeChunks == null || fakeChunks.warmup() == null)
+            return 5;
         return Math.max(1, fakeChunks.warmup().delayTicks());
     }
 
@@ -51,32 +53,38 @@ public record Config(
     }
 
     public int cacheTtlSeconds() {
-        if (fakeChunks == null || fakeChunks.cache() == null) return 15;
+        if (fakeChunks == null || fakeChunks.cache() == null)
+            return 15;
         return fakeChunks.cache().ttlSeconds();
     }
 
     public int cacheMaxEntries() {
-        if (fakeChunks == null || fakeChunks.cache() == null) return 1500;
+        if (fakeChunks == null || fakeChunks.cache() == null)
+            return 1500;
         return fakeChunks.cache().maxEntries();
     }
 
     public long cacheBypassAfterRealInteractionMs() {
-        if (fakeChunks == null || fakeChunks.cache() == null) return 3000L;
+        if (fakeChunks == null || fakeChunks.cache() == null)
+            return 3000L;
         return fakeChunks.cache().bypassAfterRealInteractionMs();
     }
 
     public boolean autoRefreshEnabled() {
-        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return true;
+        if (fakeChunks == null || fakeChunks.liveRefresh() == null)
+            return true;
         return fakeChunks.liveRefresh().enabled();
     }
 
     public long autoRefreshPeriodMs() {
-        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 1000L;
+        if (fakeChunks == null || fakeChunks.liveRefresh() == null)
+            return 1000L;
         return Math.max(250L, fakeChunks.liveRefresh().periodMs());
     }
 
     public int autoRefreshChunksPerCycle() {
-        if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 4;
+        if (fakeChunks == null || fakeChunks.liveRefresh() == null)
+            return 4;
         return Math.max(1, fakeChunks.liveRefresh().chunksPerCycle());
     }
 
@@ -106,35 +114,30 @@ public record Config(
             WarmupConfig warmup,
             CacheConfig cache,
             @Setting("live-refresh") LiveRefreshConfig liveRefresh,
-            @Setting("safe-square-factor") double safeSquareFactor
-    ) {
+            @Setting("safe-square-factor") double safeSquareFactor) {
         @ConfigSerializable
         public record KeepAliveConfig(
                 @Setting("initial-delay-ticks") int initialDelayTicks,
-                @Setting("period-ticks") int periodTicks
-        ) {
+                @Setting("period-ticks") int periodTicks) {
         }
 
         @ConfigSerializable
         public record WarmupConfig(
-                @Setting("delay-ticks") int delayTicks
-        ) {
+                @Setting("delay-ticks") int delayTicks) {
         }
 
         @ConfigSerializable
         public record CacheConfig(
                 @Setting("ttl-seconds") int ttlSeconds,
                 @Setting("max-entries") int maxEntries,
-                @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs
-        ) {
+                @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs) {
         }
 
         @ConfigSerializable
         public record LiveRefreshConfig(
                 boolean enabled,
                 @Setting("period-ms") long periodMs,
-                @Setting("chunks-per-cycle") int chunksPerCycle
-        ) {
+                @Setting("chunks-per-cycle") int chunksPerCycle) {
         }
 
     }
@@ -143,7 +146,6 @@ public record Config(
     public record PacketInterceptorConfig(
             @Setting("max-target-distance") int maxTargetDistance,
             @Setting("min-player-ticks-lived") int minPlayerTicksLived,
-            @Setting("unload-margin-chunks") int unloadMarginChunks
-    ) {
+            @Setting("unload-margin-chunks") int unloadMarginChunks) {
     }
 }

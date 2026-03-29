@@ -17,71 +17,72 @@ import org.slf4j.LoggerFactory;
 @Service
 public class ExtendedHorizonsPlaceholderExpansion extends PlaceholderExpansion {
 
-    private static final Logger logger = LoggerFactory.getLogger(ExtendedHorizonsPlaceholderExpansion.class);
-    private final FakeChunkService fakeChunkService;
+  private static final Logger LOGGER =
+      LoggerFactory.getLogger(ExtendedHorizonsPlaceholderExpansion.class);
+  private final FakeChunkService fakeChunkService;
 
-    @Inject
-    public ExtendedHorizonsPlaceholderExpansion(FakeChunkService fakeChunkService) {
-        this.fakeChunkService = fakeChunkService;
-    }
+  @Inject
+  public ExtendedHorizonsPlaceholderExpansion(FakeChunkService fakeChunkService) {
+    this.fakeChunkService = fakeChunkService;
+  }
 
-    @OnEnable
-    public void registerExpansion() {
-        if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return;
-        try {
-            if (!isRegistered()) {
-                this.register();
-            }
-        } catch (Throwable t) {
-            logger.error("Failed to register PlaceholderAPI expansion", t);
-        }
+  @OnEnable
+  public void registerExpansion() {
+    if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return;
+    try {
+      if (!isRegistered()) {
+        this.register();
+      }
+    } catch (Throwable t) {
+      LOGGER.error("Failed to register PlaceholderAPI expansion", t);
     }
+  }
 
-    @OnDisable
-    public void unregisterExpansion() {
-        try {
-            if (isRegistered()) {
-                this.unregister();
-            }
-        } catch (Throwable t) {
-            logger.error("Failed to unregister PlaceholderAPI expansion", t);
-        }
+  @OnDisable
+  public void unregisterExpansion() {
+    try {
+      if (isRegistered()) {
+        this.unregister();
+      }
+    } catch (Throwable t) {
+      LOGGER.error("Failed to unregister PlaceholderAPI expansion", t);
     }
+  }
 
-    @Override
-    public @NotNull String getIdentifier() {
-        return "extendedhorizons";
-    }
+  @Override
+  public @NotNull String getIdentifier() {
+    return "extendedhorizons";
+  }
 
-    @Override
-    public @NotNull String getAuthor() {
-        return "Mapacheee";
-    }
+  @Override
+  public @NotNull String getAuthor() {
+    return "Mapacheee";
+  }
 
-    @Override
-    public @NotNull String getVersion() {
-        ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
-        if (plugin == null) return "unknown";
-        return plugin.getPluginMeta().getVersion();
-    }
+  @Override
+  public @NotNull String getVersion() {
+    ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
+    if (plugin == null) return "unknown";
+    return plugin.getPluginMeta().getVersion();
+  }
 
-    @Override
-    public boolean persist() {
-        return true;
-    }
+  @Override
+  public boolean persist() {
+    return true;
+  }
 
-    @Override
-    public @Nullable String onRequest(OfflinePlayer player, @NotNull String params) {
-        try {
-            if (player == null) return null;
-            if ("view_distance".equalsIgnoreCase(params)) {
-                if (player.getUniqueId() == null) return "0";
-                return String.valueOf(fakeChunkService.getAdvertisedDistance(player.getUniqueId()));
-            }
-        } catch (Throwable t) {
-            logger.error("Placeholder request failed for params={}", params, t);
-            return "0";
-        }
-        return null;
+  @Override
+  public @Nullable String onRequest(OfflinePlayer player, @NotNull String params) {
+    try {
+      if (player == null) return null;
+      if ("view_distance".equalsIgnoreCase(params)) {
+        if (player.getUniqueId() == null) return "0";
+        return String.valueOf(fakeChunkService.getAdvertisedDistance(player.getUniqueId()));
+      }
+    } catch (Throwable t) {
+      LOGGER.error("Placeholder request failed for params={}", params, t);
+      return "0";
     }
+    return null;
+  }
 }

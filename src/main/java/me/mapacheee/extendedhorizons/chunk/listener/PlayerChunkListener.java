@@ -18,40 +18,42 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 @ListenerComponent
 public class PlayerChunkListener implements Listener {
 
-    private final FakeChunkService fakeChunkService;
-    private final PlayerDistancePreferenceService playerDistancePreferenceService;
+  private final FakeChunkService fakeChunkService;
+  private final PlayerDistancePreferenceService playerDistancePreferenceService;
 
-    @Inject
-    public PlayerChunkListener(FakeChunkService fakeChunkService, PlayerDistancePreferenceService playerDistancePreferenceService) {
-        this.fakeChunkService = fakeChunkService;
-        this.playerDistancePreferenceService = playerDistancePreferenceService;
-    }
+  @Inject
+  public PlayerChunkListener(
+      FakeChunkService fakeChunkService,
+      PlayerDistancePreferenceService playerDistancePreferenceService) {
+    this.fakeChunkService = fakeChunkService;
+    this.playerDistancePreferenceService = playerDistancePreferenceService;
+  }
 
-    @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
-        fakeChunkService.handleJoin(event.getPlayer());
-    }
+  @EventHandler
+  public void onJoin(PlayerJoinEvent event) {
+    fakeChunkService.handleJoin(event.getPlayer());
+  }
 
-    @EventHandler
-    public void onQuit(PlayerQuitEvent event) {
-        playerDistancePreferenceService.remove(event.getPlayer().getUniqueId());
-        fakeChunkService.handleQuit(event.getPlayer());
-    }
+  @EventHandler
+  public void onQuit(PlayerQuitEvent event) {
+    playerDistancePreferenceService.remove(event.getPlayer().getUniqueId());
+    fakeChunkService.handleQuit(event.getPlayer());
+  }
 
-    @EventHandler
-    public void onMove(PlayerMoveEvent event) {
-        if (event.getTo() == null || event.getFrom() == null) return;
-        if (event.getTo().getChunk().equals(event.getFrom().getChunk())) return;
-        fakeChunkService.handleMove(event.getPlayer());
-    }
+  @EventHandler
+  public void onMove(PlayerMoveEvent event) {
+    if (event.getTo() == null || event.getFrom() == null) return;
+    if (event.getTo().getChunk().equals(event.getFrom().getChunk())) return;
+    fakeChunkService.handleMove(event.getPlayer());
+  }
 
-    @EventHandler
-    public void onTeleport(PlayerTeleportEvent event) {
-        fakeChunkService.handleTeleport(event.getPlayer(), event.getTo());
-    }
+  @EventHandler
+  public void onTeleport(PlayerTeleportEvent event) {
+    fakeChunkService.handleTeleport(event.getPlayer(), event.getTo());
+  }
 
-    @EventHandler
-    public void onChangedWorld(PlayerChangedWorldEvent event) {
-        fakeChunkService.handleTeleport(event.getPlayer());
-    }
+  @EventHandler
+  public void onChangedWorld(PlayerChangedWorldEvent event) {
+    fakeChunkService.handleTeleport(event.getPlayer());
+  }
 }
