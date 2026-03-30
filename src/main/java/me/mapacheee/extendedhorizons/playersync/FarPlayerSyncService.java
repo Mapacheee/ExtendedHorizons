@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,6 +19,7 @@ import me.mapacheee.extendedhorizons.config.Config;
 import me.mapacheee.extendedhorizons.playersync.packet.FarPlayerPacketAdapter;
 import me.mapacheee.extendedhorizons.playersync.packet.FarPlayerPacketAdapterFactory;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -90,6 +92,11 @@ public class FarPlayerSyncService {
     int maxSyncedPerViewer = config().farPlayersMaxSyncedPerViewer();
     int spawnBurstPerTick = config().farPlayersSpawnBurstPerTick();
     int globalView = Math.max(2, Bukkit.getServer().getViewDistance());
+    boolean respectVanish = config().farPlayersRespectVanish();
+    boolean disableInSpectator = config().farPlayersDisableInSpectator();
+    boolean requireViewerPermission = config().farPlayersRequireViewerPermission();
+    String viewerPermissionNode = config().farPlayersViewerPermissionNode();
+    boolean allowMountSync = config().farPlayersAllowMountSync();
 
     List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
     Set<UUID> onlineIds = new HashSet<>();
@@ -112,11 +119,29 @@ public class FarPlayerSyncService {
         mirrors.clear();
         continue;
       }
+      if (isViewerBlocked(
+          viewer,
+          viewerWorld,
+          disableInSpectator,
+          requireViewerPermission,
+          viewerPermissionNode)) {
+        for (MirrorState state : new ArrayList<>(mirrors.values())) {
+          if (state.mountMirror() != null) {
+            packetAdapter.clearMount(viewer, state.mountMirror());
+          }
+          packetAdapter.despawn(viewer, state.targetId(), state.entityId());
+        }
+        shownByViewer.remove(viewerId);
+        continue;
+      }
 
       for (Player target : online) {
         if (target == null || !target.isOnline()) continue;
         if (target.getUniqueId().equals(viewerId)) continue;
         if (target.getWorld() == null || !target.getWorld().getUID().equals(viewerWorld.getUID())) {
+          continue;
+        }
+        if (isTargetBlocked(target, viewer, viewerWorld, disableInSpectator, respectVanish)) {
           continue;
         }
 
@@ -133,15 +158,22 @@ public class FarPlayerSyncService {
             boolean swingChanged = state.swingSequence() != currentSwing;
             if (state.needsUpdate(target)) {
               if (packetAdapter.update(viewer, target)) {
-                mirrors.put(targetId, state.capture(target, currentSwing));
+                var mountMirror = syncMountIfEnabled(allowMountSync, viewer, target, state.mountMirror());
+                mirrors.put(targetId, state.capture(target, currentSwing, mountMirror));
               } else {
                 mirrors.remove(targetId);
               }
             } else if (swingChanged) {
               if (packetAdapter.animateSwing(viewer, target)) {
-                mirrors.put(targetId, state.capture(target, currentSwing));
+                var mountMirror = syncMountIfEnabled(allowMountSync, viewer, target, state.mountMirror());
+                mirrors.put(targetId, state.capture(target, currentSwing, mountMirror));
               } else {
                 mirrors.remove(targetId);
+              }
+            } else if (allowMountSync) {
+              var mountMirror = syncMountIfEnabled(true, viewer, target, state.mountMirror());
+              if (!Objects.equals(mountMirror, state.mountMirror())) {
+                mirrors.put(targetId, state.capture(target, currentSwing, mountMirror));
               }
             }
           }
@@ -154,7 +186,8 @@ public class FarPlayerSyncService {
         if (state == null) {
           if (spawnedThisTick >= spawnBurstPerTick) continue;
           if (packetAdapter.spawn(viewer, target)) {
-            mirrors.put(targetId, MirrorState.from(target, currentSwing(targetId)));
+            var mountMirror = syncMountIfEnabled(allowMountSync, viewer, target, null);
+            mirrors.put(targetId, MirrorState.from(target, currentSwing(targetId), mountMirror));
             spawnedThisTick++;
           }
           continue;
@@ -164,15 +197,22 @@ public class FarPlayerSyncService {
         boolean swingChanged = state.swingSequence() != currentSwing;
         if (state.needsUpdate(target)) {
           if (packetAdapter.update(viewer, target)) {
-            mirrors.put(targetId, state.capture(target, currentSwing));
+            var mountMirror = syncMountIfEnabled(allowMountSync, viewer, target, state.mountMirror());
+            mirrors.put(targetId, state.capture(target, currentSwing, mountMirror));
           } else {
             mirrors.remove(targetId);
           }
         } else if (swingChanged) {
           if (packetAdapter.animateSwing(viewer, target)) {
-            mirrors.put(targetId, state.capture(target, currentSwing));
+            var mountMirror = syncMountIfEnabled(allowMountSync, viewer, target, state.mountMirror());
+            mirrors.put(targetId, state.capture(target, currentSwing, mountMirror));
           } else {
             mirrors.remove(targetId);
+          }
+        } else if (allowMountSync) {
+          var mountMirror = syncMountIfEnabled(true, viewer, target, state.mountMirror());
+          if (!Objects.equals(mountMirror, state.mountMirror())) {
+            mirrors.put(targetId, state.capture(target, currentSwing, mountMirror));
           }
         }
       }
@@ -180,6 +220,9 @@ public class FarPlayerSyncService {
       for (Map.Entry<UUID, MirrorState> entry : new ArrayList<>(mirrors.entrySet())) {
         UUID targetId = entry.getKey();
         if (!keep.contains(targetId) || !onlineIds.contains(targetId)) {
+          if (entry.getValue().mountMirror() != null) {
+            packetAdapter.clearMount(viewer, entry.getValue().mountMirror());
+          }
           packetAdapter.despawn(viewer, entry.getValue().targetId(), entry.getValue().entityId());
           mirrors.remove(targetId);
         }
@@ -214,6 +257,9 @@ public class FarPlayerSyncService {
       Map<UUID, MirrorState> mirrors = shownByViewer.get(viewer.getUniqueId());
       if (mirrors == null) continue;
       for (MirrorState state : mirrors.values()) {
+        if (state.mountMirror() != null) {
+          packetAdapter.clearMount(viewer, state.mountMirror());
+        }
         packetAdapter.despawn(viewer, state.targetId(), state.entityId());
       }
     }
@@ -240,6 +286,43 @@ public class FarPlayerSyncService {
     return swingSequence.getOrDefault(playerId, 0L);
   }
 
+  private boolean isViewerBlocked(
+      Player viewer,
+      World viewerWorld,
+      boolean disableInSpectator,
+      boolean requireViewerPermission,
+      String viewerPermissionNode) {
+    if (viewer == null || viewerWorld == null) return true;
+    if (!config().farPlayersEnabledForWorld(viewerWorld.getName())) return true;
+    if (disableInSpectator && viewer.getGameMode() == GameMode.SPECTATOR) return true;
+    return requireViewerPermission && (viewerPermissionNode == null || !viewer.hasPermission(viewerPermissionNode));
+  }
+
+  private boolean isTargetBlocked(
+      Player target,
+      Player viewer,
+      World viewerWorld,
+      boolean disableInSpectator,
+      boolean respectVanish) {
+    if (target == null || viewer == null || viewerWorld == null) return true;
+    if (target.getWorld() == null || !target.getWorld().getUID().equals(viewerWorld.getUID())) return true;
+    if (!config().farPlayersEnabledForWorld(target.getWorld().getName())) return true;
+    if (disableInSpectator && target.getGameMode() == GameMode.SPECTATOR) return true;
+    return respectVanish && !viewer.canSee(target);
+  }
+
+  private FarPlayerPacketAdapter.MountMirror syncMountIfEnabled(
+      boolean allowMountSync,
+      Player viewer,
+      Player target,
+      FarPlayerPacketAdapter.MountMirror current) {
+    if (!allowMountSync) {
+      if (current != null) packetAdapter.clearMount(viewer, current);
+      return null;
+    }
+    return packetAdapter.syncMount(viewer, target, current);
+  }
+
   public record MirrorState(
       UUID targetId,
       int entityId,
@@ -250,10 +333,14 @@ public class FarPlayerSyncService {
       float pitch,
       int equipmentSignature,
       int metadataSignature,
-      long swingSequence
+      long swingSequence,
+      FarPlayerPacketAdapter.MountMirror mountMirror
   ) {
 
-    static MirrorState from(Player target, long swingSequence) {
+    static MirrorState from(
+        Player target,
+        long swingSequence,
+        FarPlayerPacketAdapter.MountMirror mountMirror) {
       return new MirrorState(
           target.getUniqueId(),
           target.getEntityId(),
@@ -264,7 +351,8 @@ public class FarPlayerSyncService {
           target.getLocation().getPitch(),
           equipmentSignature(target),
           metadataSignature(target),
-          swingSequence);
+          swingSequence,
+          mountMirror);
     }
 
     boolean needsUpdate(Player target) {
@@ -282,8 +370,11 @@ public class FarPlayerSyncService {
       return metadataSignature(target) != metadataSignature;
     }
 
-    MirrorState capture(Player target, long swingSequence) {
-      return from(target, swingSequence);
+    MirrorState capture(
+        Player target,
+        long swingSequence,
+        FarPlayerPacketAdapter.MountMirror mountMirror) {
+      return from(target, swingSequence, mountMirror);
     }
 
     private static int equipmentSignature(Player target) {
@@ -312,19 +403,22 @@ public class FarPlayerSyncService {
     }
 
     private static int metadataSignature(Player target) {
-    if (target == null) return 0;
-
-    int result = 17;
-    result = 31 * result + Boolean.hashCode(target.isSneaking());
-    result = 31 * result + Boolean.hashCode(target.isSprinting());
-    result = 31 * result + Boolean.hashCode(target.isGliding());
-    result = 31 * result + Boolean.hashCode(target.isSwimming());
-    result = 31 * result + Boolean.hashCode(target.isInvisible());
-    result = 31 * result + target.getVisualFire().hashCode();
-    result = 31 * result + Boolean.hashCode(target.isSleeping());
-    result = 31 * result + Boolean.hashCode(target.isBlocking());
-    result = 31 * result + target.getPose().hashCode();
-    return result;
-}
+      if (target == null) return 0;
+      int result = 17;
+      result = 31 * result + Boolean.hashCode(target.isSneaking());
+      result = 31 * result + Boolean.hashCode(target.isSprinting());
+      result = 31 * result + Boolean.hashCode(target.isGliding());
+      result = 31 * result + Boolean.hashCode(target.isSwimming());
+      result = 31 * result + Boolean.hashCode(target.isInvisible());
+      Object visualFire = target.getVisualFire();
+      result = 31 * result + (visualFire == null ? 0 : visualFire.hashCode());
+      result = 31 * result + Boolean.hashCode(target.isSleeping());
+      result = 31 * result + Boolean.hashCode(target.isBlocking());
+      result = 31 * result + target.getPose().ordinal();
+      if (target.getVehicle() != null && target.getVehicle().getUniqueId() != null) {
+        result = 31 * result + target.getVehicle().getUniqueId().hashCode();
+      }
+      return result;
+    }
   }
 }

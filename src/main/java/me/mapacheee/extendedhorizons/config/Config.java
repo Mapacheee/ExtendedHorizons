@@ -40,6 +40,13 @@ public record Config(
     return worldConfig.enableFakechunks();
   }
 
+  public boolean farPlayersEnabledForWorld(String worldName) {
+    WorldSettingsConfig worldConfig = worldConfig(worldName);
+    if (worldConfig == null) return true;
+    if (worldConfig.enableFarplayers() == null) return true;
+    return worldConfig.enableFarplayers();
+  }
+
   public int maxSendPerCycle() {
     return fakeChunks == null ? 25 : fakeChunks.maxSendPerCycle();
   }
@@ -157,6 +164,33 @@ public record Config(
     return Math.max(1, farPlayers.maxSyncedPerViewer());
   }
 
+  public boolean farPlayersRespectVanish() {
+    if (farPlayers == null) return true;
+    return farPlayers.respectVanish();
+  }
+
+  public boolean farPlayersDisableInSpectator() {
+    if (farPlayers == null) return true;
+    return farPlayers.disableInSpectator();
+  }
+
+  public boolean farPlayersRequireViewerPermission() {
+    if (farPlayers == null) return false;
+    return farPlayers.requireViewerPermission();
+  }
+
+  public String farPlayersViewerPermissionNode() {
+    if (farPlayers == null || farPlayers.viewerPermissionNode() == null || farPlayers.viewerPermissionNode().isBlank()) {
+      return "extendedhorizons.farplayers.receive";
+    }
+    return farPlayers.viewerPermissionNode();
+  }
+
+  public boolean farPlayersAllowMountSync() {
+    if (farPlayers == null) return true;
+    return farPlayers.allowMountSync();
+  }
+
   private WorldSettingsConfig worldConfig(String worldName) {
     if (worldSettings == null || worldSettings.isEmpty() || worldName == null || worldName.isBlank()) {
       return null;
@@ -227,7 +261,8 @@ public record Config(
   @ConfigSerializable
   public record WorldSettingsConfig(
       @Setting("enable-fakechunks") boolean enableFakechunks,
-      @Setting("target-distance") int targetDistance
+      @Setting("target-distance") int targetDistance,
+      @Setting("enable-farplayers") Boolean enableFarplayers
   ) {}
 
   @ConfigSerializable
@@ -236,6 +271,11 @@ public record Config(
       @Setting("max-distance-chunks") int maxDistanceChunks,
       @Setting("update-interval-ticks") int updateIntervalTicks,
       @Setting("spawn-burst-per-tick") int spawnBurstPerTick,
-      @Setting("max-synced-per-viewer") int maxSyncedPerViewer
+      @Setting("max-synced-per-viewer") int maxSyncedPerViewer,
+      @Setting("respect-vanish") boolean respectVanish,
+      @Setting("disable-in-spectator") boolean disableInSpectator,
+      @Setting("require-viewer-permission") boolean requireViewerPermission,
+      @Setting("viewer-permission-node") String viewerPermissionNode,
+      @Setting("allow-mount-sync") boolean allowMountSync
   ) {}
 }

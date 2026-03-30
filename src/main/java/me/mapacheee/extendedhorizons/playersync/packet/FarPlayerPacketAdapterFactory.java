@@ -1,6 +1,8 @@
 package me.mapacheee.extendedhorizons.playersync.packet;
 
+import java.util.UUID;
 import me.mapacheee.extendedhorizons.playersync.packet.v1_21.V121NmsPacketAdapter;
+import org.bukkit.entity.Player;
 
 public final class FarPlayerPacketAdapterFactory {
 
@@ -21,22 +23,34 @@ public final class FarPlayerPacketAdapterFactory {
     }
 
     @Override
-    public boolean spawn(org.bukkit.entity.Player viewer, org.bukkit.entity.Player target) {
+    public boolean spawn(Player viewer, Player target) {
       return false;
     }
 
     @Override
-    public boolean update(org.bukkit.entity.Player viewer, org.bukkit.entity.Player target) {
+    public boolean update(Player viewer, Player target) {
       return false;
     }
 
     @Override
-    public boolean animateSwing(org.bukkit.entity.Player viewer, org.bukkit.entity.Player target) {
+    public boolean animateSwing(Player viewer, Player target) {
       return false;
     }
 
     @Override
-    public void despawn(org.bukkit.entity.Player viewer, java.util.UUID targetId, int entityId) {
+    public MountMirror syncMount(
+        Player viewer,
+        Player target,
+        MountMirror currentMirror) {
+      return null;
+    }
+
+    @Override
+    public void clearMount(Player viewer, MountMirror currentMirror) {
+    }
+
+    @Override
+    public void despawn(Player viewer, UUID targetId, int entityId) {
     }
   }
 }

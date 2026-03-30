@@ -13,5 +13,11 @@ public interface FarPlayerPacketAdapter {
 
   boolean animateSwing(Player viewer, Player target);
 
+  MountMirror syncMount(Player viewer, Player target, MountMirror currentMirror);
+
+  void clearMount(Player viewer, MountMirror currentMirror);
+
   void despawn(Player viewer, UUID targetId, int entityId);
+
+  record MountMirror(UUID entityUuid, int entityId) {}
 }

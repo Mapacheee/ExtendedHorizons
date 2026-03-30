@@ -62,15 +62,19 @@ fake-chunks:
 # - World names are case-insensitive.
 # - Any world not listed here uses global fake-chunks defaults:
 #   enable-fakechunks=true and target-distance=fake-chunks.target-view-distance.
+# - Any world not listed here also enables far-players by default.
 world-settings:
   world:
     # Enables fake chunks in this world.
     enable-fakechunks: true
     # Target fake distance only for this world.
     target-distance: 32
+    # Enables far-player sync in this world.
+    enable-farplayers: true
   world_nether:
     enable-fakechunks: false
     target-distance: 16
+    enable-farplayers: false
 
 # Far player sync in fake-chunk range (players only).
 # This mirrors remote players outside vanilla tracking distance.
@@ -85,6 +89,16 @@ far-players:
   spawn-burst-per-tick: 10
   # Hard cap of mirrored players shown simultaneously per viewer.
   max-synced-per-viewer: 40
+  # Respect player visibility (vanish plugins using hide/show APIs).
+  respect-vanish: true
+  # Disable far sync for spectator mode players (viewer and target).
+  disable-in-spectator: true
+  # Require a permission on viewer to receive far players.
+  require-viewer-permission: false
+  # Permission node checked when require-viewer-permission is true.
+  viewer-permission-node: "extendedhorizons.farplayers.receive"
+  # Mirror target mounts/vehicles (horse, boat, minecart) in far range.
+  allow-mount-sync: true
 
 # PacketEvents hook settings.
 packet-interceptor:
