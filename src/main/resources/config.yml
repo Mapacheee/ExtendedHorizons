@@ -21,6 +21,8 @@ fake-chunks:
   max-send-per-cycle: 25
   # Maximum concurrent fake-chunk sends per player.
   max-inflight-per-player: 16
+  # Should generate chunk if that chunk isn't generated yet.
+  generate-missing-chunks: false
   # Interval (ms) to recompute the full missing-chunk plan.
   force-plan-interval-ms: 3000
   keepalive:
@@ -44,9 +46,9 @@ fake-chunks:
     # Periodically refreshes already-sent fake chunks to sync edits (e.g. WorldEdit) and activity.
     enabled: true
     # Minimum delay between refresh cycles per player.
-    period-ms: 1000
+    period-ms: 2500
     # Number of sent fake chunks refreshed per cycle.
-    chunks-per-cycle: 4
+    chunks-per-cycle: 2
     # Fallback that force-invalidates chunks when there is no dirty/activity evidence.
     # Keep this disabled for best CPU usage (enabling may increase packet build cost).
     invalidate-fallback-enabled: false
@@ -54,9 +56,13 @@ fake-chunks:
     invalidate-fallback-max-per-cycle: 1
     # Debounce for repeated invalidations of the same chunk.
     min-invalidate-interval-ms: 250
+    # High-frequency events. Keep disabled for best performance.
+    invalidate-on-physics: false
+    invalidate-on-flow: false
+    invalidate-on-player-interact: true
   # Internal safe-square factor (0.65 = 65% of server view distance).
   # Fake chunks are not forced inside this area.
-  safe-square-factor: 0.65
+  safe-square-factor: 0.85
 
 # Per-world overrides.
 # - World names are case-insensitive.

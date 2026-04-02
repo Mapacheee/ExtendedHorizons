@@ -130,16 +130,20 @@ public class FakeChunkService {
                                 World world = player.getWorld();
                                 lastKnownWorldId.putIfAbsent(playerId, world.getUID());
 
-                                sendPacket(
-                                    player,
-                                    new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
-
                                 PlayerChunkTracker tracker = trackers.get(playerId);
                                 if (tracker != null) {
                                   long now = System.currentTimeMillis();
                                   Long lastPlan = lastForcedPlanMs.get(playerId);
-                                  if (lastPlan == null
-                                      || now - lastPlan >= config().forcePlanIntervalMs()) {
+                                  Deque<Long> queue = pendingQueues.get(playerId);
+                                  AtomicInteger inflight =
+                                      inflightCounts.computeIfAbsent(playerId, k -> new AtomicInteger(0));
+                                  boolean needsRecoveryPlan =
+                                      tracker.getSentChunks().isEmpty()
+                                          || (queue != null && !queue.isEmpty())
+                                          || inflight.get() > 0;
+                                  if (needsRecoveryPlan
+                                      && (lastPlan == null
+                                          || now - lastPlan >= config().forcePlanIntervalMs())) {
                                     updatePlayerChunks(
                                         player, playerId, world, chunkX, chunkZ, true);
                                     lastForcedPlanMs.put(playerId, now);
@@ -335,28 +339,47 @@ public class FakeChunkService {
 
   public void handleMove(Player player) {
     if (!enabled.get()) return;
+    if (player == null || !player.isOnline()) return;
+    UUID playerId = player.getUniqueId();
+    World world = player.getWorld();
+    if (world == null) return;
+    int chunkX = player.getLocation().getBlockX() >> 4;
+    int chunkZ = player.getLocation().getBlockZ() >> 4;
+    UUID worldId = world.getUID();
+    UUID lastWorldId = lastKnownWorldId.get(playerId);
+    PlayerChunkTracker fastTracker = trackers.get(playerId);
+    if (fastTracker != null
+        && lastWorldId != null
+        && lastWorldId.equals(worldId)
+        && !fastTracker.hasMovedChunk(chunkX, chunkZ)) {
+      return;
+    }
     runForPlayer(
         player,
         () -> {
           if (!enabled.get()) return;
           if (!player.isOnline()) return;
 
-          int chunkX = player.getLocation().getBlockX() >> 4;
-          int chunkZ = player.getLocation().getBlockZ() >> 4;
-          World world = player.getWorld();
-          UUID playerId = player.getUniqueId();
-          UUID worldId = world.getUID();
-          UUID lastWorldId = lastKnownWorldId.get(playerId);
-          if (lastWorldId == null || !lastWorldId.equals(worldId)) {
+          int currentChunkX = player.getLocation().getBlockX() >> 4;
+          int currentChunkZ = player.getLocation().getBlockZ() >> 4;
+          World currentWorld = player.getWorld();
+          UUID currentWorldId = currentWorld.getUID();
+          UUID knownWorldId = lastKnownWorldId.get(playerId);
+          boolean worldChanged = knownWorldId == null || !knownWorldId.equals(currentWorldId);
+          if (worldChanged) {
             resetPlayerState(playerId, true);
-            lastKnownWorldId.put(playerId, worldId);
-            debug(playerId, "world_change", "[EH] world change detected to " + world.getName());
+            lastKnownWorldId.put(playerId, currentWorldId);
+            debug(playerId, "world_change", "[EH] world change detected to " + currentWorld.getName());
           }
 
-          sendPacket(player, new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
+          PlayerChunkTracker tracker = trackers.get(playerId);
+          boolean movedChunk = tracker == null || tracker.hasMovedChunk(currentChunkX, currentChunkZ);
+          if (movedChunk) {
+            sendPacket(player, new ClientboundSetChunkCacheCenterPacket(currentChunkX, currentChunkZ));
+          }
 
           try {
-            updatePlayerChunks(player, playerId, world, chunkX, chunkZ, false);
+            updatePlayerChunks(player, playerId, currentWorld, currentChunkX, currentChunkZ, false);
           } catch (Throwable t) {
             LOGGER.error("updatePlayerChunks failed for {}", player.getName(), t);
           }

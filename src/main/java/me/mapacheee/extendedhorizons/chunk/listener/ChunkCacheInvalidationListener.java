@@ -1,9 +1,11 @@
 package me.mapacheee.extendedhorizons.chunk.listener;
 
 import com.google.inject.Inject;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.paper.listener.ListenerComponent;
 import me.mapacheee.extendedhorizons.chunk.FakeChunkService;
 import me.mapacheee.extendedhorizons.chunk.cache.ChunkPacketCacheService;
+import me.mapacheee.extendedhorizons.config.Config;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -33,12 +35,16 @@ public class ChunkCacheInvalidationListener implements Listener {
 
   private final ChunkPacketCacheService chunkPacketCacheService;
   private final FakeChunkService fakeChunkService;
+  private final Container<Config> configContainer;
 
   @Inject
   public ChunkCacheInvalidationListener(
-      ChunkPacketCacheService chunkPacketCacheService, FakeChunkService fakeChunkService) {
+      ChunkPacketCacheService chunkPacketCacheService,
+      FakeChunkService fakeChunkService,
+      Container<Config> configContainer) {
     this.chunkPacketCacheService = chunkPacketCacheService;
     this.fakeChunkService = fakeChunkService;
+    this.configContainer = configContainer;
   }
 
   @EventHandler
@@ -110,17 +116,20 @@ public class ChunkCacheInvalidationListener implements Listener {
 
   @EventHandler
   public void onPhysics(BlockPhysicsEvent event) {
+    if (!config().autoRefreshInvalidateOnPhysics()) return;
     invalidate(event.getBlock());
   }
 
   @EventHandler
   public void onFlow(BlockFromToEvent event) {
+    if (!config().autoRefreshInvalidateOnFlow()) return;
     invalidate(event.getBlock());
     invalidate(event.getToBlock());
   }
 
   @EventHandler
   public void onPlayerInteract(PlayerInteractEvent event) {
+    if (!config().autoRefreshInvalidateOnPlayerInteract()) return;
     invalidate(event.getClickedBlock());
   }
 
@@ -158,5 +167,10 @@ public class ChunkCacheInvalidationListener implements Listener {
     int chunkX = block.getX() >> 4;
     int chunkZ = block.getZ() >> 4;
     fakeChunkService.handleRealChunkInteraction(block.getWorld(), chunkX, chunkZ);
+  }
+
+  private Config config() {
+    Config cfg = configContainer.get();
+    return cfg == null ? Config.empty() : cfg;
   }
 }

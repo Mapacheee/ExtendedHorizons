@@ -55,6 +55,11 @@ public record Config(
     return fakeChunks == null ? 16 : fakeChunks.maxInflightPerPlayer();
   }
 
+  public boolean fakeChunksGenerateMissingChunks() {
+    if (fakeChunks == null) return false;
+    return fakeChunks.generateMissingChunks();
+  }
+
   public long forcePlanIntervalMs() {
     return fakeChunks == null ? 3000L : fakeChunks.forcePlanIntervalMs();
   }
@@ -126,6 +131,21 @@ public record Config(
   public long autoRefreshMinInvalidateIntervalMs() {
     if (fakeChunks == null || fakeChunks.liveRefresh() == null) return 250L;
     return Math.max(0L, fakeChunks.liveRefresh().minInvalidateIntervalMs());
+  }
+
+  public boolean autoRefreshInvalidateOnPhysics() {
+    if (fakeChunks == null || fakeChunks.liveRefresh() == null) return false;
+    return fakeChunks.liveRefresh().invalidateOnPhysics();
+  }
+
+  public boolean autoRefreshInvalidateOnFlow() {
+    if (fakeChunks == null || fakeChunks.liveRefresh() == null) return false;
+    return fakeChunks.liveRefresh().invalidateOnFlow();
+  }
+
+  public boolean autoRefreshInvalidateOnPlayerInteract() {
+    if (fakeChunks == null || fakeChunks.liveRefresh() == null) return false;
+    return fakeChunks.liveRefresh().invalidateOnPlayerInteract();
   }
 
   public int interceptorMaxTargetDistance() {
@@ -214,6 +234,7 @@ public record Config(
       @Setting("target-view-distance") int targetViewDistance,
       @Setting("max-send-per-cycle") int maxSendPerCycle,
       @Setting("max-inflight-per-player") int maxInflightPerPlayer,
+      @Setting("generate-missing-chunks") boolean generateMissingChunks,
       @Setting("force-plan-interval-ms") long forcePlanIntervalMs,
       KeepAliveConfig keepalive,
       WarmupConfig warmup,
@@ -247,7 +268,10 @@ public record Config(
         @Setting("chunks-per-cycle") int chunksPerCycle,
         @Setting("invalidate-fallback-enabled") boolean invalidateFallbackEnabled,
         @Setting("invalidate-fallback-max-per-cycle") int invalidateFallbackMaxPerCycle,
-        @Setting("min-invalidate-interval-ms") long minInvalidateIntervalMs
+        @Setting("min-invalidate-interval-ms") long minInvalidateIntervalMs,
+        @Setting("invalidate-on-physics") boolean invalidateOnPhysics,
+        @Setting("invalidate-on-flow") boolean invalidateOnFlow,
+        @Setting("invalidate-on-player-interact") boolean invalidateOnPlayerInteract
     ) {}
   }
 

@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import me.mapacheee.extendedhorizons.chunk.cache.ChunkPacketCacheService;
@@ -60,6 +61,10 @@ public class FakeChunkDispatchService {
   private final ChunkPacketCacheService chunkPacketCacheService;
   private final FakeChunkRefreshCoordinator refreshCoordinator;
   private final State state;
+  private final Map<ChunkPacketCacheService.ChunkKey, CompletableFuture<ClientboundLevelChunkWithLightPacket>>
+      packetBuildInFlight = new ConcurrentHashMap<>();
+  private final Map<ChunkPacketCacheService.ChunkKey, Long> unavailableUntilMs =
+      new ConcurrentHashMap<>();
 
   public FakeChunkDispatchService(
       Container<Config> configContainer,
@@ -137,10 +142,20 @@ public class FakeChunkDispatchService {
     if (!hooks.isSessionValid(player, expectedWorldId, expectedEpoch))
       return CompletableFuture.completedFuture(false);
     long chunkKey = ChunkPos.asLong(x, z);
+    ChunkPacketCacheService.ChunkKey cacheKey =
+        new ChunkPacketCacheService.ChunkKey(expectedWorldId, chunkKey);
+    Long blockedUntil = unavailableUntilMs.get(cacheKey);
+    long now = System.currentTimeMillis();
+    if (blockedUntil != null && blockedUntil > now) {
+      hooks.inc(player.getUniqueId(), "chunk_unavailable_skip");
+      hooks.recordChunkLatency(startedNs);
+      return CompletableFuture.completedFuture(false);
+    }
     if (!chunkPacketCacheService.shouldBypass(expectedWorldId, chunkKey)) {
       ClientboundLevelChunkWithLightPacket cached =
           chunkPacketCacheService.get(expectedWorldId, chunkKey);
       if (cached != null) {
+        unavailableUntilMs.remove(cacheKey);
         hooks.sendPacketForSession(player, cached, expectedWorldId, expectedEpoch);
         if (hooks.isSessionValid(player, expectedWorldId, expectedEpoch)) {
           tracker.markChunkSent(x, z);
@@ -151,69 +166,23 @@ public class FakeChunkDispatchService {
         }
       }
     }
-    return world
-        .getChunkAtAsync(x, z, true)
-        .thenCompose(
-            chunk -> {
+    return getOrBuildPacket(world, expectedWorldId, x, z, chunkKey, hooks)
+        .thenApply(
+            packet -> {
+              if (packet == null) {
+                unavailableUntilMs.put(cacheKey, System.currentTimeMillis() + 2000L);
+                return false;
+              }
+              unavailableUntilMs.remove(cacheKey);
+              if (!hooks.isSessionValid(player, expectedWorldId, expectedEpoch)) return false;
+              hooks.sendPacketForSession(player, packet, expectedWorldId, expectedEpoch);
               if (!hooks.isSessionValid(player, expectedWorldId, expectedEpoch)) {
-                return CompletableFuture.completedFuture(false);
+                return false;
               }
-              if (chunk == null) {
-                hooks.inc(player.getUniqueId(), "chunk_async_null");
-                return CompletableFuture.completedFuture(false);
-              }
-              CompletableFuture<Boolean> future = new CompletableFuture<>();
-              boolean scheduled =
-                  hooks.runAtChunk(
-                      world,
-                      x,
-                      z,
-                      () -> {
-                        if (!state.enabled().get()
-                            || !hooks.isSessionValid(player, expectedWorldId, expectedEpoch)) {
-                          future.complete(false);
-                          return;
-                        }
-                        try {
-                          ChunkAccess access = ((CraftChunk) chunk).getHandle(ChunkStatus.FULL);
-                          if (!(access instanceof LevelChunk nmsChunk)) {
-                            hooks.inc(player.getUniqueId(), "chunk_not_full");
-                            future.complete(false);
-                            return;
-                          }
-                          LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
-                          BitSet[] lightMasks = getLightMasks(nmsChunk);
-                          ClientboundLevelChunkWithLightPacket packet =
-                              new ClientboundLevelChunkWithLightPacket(
-                                  nmsChunk, lightEngine, lightMasks[0], lightMasks[1], true);
-                          chunkPacketCacheService.put(expectedWorldId, chunkKey, packet);
-                          hooks.sendPacketForSession(
-                              player, packet, expectedWorldId, expectedEpoch);
-                          if (!hooks.isSessionValid(player, expectedWorldId, expectedEpoch)) {
-                            future.complete(false);
-                            return;
-                          }
-                          tracker.markChunkSent(x, z);
-                          refreshCoordinator.addSubscription(
-                              player.getUniqueId(), expectedWorldId, chunkKey);
-                          hooks.inc(player.getUniqueId(), "fake_sent");
-                          future.complete(true);
-                        } catch (Throwable t) {
-                          state
-                              .logger()
-                              .error(
-                                  "Failed live-chunk packet {},{} for {}",
-                                  x,
-                                  z,
-                                  player.getName(),
-                                  t);
-                          future.complete(false);
-                        }
-                      });
-              if (!scheduled) {
-                future.complete(false);
-              }
-              return future;
+              tracker.markChunkSent(x, z);
+              refreshCoordinator.addSubscription(player.getUniqueId(), expectedWorldId, chunkKey);
+              hooks.inc(player.getUniqueId(), "fake_sent");
+              return true;
             })
         .exceptionally(
             e -> {
@@ -223,6 +192,68 @@ public class FakeChunkDispatchService {
               return false;
             })
         .whenComplete((ok, err) -> hooks.recordChunkLatency(startedNs));
+  }
+
+  private CompletableFuture<ClientboundLevelChunkWithLightPacket> getOrBuildPacket(
+      World world, UUID expectedWorldId, int x, int z, long chunkKey, Hooks hooks) {
+    if (world == null || expectedWorldId == null || hooks == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+    ChunkPacketCacheService.ChunkKey key = new ChunkPacketCacheService.ChunkKey(expectedWorldId, chunkKey);
+    CompletableFuture<ClientboundLevelChunkWithLightPacket> existing = packetBuildInFlight.get(key);
+    if (existing != null) return existing;
+
+    CompletableFuture<ClientboundLevelChunkWithLightPacket> promise = new CompletableFuture<>();
+    CompletableFuture<ClientboundLevelChunkWithLightPacket> raced = packetBuildInFlight.putIfAbsent(key, promise);
+    if (raced != null) return raced;
+
+    world
+        .getChunkAtAsync(x, z, config().fakeChunksGenerateMissingChunks())
+        .thenAccept(
+            chunk -> {
+              if (chunk == null) {
+                promise.complete(null);
+                return;
+              }
+              boolean scheduled =
+                  hooks.runAtChunk(
+                      world,
+                      x,
+                      z,
+                      () -> {
+                        if (!state.enabled().get()) {
+                          promise.complete(null);
+                          return;
+                        }
+                        try {
+                          ChunkAccess access = ((CraftChunk) chunk).getHandle(ChunkStatus.FULL);
+                          if (!(access instanceof LevelChunk nmsChunk)) {
+                            promise.complete(null);
+                            return;
+                          }
+                          LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
+                          BitSet[] lightMasks = getLightMasks(nmsChunk);
+                          ClientboundLevelChunkWithLightPacket packet =
+                              new ClientboundLevelChunkWithLightPacket(
+                                  nmsChunk, lightEngine, lightMasks[0], lightMasks[1], true);
+                          chunkPacketCacheService.put(expectedWorldId, chunkKey, packet);
+                          promise.complete(packet);
+                        } catch (Throwable t) {
+                          promise.complete(null);
+                        }
+                      });
+              if (!scheduled) {
+                promise.complete(null);
+              }
+            })
+        .exceptionally(
+            e -> {
+              promise.complete(null);
+              return null;
+            });
+
+    promise.whenComplete((packet, err) -> packetBuildInFlight.remove(key, promise));
+    return promise;
   }
 
   private BitSet[] getLightMasks(LevelChunk chunk) {
