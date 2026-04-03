@@ -1,28 +1,35 @@
-package me.mapacheee.examples.ehapitest;
+package me.mapacheee.examples.ehinjectortest;
 
-import me.mapacheee.extendedhorizons.api.ExtendedHorizonsApi;
-import org.bukkit.Bukkit;
+import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import me.mapacheee.extendedhorizons.chunk.FakeChunkService;
+import me.mapacheee.extendedhorizons.config.Config;
+import me.mapacheee.extendedhorizons.config.ConfigService;
+import me.mapacheee.extendedhorizons.viewdistance.PlayerDistancePreferenceService;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
-import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public class EhApiTestPlugin extends JavaPlugin implements CommandExecutor {
+public class EhInjectorTestPlugin extends JavaPlugin implements CommandExecutor {
 
-  private ExtendedHorizonsApi api;
+  private FakeChunkService fakeChunkService;
+  private ConfigService configService;
+  private PlayerDistancePreferenceService preferenceService;
 
   @Override
   public void onEnable() {
-    RegisteredServiceProvider<ExtendedHorizonsApi> provider =
-        Bukkit.getServicesManager().getRegistration(ExtendedHorizonsApi.class);
-    if (provider != null) {
-      api = provider.getProvider();
-      getLogger().info("ExtendedHorizons API hooked");
-    } else {
-      getLogger().warning("ExtendedHorizons API not found");
+    try {
+      ExtendedHorizonsPlugin extendedHorizonsPlugin =
+          JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
+      fakeChunkService = extendedHorizonsPlugin.getInjector().getInstance(FakeChunkService.class);
+      configService = extendedHorizonsPlugin.getInjector().getInstance(ConfigService.class);
+      preferenceService =
+          extendedHorizonsPlugin.getInjector().getInstance(PlayerDistancePreferenceService.class);
+      getLogger().info("ExtendedHorizons services hooked");
+    } catch (Throwable t) {
+      getLogger().warning("ExtendedHorizons services not found");
     }
 
     PluginCommand cmd = getCommand("ehtest");
@@ -33,8 +40,8 @@ public class EhApiTestPlugin extends JavaPlugin implements CommandExecutor {
 
   @Override
   public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-    if (api == null) {
-      sender.sendMessage("§cExtendedHorizons API not found");
+    if (fakeChunkService == null || configService == null || preferenceService == null) {
+      sender.sendMessage("§cExtendedHorizons services not found");
       return true;
     }
     if (args.length == 0) {
@@ -49,7 +56,7 @@ public class EhApiTestPlugin extends JavaPlugin implements CommandExecutor {
           sender.sendMessage("§cOnly players");
           return true;
         }
-        int current = api.getPlayerViewDistance(player);
+        Integer current = preferenceService.get(player.getUniqueId());
         sender.sendMessage("§aCustom distance: §f" + current);
       }
       case "set" -> {
@@ -68,7 +75,7 @@ public class EhApiTestPlugin extends JavaPlugin implements CommandExecutor {
           sender.sendMessage("§cInvalid number");
           return true;
         }
-        api.setPlayerViewDistance(player, value);
+        fakeChunkService.applyDistancePreference(player, value);
         sender.sendMessage("§aDistance applied: §f" + value);
       }
       case "reset" -> {
@@ -76,19 +83,27 @@ public class EhApiTestPlugin extends JavaPlugin implements CommandExecutor {
           sender.sendMessage("§cOnly players");
           return true;
         }
-        api.resetPlayerViewDistance(player);
+        preferenceService.remove(player.getUniqueId());
         sender.sendMessage("§aCustom distant reset");
       }
-      case "max" -> sender.sendMessage("§aMax global: §f" + api.getServerMaxViewDistance());
+      case "max" -> {
+        Config config = configService.get();
+        sender.sendMessage(
+            "§aMax global: §f" + (config == null ? "n/a" : config.fakeTargetViewDistance()));
+      }
       case "world" -> {
         if (!(sender instanceof Player player)) {
           sender.sendMessage("§cOnly players");
           return true;
         }
-        boolean enabled = api.isFakeChunksEnabled(player.getWorld().getName());
+        Config config = configService.get();
+        boolean enabled = config != null && config.fakeChunksEnabledForWorld(player.getWorld().getName());
         sender.sendMessage("§aFakeChunks in this world: §f" + enabled);
       }
-      case "far" -> sender.sendMessage("§aFarPlayers global: §f" + api.isFarPlayersEnabled());
+      case "far" -> {
+        Config config = configService.get();
+        sender.sendMessage("§aFarPlayers global: §f" + (config != null && config.farPlayersEnabled()));
+      }
       default -> sender.sendMessage("§eUse: /ehtest <get|set|reset|max|world|far> [value]");
     }
     return true;

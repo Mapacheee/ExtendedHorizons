@@ -284,8 +284,12 @@ public class FakeChunkService {
 
   public void handleRealChunkInteraction(World world, int chunkX, int chunkZ) {
     if (world == null) return;
+    handleRealChunkInteraction(world.getUID(), chunkX, chunkZ);
+  }
+
+  public void handleRealChunkInteraction(UUID worldId, int chunkX, int chunkZ) {
+    if (worldId == null) return;
     long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
-    UUID worldId = world.getUID();
     long now = System.currentTimeMillis();
     Long previousDirty = refreshCoordinator.getDirtySince(worldId, chunkKey);
     long minInvalidateIntervalMs = config().autoRefreshMinInvalidateIntervalMs();
@@ -307,7 +311,8 @@ public class FakeChunkService {
         refreshCoordinator.removeSubscription(playerId, worldId, chunkKey);
         continue;
       }
-      if (!worldId.equals(player.getWorld().getUID())) {
+      World playerWorld = player.getWorld();
+      if (playerWorld == null || !worldId.equals(playerWorld.getUID())) {
         refreshCoordinator.removeSubscription(playerId, worldId, chunkKey);
         continue;
       }
@@ -317,7 +322,8 @@ public class FakeChunkService {
         continue;
       }
       runForPlayer(
-          player, () -> refreshChunkForPlayer(player, world, tracker, chunkX, chunkZ, chunkKey));
+          player,
+          () -> refreshChunkForPlayer(player, playerWorld, tracker, chunkX, chunkZ, chunkKey));
     }
   }
 
