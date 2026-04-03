@@ -1,9 +1,5 @@
 package me.mapacheee.extendedhorizons.hooks.placeholderapi;
 
-import com.google.inject.Inject;
-import com.thewinterframework.service.annotation.Service;
-import com.thewinterframework.service.annotation.lifecycle.OnDisable;
-import com.thewinterframework.service.annotation.lifecycle.OnEnable;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.chunk.FakeChunkService;
@@ -14,19 +10,16 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@Service
 public class ExtendedHorizonsPlaceholderExpansion extends PlaceholderExpansion {
 
   private static final Logger LOGGER =
       LoggerFactory.getLogger(ExtendedHorizonsPlaceholderExpansion.class);
   private final FakeChunkService fakeChunkService;
 
-  @Inject
   public ExtendedHorizonsPlaceholderExpansion(FakeChunkService fakeChunkService) {
     this.fakeChunkService = fakeChunkService;
   }
 
-  @OnEnable
   public void registerExpansion() {
     if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return;
     try {
@@ -38,7 +31,6 @@ public class ExtendedHorizonsPlaceholderExpansion extends PlaceholderExpansion {
     }
   }
 
-  @OnDisable
   public void unregisterExpansion() {
     try {
       if (isRegistered()) {
