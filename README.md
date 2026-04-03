@@ -24,6 +24,37 @@ Build this project with this command:
 The artifact will be generated in `build/libs/ExtendedHorizons-{version}.jar` ready to use!
 
 ---
+## For developers
+
+ExtendedHorizons exposes a stable API through Bukkit `ServicesManager`.
+
+Add this to your `plugin.yml`:
+```yaml
+softdepend: [ExtendedHorizons]
+```
+
+Use the API like this:
+```java
+import me.mapacheee.extendedhorizons.api.ExtendedHorizonsApi;
+import org.bukkit.Bukkit;
+import org.bukkit.plugin.RegisteredServiceProvider;
+
+RegisteredServiceProvider<ExtendedHorizonsApi> provider =
+    Bukkit.getServicesManager().getRegistration(ExtendedHorizonsApi.class);
+if (provider != null) {
+  ExtendedHorizonsApi api = provider.getProvider();
+}
+```
+
+Available methods:
+- `getPlayerViewDistance(Player player)`
+- `setPlayerViewDistance(Player player, int viewDistance)`
+- `resetPlayerViewDistance(Player player)`
+- `getServerMaxViewDistance()`
+- `isFakeChunksEnabled(String worldName)`
+- `isFarPlayersEnabled()`
+
+---
 ## Contribute
 To contribute to this project, just follow this steps:
 - Fork repository.
@@ -37,3 +68,4 @@ Every contribution is welcome and appreciated!
 ## Support
 - Report issues and suggestions in the repository’s issues section.
 - Join our Discord: [discord.gg/yA3vD2S8Zj](https://discord.gg/yA3vD2S8Zj)
+- Consider donate: [PayPal](https://paypal.me/mapachedou)
