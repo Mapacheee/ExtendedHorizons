@@ -1,10 +1,10 @@
-prefix: "<gradient:#c146d0:#BD21D0:#c146d0><bold>ExtendedHorizons</bold></gradient> <#7F5AF0>»</#7F5AF0> "
+prefix: "<gradient:#CB356B:#BD3F32><bold>ExtendedHorizons</bold></gradient> <gradient:#CB356B:#BD3F32>»</gradient> "
 commands:
-  reloaded: "<#404f93>Configuration reloaded successfully.</#404f93>"
-  player-only: "<#404f93>This command can only be used by players.</#404f93>"
-  setme-updated: "<#404f93>Your fake chunk distance is now <#48bed7>{distance}</#48bed7> chunks.</#404f93>"
-  set-updated: "<#404f93><#48bed7>{player}</#48bed7> fake chunk distance is now <#7F5AF0>{distance}</#7F5AF0> chunks.</#404f93>"
-  min-distance: "<#404f93>Minimum allowed distance is <#48bed7>{distance}</#48bed7> chunks.</#404f93>"
-  max-distance: "<#404f93>Maximum allowed distance is <#48bed7>{distance}</#48bed7> chunks.</#404f93>"
+  reloaded: "<shadow:#2B0F1D:1><#CB356B>Configuration <#BD3F32><bold>reloaded</bold></#BD3F32> successfully.</#CB356B></shadow>"
+  player-only: "<shadow:#2B0F1D:1><#CB356B>This command can only be used by <#BD3F32><bold>players</bold></#BD3F32>.</#CB356B></shadow>"
+  setme-updated: "<shadow:#2B0F1D:1><#CB356B>Your fake chunk distance is now <#BD3F32><bold>{distance}</bold></#BD3F32> chunks.</#CB356B></shadow>"
+  set-updated: "<shadow:#2B0F1D:1><#CB356B><#BD3F32><bold>{player}</bold></#BD3F32> fake chunk distance is now <#BD3F32><bold>{distance}</bold></#BD3F32> chunks.</#CB356B></shadow>"
+  min-distance: "<shadow:#2B0F1D:1><#CB356B>Minimum allowed distance is <#BD3F32><bold>{distance}</bold></#BD3F32> chunks.</#CB356B></shadow>"
+  max-distance: "<shadow:#2B0F1D:1><#CB356B>Maximum allowed distance is <#BD3F32><bold>{distance}</bold></#BD3F32> chunks.</#CB356B></shadow>"
 general:
-  player-not-found: "<#EF4565>Player <#7F5AF0>{player}</#7F5AF0> is not online.</#EF4565>"
+  player-not-found: "<shadow:#2B0F1D:1><#CB356B>Player <#BD3F32><bold>{player}</bold></#BD3F32> is not online.</#CB356B></shadow>"
