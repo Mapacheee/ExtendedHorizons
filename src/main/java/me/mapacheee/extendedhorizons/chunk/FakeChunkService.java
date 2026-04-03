@@ -477,36 +477,40 @@ public class FakeChunkService {
 
     dispatchService.processQueue(
         player, world, playerId, tracker, getSessionEpoch(playerId), dispatchHooks);
-    String planDebug =
-        "[EH] plan moved="
-            + moved
-            + " force="
-            + force
-            + " pos="
-            + chunkX
-            + ","
-            + chunkZ
-            + " target="
-            + viewDistance
-            + " server="
-            + serverDistance
-            + " safe="
-            + plan.safeSquareRadius()
-            + " needed="
-            + plan.neededChunks().size()
-            + " sent="
-            + tracker.getSentChunks().size()
-            + " unload="
-            + plan.chunksToUnload().size()
-            + " kept="
-            + plan.kept()
-            + " add="
-            + plan.toAdd().size()
-            + " queue="
-            + queue.size()
-            + " inflight="
-            + inflightCounts.computeIfAbsent(playerId, k -> new AtomicInteger(0)).get();
-    debug(playerId, "plan", planDebug);
+    if (config().debugEnabled()) {
+      AtomicInteger inflight = inflightCounts.get(playerId);
+      int inflightCount = inflight == null ? 0 : inflight.get();
+      String planDebug =
+          "[EH] plan moved="
+              + moved
+              + " force="
+              + force
+              + " pos="
+              + chunkX
+              + ","
+              + chunkZ
+              + " target="
+              + viewDistance
+              + " server="
+              + serverDistance
+              + " safe="
+              + plan.safeSquareRadius()
+              + " needed="
+              + plan.neededChunks().size()
+              + " sent="
+              + tracker.getSentChunks().size()
+              + " unload="
+              + plan.chunksToUnload().size()
+              + " kept="
+              + plan.kept()
+              + " add="
+              + plan.toAdd().size()
+              + " queue="
+              + queue.size()
+              + " inflight="
+              + inflightCount;
+      debug(playerId, "plan", planDebug);
+    }
   }
 
   private void sendUnloadPacket(Player player, int x, int z) {

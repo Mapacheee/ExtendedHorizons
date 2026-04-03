@@ -12,6 +12,8 @@ import net.minecraft.world.level.ChunkPos;
 
 public class FakeChunkPlannerService {
 
+  private final ConcurrentHashMap<Long, long[]> sortedOffsetsCache = new ConcurrentHashMap<>();
+
   public record PlanInput(
       int chunkX,
       int chunkZ,
@@ -39,20 +41,21 @@ public class FakeChunkPlannerService {
     int safeSquareRadius = (int) Math.floor(input.serverDistance() * input.safeSquareFactor());
     if (safeSquareRadius < 2) safeSquareRadius = 2;
 
-    Set<Long> neededChunks = new HashSet<>();
-    for (int dx = -effectiveRadius; dx <= effectiveRadius; dx++) {
-      for (int dz = -effectiveRadius; dz <= effectiveRadius; dz++) {
-        int cx = chunkX + dx;
-        int cz = chunkZ + dz;
-        int chebyshev = Math.max(Math.abs(dx), Math.abs(dz));
-        if (chebyshev <= safeSquareRadius) continue;
-        if (dx * dx + dz * dz > effectiveRadius * effectiveRadius) continue;
-        neededChunks.add(ChunkPos.asLong(cx, cz));
-      }
+    long[] sortedOffsets = getSortedOffsets(effectiveRadius, safeSquareRadius);
+    int offsetCount = sortedOffsets.length;
+    Set<Long> neededChunks = new HashSet<>(Math.max(16, offsetCount * 2));
+    for (long packedOffset : sortedOffsets) {
+      int dx = unpackX(packedOffset);
+      int dz = unpackZ(packedOffset);
+      neededChunks.add(ChunkPos.asLong(chunkX + dx, chunkZ + dz));
     }
 
+    Set<Long> sentChunks = input.sentChunksSnapshot();
+    Set<Long> queuedSet = input.queuedSet();
+    Set<Long> inflightSet = input.inflightSet();
+
     Set<Long> chunksToUnload = new HashSet<>();
-    for (Long chunkKey : input.sentChunksSnapshot()) {
+    for (Long chunkKey : sentChunks) {
       if (!neededChunks.contains(chunkKey)) {
         chunksToUnload.add(chunkKey);
       }
@@ -63,31 +66,24 @@ public class FakeChunkPlannerService {
     int kept = 0;
     for (Long existing : input.currentQueue()) {
       if (!neededChunks.contains(existing)) continue;
-      if (input.sentChunksSnapshot().contains(existing)) continue;
-      if (input.inflightSet().contains(existing)) continue;
+      if (sentChunks.contains(existing)) continue;
+      if (inflightSet.contains(existing)) continue;
       rebuiltQueue.addLast(existing);
       rebuiltQueuedSet.add(existing);
       kept++;
     }
 
-    List<Long> toAdd = new ArrayList<>();
-    for (Long chunkKey : neededChunks) {
-      if (input.sentChunksSnapshot().contains(chunkKey)) continue;
-      if (input.queuedSet().contains(chunkKey)) continue;
-      if (input.inflightSet().contains(chunkKey)) continue;
+    List<Long> toAdd = new ArrayList<>(offsetCount);
+    for (long packedOffset : sortedOffsets) {
+      int dx = unpackX(packedOffset);
+      int dz = unpackZ(packedOffset);
+      long chunkKey = ChunkPos.asLong(chunkX + dx, chunkZ + dz);
+      if (sentChunks.contains(chunkKey)) continue;
+      if (queuedSet.contains(chunkKey)) continue;
+      if (inflightSet.contains(chunkKey)) continue;
       if (rebuiltQueuedSet.contains(chunkKey)) continue;
       toAdd.add(chunkKey);
     }
-
-    toAdd.sort(
-        Comparator.comparingInt(
-            key -> {
-              int cx = ChunkPos.getX(key);
-              int cz = ChunkPos.getZ(key);
-              int dx = cx - chunkX;
-              int dz = cz - chunkZ;
-              return dx * dx + dz * dz;
-            }));
 
     return new PlanResult(
         safeSquareRadius,
@@ -97,5 +93,41 @@ public class FakeChunkPlannerService {
         rebuiltQueuedSet,
         toAdd,
         kept);
+  }
+
+  private long[] getSortedOffsets(int effectiveRadius, int safeSquareRadius) {
+    long cacheKey = (((long) effectiveRadius) << 32) | (safeSquareRadius & 0xFFFFFFFFL);
+    return sortedOffsetsCache.computeIfAbsent(cacheKey, k -> buildSortedOffsets(effectiveRadius, safeSquareRadius));
+  }
+
+  private long[] buildSortedOffsets(int effectiveRadius, int safeSquareRadius) {
+    List<long[]> sortable = new ArrayList<>();
+    for (int dx = -effectiveRadius; dx <= effectiveRadius; dx++) {
+      for (int dz = -effectiveRadius; dz <= effectiveRadius; dz++) {
+        int chebyshev = Math.max(Math.abs(dx), Math.abs(dz));
+        if (chebyshev <= safeSquareRadius) continue;
+        int distSq = dx * dx + dz * dz;
+        if (distSq > effectiveRadius * effectiveRadius) continue;
+        sortable.add(new long[] {pack(dx, dz), distSq});
+      }
+    }
+    sortable.sort(Comparator.comparingLong(v -> v[1]));
+    long[] offsets = new long[sortable.size()];
+    for (int i = 0; i < sortable.size(); i++) {
+      offsets[i] = sortable.get(i)[0];
+    }
+    return offsets;
+  }
+
+  private static long pack(int x, int z) {
+    return (((long) x) << 32) | (z & 0xFFFFFFFFL);
+  }
+
+  private static int unpackX(long packed) {
+    return (int) (packed >> 32);
+  }
+
+  private static int unpackZ(long packed) {
+    return (int) packed;
   }
 }
