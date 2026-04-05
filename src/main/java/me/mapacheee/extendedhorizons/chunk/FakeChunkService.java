@@ -5,18 +5,26 @@ import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelPromise;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import me.mapacheee.extendedhorizons.chunk.backend.ChunkDataBackend;
+import me.mapacheee.extendedhorizons.chunk.backend.PaperChunkDataBackend;
 import me.mapacheee.extendedhorizons.chunk.cache.ChunkPacketCacheService;
 import me.mapacheee.extendedhorizons.chunk.tracker.PlayerChunkTracker;
 import me.mapacheee.extendedhorizons.config.Config;
@@ -41,6 +49,7 @@ import org.slf4j.LoggerFactory;
 public class FakeChunkService {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(FakeChunkService.class);
+  private static final String EH_BYPASS_HANDLER = "eh_chunk_bypass";
   private final Container<Config> configContainer;
   private final PlayerDistancePreferenceService playerDistancePreferenceService;
   private final ChunkPacketCacheService chunkPacketCacheService;
@@ -60,6 +69,7 @@ public class FakeChunkService {
   private final FakeChunkRefreshLoopService refreshLoopService;
   private final FakeChunkRefreshLoopService.Actions refreshLoopActions;
   private final FakeChunkDispatchService dispatchService;
+  private final ChunkDataBackend chunkDataBackend;
   private final FakeChunkPlannerService plannerService;
   private final FakeChunkDispatchService.Hooks dispatchHooks;
   private final Map<UUID, UUID> lastKnownWorldId = new ConcurrentHashMap<>();
@@ -67,6 +77,21 @@ public class FakeChunkService {
   private final AtomicLong chunkLoadSamples = new AtomicLong();
   private final AtomicLong chunkLoadTotalMs = new AtomicLong();
   private final AtomicLong chunkLoadOver100Ms = new AtomicLong();
+  private final AtomicLong queuePollSamples = new AtomicLong();
+  private final AtomicLong queuePollTotalNs = new AtomicLong();
+  private final AtomicLong chunkLoadedCacheHits = new AtomicLong();
+  private final AtomicLong chunkDiskReadHits = new AtomicLong();
+  private final AtomicLong chunkGenerateCount = new AtomicLong();
+  private final AtomicLong chunkSerializeSamples = new AtomicLong();
+  private final AtomicLong chunkSerializeTotalNs = new AtomicLong();
+  private final AtomicLong chunkSendSamples = new AtomicLong();
+  private final AtomicLong chunkSendTotalNs = new AtomicLong();
+  private final AtomicLong chunkDropBackpressure = new AtomicLong();
+  private final AtomicLong serializedCacheHits = new AtomicLong();
+  private final AtomicLong serializedCacheMisses = new AtomicLong();
+  private final AtomicLong serializedPathAttempts = new AtomicLong();
+  private final AtomicLong serializedPathSuccess = new AtomicLong();
+  private final AtomicLong serializedPathFallbacks = new AtomicLong();
 
   @Inject
   public FakeChunkService(
@@ -84,9 +109,14 @@ public class FakeChunkService {
     FakeChunkDispatchService.State dispatchState =
         new FakeChunkDispatchService.State(
             pendingQueues, queuedSets, inflightCounts, inflightKeys, enabled, LOGGER);
+    this.chunkDataBackend = new PaperChunkDataBackend();
     this.dispatchService =
         new FakeChunkDispatchService(
-            configContainer, chunkPacketCacheService, refreshCoordinator, dispatchState);
+            configContainer,
+            chunkPacketCacheService,
+            refreshCoordinator,
+            chunkDataBackend,
+            dispatchState);
     this.refreshLoopActions = new RefreshLoopActionsImpl();
     this.dispatchHooks = new DispatchHooksImpl();
   }
@@ -200,6 +230,7 @@ public class FakeChunkService {
     lastForcedPlanMs.clear();
     refreshLoopService.clearAll();
     refreshCoordinator.clearAll();
+    chunkDataBackend.clearCaches();
     lastKnownWorldId.clear();
     sessionEpoch.clear();
   }
@@ -298,6 +329,7 @@ public class FakeChunkService {
     }
     refreshCoordinator.markDirty(worldId, chunkKey);
     chunkPacketCacheService.invalidate(worldId, chunkKey);
+    chunkDataBackend.invalidate(worldId, chunkKey);
     Set<UUID> targets = refreshCoordinator.collectTargets(worldId, chunkKey, trackers);
 
     if (targets.isEmpty()) {
@@ -436,6 +468,7 @@ public class FakeChunkService {
     }
 
     Set<Long> sentChunks = new HashSet<>(tracker.getSentChunks());
+    tracker.prepareSentGrid(chunkX, chunkZ, viewDistance + 1);
 
     Deque<Long> queue = pendingQueues.computeIfAbsent(playerId, k -> new ConcurrentLinkedDeque<>());
     Set<Long> queued = queuedSets.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
@@ -449,11 +482,17 @@ public class FakeChunkService {
             viewDistance,
             serverDistance,
             config().safeSquareFactor(),
+            tracker.plannerCursor(),
+            Math.max(256, config().maxSendPerCycle() * 32),
             sentChunks,
+            tracker::containsSent,
+            chunkKey ->
+                dispatchService.isTemporarilyUnavailable(world.getUID(), chunkKey, System.currentTimeMillis()),
             queue,
             queued,
             inflightSet);
     FakeChunkPlannerService.PlanResult plan = plannerService.build(planInput);
+    tracker.plannerCursor(plan.nextCursor());
 
     for (Long chunkKey : plan.chunksToUnload()) {
       int cx = ChunkPos.getX(chunkKey);
@@ -475,8 +514,17 @@ public class FakeChunkService {
       queued.add(key);
     }
 
+    int burstSendCap = Math.max(config().maxSendPerCycle(), Math.min(256, config().maxSendPerCycle() * 3));
+    int burstInflightCap =
+        Math.max(config().maxInflightPerPlayer(), Math.min(128, config().maxInflightPerPlayer() * 2));
     dispatchService.processQueue(
-        player, world, playerId, tracker, getSessionEpoch(playerId), dispatchHooks);
+        player,
+        world,
+        playerId,
+        tracker,
+        getSessionEpoch(playerId),
+        dispatchHooks,
+        new FakeChunkDispatchService.DispatchLimits(burstSendCap, burstInflightCap));
     if (config().debugEnabled()) {
       AtomicInteger inflight = inflightCounts.get(playerId);
       int inflightCount = inflight == null ? 0 : inflight.get();
@@ -496,7 +544,7 @@ public class FakeChunkService {
               + " safe="
               + plan.safeSquareRadius()
               + " needed="
-              + plan.neededChunks().size()
+              + plan.neededCount()
               + " sent="
               + tracker.getSentChunks().size()
               + " unload="
@@ -720,6 +768,113 @@ public class FakeChunkService {
         });
   }
 
+  private CompletableFuture<Boolean> sendSerializedForSession(
+      Player player, ByteBuf payload, UUID expectedWorldId, long expectedEpoch) {
+    if (payload == null || !payload.isReadable()) return CompletableFuture.completedFuture(false);
+    CompletableFuture<Boolean> promise = new CompletableFuture<>();
+    boolean scheduled =
+        runForPlayer(
+            player,
+            () -> {
+              sendSerializedNow(player, payload, expectedWorldId, expectedEpoch, promise);
+            });
+    if (!scheduled) {
+      if (payload.refCnt() > 0) {
+        payload.release();
+      }
+      promise.complete(false);
+    }
+    return promise;
+  }
+
+  private void sendSerializedNow(
+      Player player,
+      ByteBuf payload,
+      UUID expectedWorldId,
+      long expectedEpoch,
+      CompletableFuture<Boolean> promise) {
+    if (promise == null) {
+      if (payload != null && payload.refCnt() > 0) {
+        payload.release();
+      }
+      return;
+    }
+    if (!enabled.get()) {
+      if (payload != null && payload.refCnt() > 0) {
+        payload.release();
+      }
+      promise.complete(false);
+      return;
+    }
+    if (!isSessionValid(player, expectedWorldId, expectedEpoch)) {
+      if (payload != null && payload.refCnt() > 0) {
+        payload.release();
+      }
+      promise.complete(false);
+      return;
+    }
+    try {
+      ServerPlayer serverPlayer = ((CraftPlayer) player).getHandle();
+      Channel channel = serverPlayer.connection.connection.channel;
+      Runnable writer =
+          () -> {
+            if (!isSessionValid(player, expectedWorldId, expectedEpoch)) {
+              if (payload.refCnt() > 0) {
+                payload.release();
+              }
+              promise.complete(false);
+              return;
+            }
+            ensureBypassHandler(channel);
+            long startedNs = System.nanoTime();
+            try {
+              channel
+                  .writeAndFlush(new BypassedPayload(payload))
+                  .addListener(
+                      future -> {
+                        if (!future.isSuccess()) {
+                          if (payload.refCnt() > 0) {
+                            payload.release();
+                          }
+                          promise.complete(false);
+                          return;
+                        }
+                        chunkSendSamples.incrementAndGet();
+                        chunkSendTotalNs.addAndGet(System.nanoTime() - startedNs);
+                        promise.complete(true);
+                      });
+            } catch (Throwable ignored) {
+              if (payload.refCnt() > 0) {
+                payload.release();
+              }
+              promise.complete(false);
+            }
+          };
+      if (channel.eventLoop().inEventLoop()) {
+        writer.run();
+      } else {
+        channel.eventLoop().execute(writer);
+      }
+    } catch (Throwable ignored) {
+      if (payload != null && payload.refCnt() > 0) {
+        payload.release();
+      }
+      promise.complete(false);
+    }
+  }
+
+  private void ensureBypassHandler(Channel channel) {
+    if (channel == null || !channel.isActive()) return;
+    if (channel.pipeline().get(EH_BYPASS_HANDLER) != null) return;
+    if (channel.pipeline().get("packet_handler") == null) return;
+    try {
+      channel
+          .pipeline()
+          .addBefore("packet_handler", EH_BYPASS_HANDLER, new ChunkBypassChannelHandler());
+    } catch (Throwable ignored) {
+    }
+  }
+
   private boolean isSessionValid(Player player, UUID expectedWorldId, long expectedEpoch) {
     if (player == null || !player.isOnline()) return false;
     if (expectedWorldId == null || !expectedWorldId.equals(player.getWorld().getUID()))
@@ -746,14 +901,16 @@ public class FakeChunkService {
     counters.keySet().removeIf(key -> key != null && key.startsWith(prefix));
   }
 
-  private void runForPlayer(Player player, Runnable runnable) {
-    if (player == null || runnable == null) return;
+  private boolean runForPlayer(Player player, Runnable runnable) {
+    if (player == null || runnable == null) return false;
     var plugin = ExtendedHorizonsPlugin.getInstance();
-    if (plugin == null || !plugin.isEnabled()) return;
+    if (plugin == null || !plugin.isEnabled()) return false;
     try {
       player.getScheduler().run(plugin, task -> runnable.run(), null);
+      return true;
     } catch (Throwable ignored) {
       debug(player.getUniqueId(), "sched_fail", "[EH] runForPlayer failed (ignored)");
+      return false;
     }
   }
 
@@ -847,9 +1004,10 @@ public class FakeChunkService {
     }
 
     @Override
-    public void sendPacketForSession(
-        Player player, Packet<?> packet, UUID expectedWorldId, long expectedEpoch) {
-      FakeChunkService.this.sendPacketForSession(player, packet, expectedWorldId, expectedEpoch);
+    public CompletableFuture<Boolean> sendSerializedForSession(
+        Player player, ByteBuf payload, UUID expectedWorldId, long expectedEpoch) {
+      return FakeChunkService.this.sendSerializedForSession(
+          player, payload, expectedWorldId, expectedEpoch);
     }
 
     @Override
@@ -865,6 +1023,80 @@ public class FakeChunkService {
     @Override
     public void inc(UUID playerId, String metric) {
       FakeChunkService.this.inc(playerId, metric);
+    }
+
+    @Override
+    public void recordQueuePollNanos(long nanos) {
+      if (nanos <= 0L) return;
+      queuePollSamples.incrementAndGet();
+      queuePollTotalNs.addAndGet(nanos);
+    }
+
+    @Override
+    public void onChunkLoadedCacheHit() {
+      chunkLoadedCacheHits.incrementAndGet();
+    }
+
+    @Override
+    public void onChunkGenerate() {
+      chunkGenerateCount.incrementAndGet();
+    }
+
+    @Override
+    public void onChunkDiskReadHit() {
+      chunkDiskReadHits.incrementAndGet();
+    }
+
+    @Override
+    public void recordChunkSerializeNanos(long nanos) {
+      if (nanos <= 0L) return;
+      chunkSerializeSamples.incrementAndGet();
+      chunkSerializeTotalNs.addAndGet(nanos);
+    }
+
+    @Override
+    public void onChunkDropBackpressure() {
+      chunkDropBackpressure.incrementAndGet();
+    }
+
+    @Override
+    public void onSerializedCacheHit() {
+      serializedCacheHits.incrementAndGet();
+    }
+
+    @Override
+    public void onSerializedCacheMiss() {
+      serializedCacheMisses.incrementAndGet();
+    }
+
+    @Override
+    public void onSerializedPathAttempt() {
+      serializedPathAttempts.incrementAndGet();
+    }
+
+    @Override
+    public void onSerializedPathSuccess() {
+      serializedPathSuccess.incrementAndGet();
+    }
+
+    @Override
+    public void onSerializedPathFallback() {
+      serializedPathFallbacks.incrementAndGet();
+    }
+  }
+
+  private record BypassedPayload(ByteBuf payload) {}
+
+  private static final class ChunkBypassChannelHandler extends ChannelOutboundHandlerAdapter {
+
+    @Override
+    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+        throws Exception {
+      if (msg instanceof BypassedPayload bypassedPayload) {
+        super.write(ctx, bypassedPayload.payload(), promise);
+        return;
+      }
+      super.write(ctx, msg, promise);
     }
   }
 }

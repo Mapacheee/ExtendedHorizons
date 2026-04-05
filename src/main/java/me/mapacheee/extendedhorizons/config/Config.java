@@ -55,6 +55,11 @@ public record Config(
     return fakeChunks == null ? 16 : fakeChunks.maxInflightPerPlayer();
   }
 
+  public long dispatchTimeBudgetNanos() {
+    if (fakeChunks == null) return 5_000_000L;
+    return Math.max(250_000L, fakeChunks.dispatchTimeBudgetNanos());
+  }
+
   public boolean fakeChunksGenerateMissingChunks() {
     if (fakeChunks == null) return false;
     return fakeChunks.generateMissingChunks();
@@ -234,6 +239,7 @@ public record Config(
       @Setting("target-view-distance") int targetViewDistance,
       @Setting("max-send-per-cycle") int maxSendPerCycle,
       @Setting("max-inflight-per-player") int maxInflightPerPlayer,
+      @Setting("dispatch-time-budget-nanos") long dispatchTimeBudgetNanos,
       @Setting("generate-missing-chunks") boolean generateMissingChunks,
       @Setting("force-plan-interval-ms") long forcePlanIntervalMs,
       KeepAliveConfig keepalive,

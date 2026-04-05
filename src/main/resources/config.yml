@@ -21,6 +21,8 @@ fake-chunks:
   max-send-per-cycle: 25
   # Maximum concurrent fake-chunk sends per player.
   max-inflight-per-player: 16
+  # Dispatch budget per player cycle (nanoseconds). Higher = faster fill, higher CPU burst.
+  dispatch-time-budget-nanos: 5000000
   # Should generate chunk if that chunk isn't generated yet.
   generate-missing-chunks: false
   # Interval (ms) to recompute the full missing-chunk plan.

@@ -1,7 +1,7 @@
 package me.mapacheee.extendedhorizons.chunk;
 
 import com.thewinterframework.configurate.Container;
-import java.util.BitSet;
+import io.netty.buffer.ByteBuf;
 import java.util.Deque;
 import java.util.Map;
 import java.util.Set;
@@ -10,34 +10,54 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import me.mapacheee.extendedhorizons.chunk.backend.ChunkDataBackend;
+import me.mapacheee.extendedhorizons.chunk.backend.ChunkDataBackend.ChunkDataSource;
 import me.mapacheee.extendedhorizons.chunk.cache.ChunkPacketCacheService;
 import me.mapacheee.extendedhorizons.chunk.tracker.PlayerChunkTracker;
 import me.mapacheee.extendedhorizons.config.Config;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.chunk.ChunkAccess;
-import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.level.lighting.LevelLightEngine;
 import org.bukkit.World;
-import org.bukkit.craftbukkit.CraftChunk;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 
 public class FakeChunkDispatchService {
 
+  private static final int MAX_GLOBAL_PACKET_BUILDS = 96;
+
   public interface Hooks {
     boolean isSessionValid(Player player, UUID expectedWorldId, long expectedEpoch);
 
-    void sendPacketForSession(
-        Player player, Packet<?> packet, UUID expectedWorldId, long expectedEpoch);
+    CompletableFuture<Boolean> sendSerializedForSession(
+        Player player, ByteBuf payload, UUID expectedWorldId, long expectedEpoch);
 
     boolean runAtChunk(World world, int chunkX, int chunkZ, Runnable runnable);
 
     void recordChunkLatency(long startedNs);
 
     void inc(UUID playerId, String metric);
+
+    void recordQueuePollNanos(long nanos);
+
+    void onChunkLoadedCacheHit();
+
+    void onChunkGenerate();
+
+    void onChunkDiskReadHit();
+
+    void recordChunkSerializeNanos(long nanos);
+
+    void onChunkDropBackpressure();
+
+    void onSerializedCacheHit();
+
+    void onSerializedCacheMiss();
+
+    void onSerializedPathAttempt();
+
+    void onSerializedPathSuccess();
+
+    void onSerializedPathFallback();
   }
 
   public record State(
@@ -57,23 +77,28 @@ public class FakeChunkDispatchService {
       UUID expectedWorldId,
       long expectedEpoch) {}
 
+  public record DispatchLimits(int maxSendPerCycle, int maxInflightPerPlayer) {}
+
   private final Container<Config> configContainer;
   private final ChunkPacketCacheService chunkPacketCacheService;
   private final FakeChunkRefreshCoordinator refreshCoordinator;
+  private final ChunkDataBackend chunkDataBackend;
   private final State state;
-  private final Map<ChunkPacketCacheService.ChunkKey, CompletableFuture<ClientboundLevelChunkWithLightPacket>>
-      packetBuildInFlight = new ConcurrentHashMap<>();
   private final Map<ChunkPacketCacheService.ChunkKey, Long> unavailableUntilMs =
       new ConcurrentHashMap<>();
+  private final AtomicLong backpressureDrops = new AtomicLong();
+  private volatile long unavailableCleanupLastMs = 0L;
 
   public FakeChunkDispatchService(
       Container<Config> configContainer,
       ChunkPacketCacheService chunkPacketCacheService,
       FakeChunkRefreshCoordinator refreshCoordinator,
+      ChunkDataBackend chunkDataBackend,
       State state) {
     this.configContainer = configContainer;
     this.chunkPacketCacheService = chunkPacketCacheService;
     this.refreshCoordinator = refreshCoordinator;
+    this.chunkDataBackend = chunkDataBackend;
     this.state = state;
   }
 
@@ -84,10 +109,29 @@ public class FakeChunkDispatchService {
       PlayerChunkTracker tracker,
       long expectedEpoch,
       Hooks hooks) {
+    processQueue(
+        player,
+        world,
+        playerId,
+        tracker,
+        expectedEpoch,
+        hooks,
+        new DispatchLimits(config().maxSendPerCycle(), config().maxInflightPerPlayer()));
+  }
+
+  public void processQueue(
+      Player player,
+      World world,
+      UUID playerId,
+      PlayerChunkTracker tracker,
+      long expectedEpoch,
+      Hooks hooks,
+      DispatchLimits limits) {
     if (!state.enabled().get()) return;
     if (player == null || !player.isOnline()) return;
     if (world == null || playerId == null || tracker == null || hooks == null) return;
     UUID expectedWorldId = world.getUID();
+    cleanupUnavailableIfNeeded(System.currentTimeMillis());
 
     Deque<Long> queue = state.pendingQueues().get(playerId);
     if (queue == null) return;
@@ -103,9 +147,21 @@ public class FakeChunkDispatchService {
             .inflightKeys()
             .computeIfAbsent(playerId, k -> java.util.concurrent.ConcurrentHashMap.newKeySet());
 
+    long queueStartedNs = System.nanoTime();
+    long queueBudgetNs = config().dispatchTimeBudgetNanos();
+    int effectiveSendCap = Math.max(1, limits == null ? config().maxSendPerCycle() : limits.maxSendPerCycle());
+    int effectiveInflightCap =
+        Math.max(1, limits == null ? config().maxInflightPerPlayer() : limits.maxInflightPerPlayer());
     int sentThisCycle = 0;
-    while (sentThisCycle < config().maxSendPerCycle()
-        && inflight.get() < config().maxInflightPerPlayer()) {
+    while (sentThisCycle < effectiveSendCap && inflight.get() < effectiveInflightCap) {
+      if (System.nanoTime() - queueStartedNs >= queueBudgetNs) {
+        break;
+      }
+      if (chunkPacketCacheService.activeBuildCount() >= MAX_GLOBAL_PACKET_BUILDS) {
+        backpressureDrops.incrementAndGet();
+        hooks.onChunkDropBackpressure();
+        break;
+      }
       Long key = queue.pollFirst();
       if (key == null) break;
       queued.remove(key);
@@ -125,6 +181,7 @@ public class FakeChunkDispatchService {
               });
       sentThisCycle++;
     }
+    hooks.recordQueuePollNanos(System.nanoTime() - queueStartedNs);
   }
 
   private CompletableFuture<Boolean> sendFakeChunk(ChunkSendRequest request, Hooks hooks) {
@@ -152,37 +209,63 @@ public class FakeChunkDispatchService {
       return CompletableFuture.completedFuture(false);
     }
     if (!chunkPacketCacheService.shouldBypass(expectedWorldId, chunkKey)) {
-      ClientboundLevelChunkWithLightPacket cached =
-          chunkPacketCacheService.get(expectedWorldId, chunkKey);
-      if (cached != null) {
+      ByteBuf serialized = chunkPacketCacheService.getSerialized(expectedWorldId, chunkKey);
+      if (serialized != null && serialized.isReadable()) {
+        hooks.onChunkLoadedCacheHit();
+        hooks.onSerializedCacheHit();
+        hooks.onSerializedPathAttempt();
         unavailableUntilMs.remove(cacheKey);
-        hooks.sendPacketForSession(player, cached, expectedWorldId, expectedEpoch);
-        if (hooks.isSessionValid(player, expectedWorldId, expectedEpoch)) {
-          tracker.markChunkSent(x, z);
-          refreshCoordinator.addSubscription(player.getUniqueId(), expectedWorldId, chunkKey);
-          hooks.inc(player.getUniqueId(), "fake_sent_cache");
-          hooks.recordChunkLatency(startedNs);
-          return CompletableFuture.completedFuture(true);
-        }
+        return hooks.sendSerializedForSession(player, serialized, expectedWorldId, expectedEpoch)
+            .thenApply(
+                sent -> {
+                  if (!sent) {
+                    hooks.onSerializedPathFallback();
+                    return false;
+                  }
+                  hooks.onSerializedPathSuccess();
+                  tracker.markChunkSent(x, z);
+                  refreshCoordinator.addSubscription(player.getUniqueId(), expectedWorldId, chunkKey);
+                  hooks.inc(player.getUniqueId(), "fake_sent_cache");
+                  return true;
+                })
+            .exceptionally(
+                e -> {
+                  hooks.onSerializedPathFallback();
+                  return false;
+                })
+            .whenComplete((ok, err) -> hooks.recordChunkLatency(startedNs));
       }
+      hooks.onSerializedCacheMiss();
+    } else {
+      hooks.onSerializedCacheMiss();
     }
-    return getOrBuildPacket(world, expectedWorldId, x, z, chunkKey, hooks)
-        .thenApply(
-            packet -> {
-              if (packet == null) {
+    return getOrBuildPayload(world, expectedWorldId, x, z, chunkKey, hooks)
+        .thenCompose(
+            payload -> {
+              if (payload == null || !payload.isReadable()) {
                 unavailableUntilMs.put(cacheKey, System.currentTimeMillis() + 2000L);
-                return false;
+                return CompletableFuture.completedFuture(false);
               }
               unavailableUntilMs.remove(cacheKey);
-              if (!hooks.isSessionValid(player, expectedWorldId, expectedEpoch)) return false;
-              hooks.sendPacketForSession(player, packet, expectedWorldId, expectedEpoch);
               if (!hooks.isSessionValid(player, expectedWorldId, expectedEpoch)) {
-                return false;
+                payload.release();
+                return CompletableFuture.completedFuture(false);
               }
-              tracker.markChunkSent(x, z);
-              refreshCoordinator.addSubscription(player.getUniqueId(), expectedWorldId, chunkKey);
-              hooks.inc(player.getUniqueId(), "fake_sent");
-              return true;
+              hooks.onSerializedPathAttempt();
+              return hooks.sendSerializedForSession(player, payload, expectedWorldId, expectedEpoch)
+                  .thenApply(
+                      sent -> {
+                        if (!sent) {
+                          hooks.onSerializedPathFallback();
+                          return false;
+                        }
+                        hooks.onSerializedPathSuccess();
+                        tracker.markChunkSent(x, z);
+                        refreshCoordinator.addSubscription(
+                            player.getUniqueId(), expectedWorldId, chunkKey);
+                        hooks.inc(player.getUniqueId(), "fake_sent_serialized");
+                        return true;
+                      });
             })
         .exceptionally(
             e -> {
@@ -194,85 +277,74 @@ public class FakeChunkDispatchService {
         .whenComplete((ok, err) -> hooks.recordChunkLatency(startedNs));
   }
 
-  private CompletableFuture<ClientboundLevelChunkWithLightPacket> getOrBuildPacket(
+  private CompletableFuture<ByteBuf> getOrBuildPayload(
       World world, UUID expectedWorldId, int x, int z, long chunkKey, Hooks hooks) {
     if (world == null || expectedWorldId == null || hooks == null) {
       return CompletableFuture.completedFuture(null);
     }
-    ChunkPacketCacheService.ChunkKey key = new ChunkPacketCacheService.ChunkKey(expectedWorldId, chunkKey);
-    CompletableFuture<ClientboundLevelChunkWithLightPacket> existing = packetBuildInFlight.get(key);
-    if (existing != null) return existing;
-
-    CompletableFuture<ClientboundLevelChunkWithLightPacket> promise = new CompletableFuture<>();
-    CompletableFuture<ClientboundLevelChunkWithLightPacket> raced = packetBuildInFlight.putIfAbsent(key, promise);
-    if (raced != null) return raced;
-
-    world
-        .getChunkAtAsync(x, z, config().fakeChunksGenerateMissingChunks())
-        .thenAccept(
-            chunk -> {
-              if (chunk == null) {
-                promise.complete(null);
-                return;
-              }
-              boolean scheduled =
-                  hooks.runAtChunk(
-                      world,
-                      x,
-                      z,
-                      () -> {
-                        if (!state.enabled().get()) {
-                          promise.complete(null);
-                          return;
-                        }
-                        try {
-                          ChunkAccess access = ((CraftChunk) chunk).getHandle(ChunkStatus.FULL);
-                          if (!(access instanceof LevelChunk nmsChunk)) {
-                            promise.complete(null);
-                            return;
-                          }
-                          LevelLightEngine lightEngine = nmsChunk.getLevel().getLightEngine();
-                          BitSet[] lightMasks = getLightMasks(nmsChunk);
-                          ClientboundLevelChunkWithLightPacket packet =
-                              new ClientboundLevelChunkWithLightPacket(
-                                  nmsChunk, lightEngine, lightMasks[0], lightMasks[1], true);
-                          chunkPacketCacheService.put(expectedWorldId, chunkKey, packet);
-                          promise.complete(packet);
-                        } catch (Throwable t) {
-                          promise.complete(null);
-                        }
-                      });
-              if (!scheduled) {
-                promise.complete(null);
-              }
-            })
-        .exceptionally(
-            e -> {
-              promise.complete(null);
-              return null;
-            });
-
-    promise.whenComplete((packet, err) -> packetBuildInFlight.remove(key, promise));
-    return promise;
-  }
-
-  private BitSet[] getLightMasks(LevelChunk chunk) {
-    var sections = chunk.getSections();
-    int sectionCount = sections.length;
-    BitSet skyLight = new BitSet(sectionCount + 2);
-    BitSet blockLight = new BitSet(sectionCount + 2);
-    for (int i = 0; i < sectionCount; i++) {
-      var section = sections[i];
-      if (section != null && !section.hasOnlyAir()) {
-        skyLight.set(i + 1);
-        blockLight.set(i + 1);
-      }
-    }
-    return new BitSet[] {skyLight, blockLight};
+    return chunkPacketCacheService.getOrStartBuildFuture(
+        expectedWorldId,
+        chunkKey,
+        () -> {
+          long serializeStartedNs = System.nanoTime();
+          return chunkDataBackend
+              .loadOrBuildPacket(
+                  world,
+                  x,
+                  z,
+                  config().fakeChunksGenerateMissingChunks(),
+                  (w, cx, cz, runnable) -> hooks.runAtChunk(w, cx, cz, runnable))
+              .thenApply(
+                  result -> {
+                    if (result == null) return null;
+                    if (result.source() == ChunkDataSource.GENERATED) {
+                      hooks.onChunkGenerate();
+                    } else if (result.source() == ChunkDataSource.DISK) {
+                      hooks.onChunkDiskReadHit();
+                    }
+                    return result.serializedPayload();
+                  })
+              .whenComplete(
+                  (payload, err) -> {
+                    hooks.recordChunkSerializeNanos(System.nanoTime() - serializeStartedNs);
+                    if (payload != null && payload.isReadable()) {
+                      chunkPacketCacheService.putSerialized(expectedWorldId, chunkKey, payload);
+                    }
+                  });
+        });
   }
 
   private Config config() {
     Config cfg = configContainer.get();
     return cfg == null ? Config.empty() : cfg;
+  }
+
+  public int packetBuildInFlightSize() {
+    return chunkPacketCacheService.activeBuildCount();
+  }
+
+  public long backpressureDrops() {
+    return backpressureDrops.get();
+  }
+
+  public int unavailableEntryCount() {
+    cleanupUnavailableIfNeeded(System.currentTimeMillis());
+    return unavailableUntilMs.size();
+  }
+
+  public boolean isTemporarilyUnavailable(UUID worldId, long chunkKey, long nowMs) {
+    if (worldId == null) return false;
+    cleanupUnavailableIfNeeded(nowMs);
+    ChunkPacketCacheService.ChunkKey key = new ChunkPacketCacheService.ChunkKey(worldId, chunkKey);
+    Long blockedUntil = unavailableUntilMs.get(key);
+    if (blockedUntil == null) return false;
+    return blockedUntil > nowMs;
+  }
+
+  private void cleanupUnavailableIfNeeded(long nowMs) {
+    if (unavailableUntilMs.isEmpty()) return;
+    if (nowMs - unavailableCleanupLastMs < 10_000L) return;
+    unavailableCleanupLastMs = nowMs;
+    unavailableUntilMs.entrySet().removeIf(entry -> entry == null || entry.getValue() == null || entry.getValue() <= nowMs);
   }
 }
