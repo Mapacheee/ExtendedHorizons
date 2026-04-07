@@ -1,39 +1,45 @@
 package me.mapacheee.extendedhorizons;
 
-import com.github.retrooper.packetevents.PacketEvents;
+import com.google.inject.Binder;
+import com.google.inject.Scopes;
 import com.thewinterframework.paper.PaperWinterPlugin;
 import com.thewinterframework.plugin.WinterBootPlugin;
-import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
+import com.thewinterframework.service.annotation.Service;
+import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
+import me.mapacheee.extendedhorizons.fakechunks.backend.PaperChunkBackend;
 
 @WinterBootPlugin
-public class ExtendedHorizonsPlugin extends PaperWinterPlugin {
+public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
-  private static ExtendedHorizonsPlugin instance;
+    private static ExtendedHorizonsPlugin instance;
 
-  public static ExtendedHorizonsPlugin getInstance() {
-    return instance;
-  }
-
-  @Override
-  public void onPluginLoad() {
-    super.onPluginLoad();
-    instance = this;
-    PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
-    PacketEvents.getAPI().load();
-  }
-
-  @Override
-  public void onPluginEnable() {
-    super.onPluginEnable();
-    PacketEvents.getAPI().init();
-  }
-
-  @Override
-  public void onPluginDisable() {
-    try {
-      PacketEvents.getAPI().terminate();
-    } catch (Throwable ignored) {
+    public static ExtendedHorizonsPlugin getInstance() {
+        return instance;
     }
-    super.onPluginDisable();
-  }
+
+    public static <T> T getService(Class<T> type) {
+        if (instance == null) {
+            throw new IllegalStateException("ExtendedHorizons plugin is not loaded yet");
+        }
+        return instance.getInjector().getInstance(type);
+    }
+
+    @Override
+    public void onPluginLoad() {
+        super.onPluginLoad();
+        instance = this;
+    }
+
+    @Override
+    public void onPluginDisable() {
+        instance = null;
+        super.onPluginDisable();
+    }
+
+    @Override
+    public void configure(Binder binder) {
+        binder.bindScope(Service.class, Scopes.SINGLETON);
+        binder.bind(ChunkBackend.class).to(PaperChunkBackend.class).in(Scopes.SINGLETON);
+    }
 }
+

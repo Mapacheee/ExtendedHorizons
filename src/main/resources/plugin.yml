@@ -7,23 +7,15 @@ description: ${description}
 author: Mapacheee
 website: https://github.com/mapacheee/extendedhorizons
 
-depend: [packetevents]
-softdepend: [PlaceholderAPI]
-
 commands:
   extendedhorizons:
     description: Main ExtendedHorizons command
-    usage: /<command> [subcommand]
-    aliases: [eh, horizons, viewdistance, vd]
+    usage: /<command>
+    aliases: [eh]
     permission: extendedhorizons.use
 
 permissions:
   extendedhorizons.use:
-    description: Basic permission to use ExtendedHorizons features
+    description: Basic permission to use ExtendedHorizons
     default: true
-  extendedhorizons.admin:
-    description: Access to admin commands
-    default: op
-  extendedhorizons.max.*:
-    description: Max distance override for /eh setme via extendedhorizons.max.<distance>
-    default: false
+

@@ -1,118 +1,28 @@
-#################################################################
-#                                                               #
-#                    ExtendedHorizons                           #
-#                           V3                                  #
-#                                                               #
-#      Get support here: https://discord.gg/yA3vD2S8Zj          #
-#   Source code: https://github.com/Mapacheee/ExtendedHorizons  #
-#  Consider donate: https://www.paypal.com/paypalme/mapachedou  #
-#################################################################
-
-# Enables or disables [EH] debug logs in console.
 debug:
   enabled: false
 
-# Fake chunk system settings.
 fake-chunks:
-  # Maximum target distance the plugin will advertise/send.
-  # This is also capped by the client-reported view distance.
   target-view-distance: 32
-  # Maximum fake chunks dispatched per cycle per player.
-  max-send-per-cycle: 25
-  # Maximum concurrent fake-chunk sends per player.
-  max-inflight-per-player: 16
-  # Dispatch budget per player cycle (nanoseconds). Higher = faster fill, higher CPU burst.
-  dispatch-time-budget-nanos: 5000000
-  # Should generate chunk if that chunk isn't generated yet.
-  generate-missing-chunks: false
-  # Interval (ms) to recompute the full missing-chunk plan.
-  force-plan-interval-ms: 3000
-  keepalive:
-    # Initial delay of the global keepalive loop on enable.
-    initial-delay-ticks: 20
-    # Period of the global loop that drains queues and maintains state.
-    period-ticks: 10
-  warmup:
-    # Single warmup trigger delay after join/teleport.
-    delay-ticks: 5
+  max-send-per-cycle: 3
+  max-inflight-per-player: 5
+  chunk-queue-size: 16
+  dispatch-time-budget-nanos: 900000
+  generate-missing-chunks: true
+  force-plan-interval-ms: 900
+  unavailable-retry-ms: 150
+  safe-square-factor: 0.80
+  runtime:
+    period-ticks: 1
   cache:
-    # Cached fake chunk packet lifetime.
     ttl-seconds: 15
-    # Maximum chunk packets stored in cache.
     max-entries: 1500
-    # Temporary cache bypass after real-player interaction in a chunk.
     bypass-after-real-interaction-ms: 3000
-    # If true, cache is bypassed whenever real players are inside that chunk.
-    bypass-when-real-players: false
-  live-refresh:
-    # Periodically refreshes already-sent fake chunks to sync edits (e.g. WorldEdit) and activity.
-    enabled: true
-    # Minimum delay between refresh cycles per player.
-    period-ms: 2500
-    # Number of sent fake chunks refreshed per cycle.
-    chunks-per-cycle: 2
-    # Fallback that force-invalidates chunks when there is no dirty/activity evidence.
-    # Keep this disabled for best CPU usage (enabling may increase packet build cost).
-    invalidate-fallback-enabled: false
-    # Max chunks force-invalidated by fallback when enabled.
-    invalidate-fallback-max-per-cycle: 1
-    # Debounce for repeated invalidations of the same chunk.
-    min-invalidate-interval-ms: 250
-    # High-frequency events. Keep disabled for best performance.
-    invalidate-on-physics: false
-    invalidate-on-flow: false
-    invalidate-on-player-interact: true
-  # Internal safe-square factor (0.65 = 65% of server view distance).
-  # Fake chunks are not forced inside this area.
-  safe-square-factor: 0.85
 
-# Per-world overrides.
-# - World names are case-insensitive.
-# - Any world not listed here uses global fake-chunks defaults:
-#   enable-fakechunks=true and target-distance=fake-chunks.target-view-distance.
-# - Any world not listed here also enables far-players by default.
 world-settings:
   world:
-    # Enables fake chunks in this world.
     enable-fakechunks: true
-    # Target fake distance only for this world.
     target-distance: 32
-    # Enables far-player sync in this world.
-    enable-farplayers: true
   world_nether:
     enable-fakechunks: false
     target-distance: 16
-    enable-farplayers: false
 
-# Far player sync in fake-chunk range (players only).
-# This mirrors remote players outside vanilla tracking distance.
-far-players:
-  # Master toggle for far-player rendering.
-  enabled: true
-  # Max distance (in chunks) where remote players can be mirrored.
-  max-distance-chunks: 32
-  # Sync loop period in ticks (lower = smoother, higher CPU/network usage).
-  update-interval-ticks: 4
-  # Maximum new mirrored players spawned per viewer per tick.
-  spawn-burst-per-tick: 10
-  # Hard cap of mirrored players shown simultaneously per viewer.
-  max-synced-per-viewer: 40
-  # Respect player visibility (vanish plugins using hide/show APIs).
-  respect-vanish: true
-  # Disable far sync for spectator mode players (viewer and target).
-  disable-in-spectator: true
-  # Require a permission on viewer to receive far players.
-  require-viewer-permission: false
-  # Permission node checked when require-viewer-permission is true.
-  viewer-permission-node: "extendedhorizons.farplayers.receive"
-  # Mirror target mounts/vehicles (horse, boat, minecart) in far range.
-  allow-mount-sync: true
-
-# PacketEvents hook settings.
-packet-interceptor:
-  # Upper cap of the distance advertised to clients.
-  max-target-distance: 32
-  # Minimum player lived ticks before intercepting packets.
-  min-player-ticks-lived: 40
-  # Extra chunk margin used to cancel UNLOAD_CHUNK packets.
-  unload-margin-chunks: 1
