@@ -6,11 +6,14 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class FoliaTaskUtil {
 
-    private FoliaTaskUtil() {
-    }
+    private final static Logger LOGGER = LoggerFactory.getLogger(FoliaTaskUtil.class);
+
+    private FoliaTaskUtil() {}
 
     public static ScheduledTask runGlobalTimer(Plugin plugin, Runnable runnable, long initialDelayTicks, long periodTicks) {
         return Bukkit.getGlobalRegionScheduler().runAtFixedRate(
@@ -27,7 +30,8 @@ public final class FoliaTaskUtil {
         }
         try {
             player.getScheduler().run(plugin, task -> runnable.run(), null);
-        } catch (Throwable ignored) {
+        } catch (Throwable throwable) {
+            LOGGER.error("Error running task for player", throwable);
         }
     }
 
@@ -39,7 +43,8 @@ public final class FoliaTaskUtil {
             Location loc = new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8);
             Bukkit.getRegionScheduler().execute(plugin, loc, runnable);
             return true;
-        } catch (Throwable ignored) {
+        } catch (Throwable throwable) {
+            LOGGER.error("Error running task for chunk", throwable);
             return false;
         }
     }
