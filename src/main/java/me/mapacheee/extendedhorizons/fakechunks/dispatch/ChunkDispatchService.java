@@ -48,7 +48,7 @@ public final class ChunkDispatchService {
         int chunkQueueSize = this.configFacade.get().chunkQueueSize();
 
         do {
-            this.drainReadyEntries(world, channel, session);
+            session.chunkQueue().removeIf(entry -> this.checkQueueEntry(world, channel, session, entry));
 
             if (session.chunkQueue().size() >= chunkQueueSize) {
                 break;
@@ -69,8 +69,6 @@ public final class ChunkDispatchService {
                 break;
             }
         } while (System.nanoTime() < deadlineNanos);
-
-        this.drainReadyEntries(world, channel, session);
     }
 
     public void sendUnload(Channel channel, PlayerSession session, long chunkKey) {
@@ -131,38 +129,28 @@ public final class ChunkDispatchService {
                 .exceptionally(throwable -> null);
     }
 
-    private void drainReadyEntries(World world, Channel channel, PlayerSession session) {
-        if (session.chunkQueue().isEmpty()) {
-            return;
+    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry) {
+        CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
+        if (!buildFuture.isDone()) {
+            return false;
         }
-        int checks = session.chunkQueue().size();
-        for (int i = 0; i < checks; i++) {
-            ChunkSendQueueEntry entry = session.chunkQueue().pollFirst();
-            if (entry == null) {
-                break;
-            }
-            CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
-            if (!buildFuture.isDone()) {
-                session.chunkQueue().addLast(entry);
-                continue;
-            }
-            if (buildFuture.isCompletedExceptionally()) {
-                session.onChunkBuildFailed(entry.chunkKey());
-                entry.releaseFuture();
-                continue;
-            }
-            ByteBuf payload = buildFuture.getNow(null);
-            if (payload == null) {
-                session.onChunkBuildFailed(entry.chunkKey());
-                entry.releaseFuture();
-                continue;
-            }
-            ByteBuf toSend = payload.retainedDuplicate();
-            if (!this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {
-                session.onChunkBuildFailed(entry.chunkKey());
-            }
+        if (buildFuture.isCompletedExceptionally()) {
+            session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
+            return true;
         }
+        ByteBuf payload = buildFuture.getNow(null);
+        if (payload == null) {
+            session.onChunkBuildFailed(entry.chunkKey());
+            entry.releaseFuture();
+            return true;
+        }
+        ByteBuf toSend = payload.retainedDuplicate();
+        if (!this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {
+            session.onChunkBuildFailed(entry.chunkKey());
+        }
+        entry.releaseFuture();
+        return true;
     }
 
     private boolean trySend(
