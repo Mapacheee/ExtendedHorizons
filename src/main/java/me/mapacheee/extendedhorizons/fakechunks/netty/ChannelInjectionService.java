@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.fakechunks.netty;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
 import io.netty.channel.EventLoop;
+import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import net.minecraft.server.level.ServerPlayer;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
@@ -13,18 +14,25 @@ public final class ChannelInjectionService {
     public static final String EH_HANDLER = "eh_packet_handler";
 
     public void inject(Player player) {
+        this.inject(player, null);
+    }
+
+    public void inject(Player player, PlayerSession session) {
         Channel channel = this.resolveChannel(player);
         if (channel == null || !channel.isActive()) {
             return;
         }
         Runnable action = () -> {
-            if (channel.pipeline().get(EH_HANDLER) != null) {
+            if (channel.pipeline().get(EH_HANDLER) instanceof EhPacketHandler handler) {
+                handler.setSession(session);
                 return;
             }
             if (channel.pipeline().get("packet_handler") == null) {
                 return;
             }
-            channel.pipeline().addBefore("packet_handler", EH_HANDLER, new EhPacketHandler());
+            EhPacketHandler handler = new EhPacketHandler();
+            handler.setSession(session);
+            channel.pipeline().addBefore("packet_handler", EH_HANDLER, handler);
         };
         this.runOnEventLoop(channel, action);
     }
@@ -35,8 +43,21 @@ public final class ChannelInjectionService {
             return;
         }
         Runnable action = () -> {
-            if (channel.pipeline().get(EH_HANDLER) != null) {
+            if (channel.pipeline().get(EH_HANDLER) instanceof EhPacketHandler handler) {
+                handler.setSession(null);
                 channel.pipeline().remove(EH_HANDLER);
+            }
+        };
+        this.runOnEventLoop(channel, action);
+    }
+
+    public void bindSession(Channel channel, PlayerSession session) {
+        if (channel == null || !channel.isActive()) {
+            return;
+        }
+        Runnable action = () -> {
+            if (channel.pipeline().get(EH_HANDLER) instanceof EhPacketHandler handler) {
+                handler.setSession(session);
             }
         };
         this.runOnEventLoop(channel, action);
@@ -68,12 +89,11 @@ public final class ChannelInjectionService {
         this.runOnEventLoop(channel, channel::flush);
     }
 
-    public boolean executeOnEventLoop(Channel channel, Runnable runnable) {
+    public void executeOnEventLoop(Channel channel, Runnable runnable) {
         if (channel == null || !channel.isActive() || runnable == null) {
-            return false;
+            return;
         }
         this.runOnEventLoop(channel, runnable);
-        return true;
     }
 
     public Channel resolveChannel(Player player) {

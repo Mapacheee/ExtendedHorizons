@@ -40,42 +40,37 @@ public final class ChunkDispatchService {
         this.channelInjectionService = channelInjectionService;
     }
 
-    public void processQueue(World world, Channel channel, PlayerSession session, boolean boosted) {
+    public void processQueue(World world, Channel channel, PlayerSession session, long deadlineNanos) {
         if (world == null || channel == null || session == null) {
             return;
         }
-        this.drainPendingSends(session);
+        int chunksPerTick = this.configFacade.get().maxSendPerCycle();
+        int chunkQueueSize = this.configFacade.get().chunkQueueSize();
 
-        int baseSendCap = this.configFacade.get().maxSendPerCycle();
-        int baseInflightCap = this.configFacade.get().maxInflightPerPlayer();
-        int sendCap = boosted ? Math.min(8, baseSendCap + 2) : baseSendCap;
-        int inflightCap = boosted ? Math.min(10, baseInflightCap + 2) : baseInflightCap;
-        long budgetNanos = this.configFacade.get().dispatchTimeBudgetNanos();
-        long deadline = System.nanoTime() + (boosted ? Math.round(budgetNanos * 1.35d) : budgetNanos);
-        int inflightCount = session.inflightChunks().size();
+        do {
+            this.drainReadyEntries(world, channel, session);
 
-        int sent = 0;
-        while (sent < sendCap
-                && inflightCount < inflightCap
-                && System.nanoTime() < deadline) {
-            Long chunkKey = session.pendingQueue().pollFirst();
-            if (chunkKey == null) {
+            if (session.chunkQueue().size() >= chunkQueueSize) {
                 break;
             }
-            session.queuedChunks().remove(chunkKey);
-            if (session.sentChunks().contains(chunkKey) || !session.inflightChunks().add(chunkKey)) {
-                continue;
+
+            Long chunkKey = session.pollNextChunkKey();
+            if (chunkKey == null) {
+                break;
             }
 
             int chunkX = ChunkPos.getX(chunkKey);
             int chunkZ = ChunkPos.getZ(chunkKey);
-            UUID worldId = session.worldId();
-            long epoch = session.epoch();
-            CompletableFuture<Boolean> sendFuture = this.buildAndSend(world, channel, session, worldId, epoch, chunkX, chunkZ, chunkKey);
-            session.pendingSendQueue().addLast(new ChunkSendQueueEntry(chunkKey, sendFuture));
-            sent++;
-            inflightCount++;
-        }
+            CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
+            session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
+            session.onChunkQueued(chunkKey);
+
+            if (chunksPerTick-- <= 0) {
+                break;
+            }
+        } while (System.nanoTime() < deadlineNanos);
+
+        this.drainReadyEntries(world, channel, session);
     }
 
     public void sendUnload(Channel channel, PlayerSession session, long chunkKey) {
@@ -85,40 +80,27 @@ public final class ChunkDispatchService {
         int chunkX = ChunkPos.getX(chunkKey);
         int chunkZ = ChunkPos.getZ(chunkKey);
 
-        int centerX = ChunkPos.getX(session.lastChunkKey());
-        int centerZ = ChunkPos.getZ(session.lastChunkKey());
-        int safeRadius = session.serverViewDistance();
-        int chebyshev = Math.max(Math.abs(chunkX - centerX), Math.abs(chunkZ - centerZ));
-        if (chebyshev <= safeRadius) {
-            // Never unload chunks still owned by vanilla server radius.
-            return;
-        }
-
         this.channelInjectionService.writeBypass(channel, new ClientboundForgetLevelChunkPacket(new ChunkPos(chunkX, chunkZ)));
-        session.sentChunks().remove(chunkKey);
-        session.queuedChunks().remove(chunkKey);
-        session.inflightChunks().remove(chunkKey);
+        session.onChunkUnloaded(chunkKey);
     }
 
-    private CompletableFuture<Boolean> buildAndSend(
+    private CompletableFuture<ByteBuf> buildChunk(
             World world,
-            Channel channel,
             PlayerSession session,
-            UUID expectedWorldId,
-            long expectedEpoch,
             int chunkX,
             int chunkZ,
             long chunkKey
     ) {
+        UUID expectedWorldId = session.worldId();
         if (this.cacheService.isTemporarilyUnavailable(expectedWorldId, chunkKey)) {
-            return CompletableFuture.completedFuture(false);
+            return CompletableFuture.completedFuture(null);
         }
 
         boolean bypass = this.cacheService.shouldBypass(expectedWorldId, chunkKey);
         if (!bypass) {
             ByteBuf cached = this.cacheService.getSerialized(expectedWorldId, chunkKey);
             if (cached != null) {
-                return CompletableFuture.completedFuture(this.trySend(channel, session, expectedWorldId, expectedEpoch, cached, chunkKey));
+                return CompletableFuture.completedFuture(cached);
             }
         }
 
@@ -142,11 +124,45 @@ public final class ChunkDispatchService {
                 .thenApply(payload -> {
                     if (payload == null) {
                         this.cacheService.markUnavailable(expectedWorldId, chunkKey);
-                        return false;
+                        return null;
                     }
-                    return this.trySend(channel, session, expectedWorldId, expectedEpoch, payload, chunkKey);
+                    return payload;
                 })
-                .exceptionally(throwable -> false);
+                .exceptionally(throwable -> null);
+    }
+
+    private void drainReadyEntries(World world, Channel channel, PlayerSession session) {
+        if (session.chunkQueue().isEmpty()) {
+            return;
+        }
+        int checks = session.chunkQueue().size();
+        for (int i = 0; i < checks; i++) {
+            ChunkSendQueueEntry entry = session.chunkQueue().pollFirst();
+            if (entry == null) {
+                break;
+            }
+            CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
+            if (!buildFuture.isDone()) {
+                session.chunkQueue().addLast(entry);
+                continue;
+            }
+            if (buildFuture.isCompletedExceptionally()) {
+                session.onChunkBuildFailed(entry.chunkKey());
+                entry.releaseFuture();
+                continue;
+            }
+            ByteBuf payload = buildFuture.getNow(null);
+            if (payload == null) {
+                session.onChunkBuildFailed(entry.chunkKey());
+                entry.releaseFuture();
+                continue;
+            }
+            ByteBuf toSend = payload.retainedDuplicate();
+            if (!this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {
+                session.onChunkBuildFailed(entry.chunkKey());
+            }
+            entry.releaseFuture();
+        }
     }
 
     private boolean trySend(
@@ -166,7 +182,7 @@ public final class ChunkDispatchService {
             ReferenceCountUtil.release(payload);
         }
         if (sent) {
-            session.sentChunks().add(chunkKey);
+            session.onChunkSent(chunkKey);
         }
         return sent;
     }
@@ -177,29 +193,5 @@ public final class ChunkDispatchService {
                 && session.epoch() == epoch;
     }
 
-    private void drainPendingSends(PlayerSession session) {
-        if (session.pendingSendQueue().isEmpty()) {
-            return;
-        }
-        int queueSize = session.pendingSendQueue().size();
-        int desiredChecks = Math.max(8, this.configFacade.get().maxInflightPerPlayer() * 2);
-        int checks = Math.min(desiredChecks, queueSize);
-        for (int i = 0; i < checks; i++) {
-            ChunkSendQueueEntry entry = session.pendingSendQueue().pollFirst();
-            if (entry == null) {
-                break;
-            }
-            CompletableFuture<Boolean> sendFuture = entry.sendFuture();
-            if (sendFuture == null || !sendFuture.isDone()) {
-                session.pendingSendQueue().addLast(entry);
-                continue;
-            }
-            session.inflightChunks().remove(entry.chunkKey());
-            Boolean sent = sendFuture.getNow(Boolean.FALSE);
-            if (!Boolean.TRUE.equals(sent)) {
-                session.sentChunks().remove(entry.chunkKey());
-            }
-        }
-    }
 }
 

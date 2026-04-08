@@ -43,14 +43,10 @@ public final class ChunkInvalidationListener implements Listener {
 
         for (Player player : block.getWorld().getPlayers()) {
             PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
-            if (session == null || !session.sentChunks().contains(chunkKey)) {
+            if (session == null) {
                 continue;
             }
-            session.sentChunks().remove(chunkKey);
-            session.inflightChunks().remove(chunkKey);
-            if (session.queuedChunks().add(chunkKey)) {
-                session.pendingQueue().addFirst(chunkKey);
-            }
+            session.invalidateChunk(chunkKey);
         }
     }
 }

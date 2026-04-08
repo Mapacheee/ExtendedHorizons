@@ -15,7 +15,7 @@ public final class SessionRegistry {
     public PlayerSession ensureFor(Player player, boolean bumpEpoch) {
         UUID playerId = player.getUniqueId();
         UUID worldId = player.getWorld().getUID();
-        PlayerSession session = this.sessions.compute(playerId, (id, current) -> {
+        return this.sessions.compute(playerId, (id, current) -> {
             if (current == null) {
                 current = new PlayerSession(id, worldId);
                 current.bumpEpoch();
@@ -26,17 +26,12 @@ public final class SessionRegistry {
             if (worldChanged || bumpEpoch) {
                 current.bumpEpoch();
                 current.clearDispatchState();
-                current.plannerCursor(0);
+                current.handleDimensionReset();
             }
             return current;
         });
-        return session;
     }
 
-    public void updateChunk(Player player, int chunkX, int chunkZ) {
-        PlayerSession session = this.ensureFor(player, false);
-        session.setLastChunk(chunkX, chunkZ);
-    }
 
     public PlayerSession get(UUID playerId) {
         return this.sessions.get(playerId);
