@@ -43,13 +43,11 @@ public final class FakeChunkOrchestratorService {
         PlayerSession session = this.sessionRegistry.ensureFor(player, false);
         World world = player.getWorld();
         String worldName = world.getName();
+        Channel channel = this.channelInjectionService.resolveChannel(player);
         if (!this.configFacade.get().fakeChunksEnabledForWorld(worldName)) {
-            Channel channel = this.channelInjectionService.resolveChannel(player);
             this.clearSessionState(channel, session);
             return;
         }
-
-        Channel channel = this.channelInjectionService.resolveChannel(player);
         if (channel == null || !channel.isActive()) {
             return;
         }
