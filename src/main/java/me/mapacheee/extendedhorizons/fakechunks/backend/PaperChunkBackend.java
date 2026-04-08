@@ -27,8 +27,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             int chunkX,
             int chunkZ,
             boolean generateMissingChunks,
-            ChunkScheduler scheduler
-    ) {
+            ChunkScheduler scheduler) {
         if (world == null || scheduler == null) {
             return CompletableFuture.completedFuture(null);
         }
@@ -46,8 +45,7 @@ public final class PaperChunkBackend implements ChunkBackend {
                         level,
                         levelChunk,
                         chunkX,
-                        chunkZ
-                );
+                        chunkZ);
                 future.complete(packetData);
             } catch (Throwable throwable) {
                 future.complete(null);
@@ -76,6 +74,7 @@ public final class PaperChunkBackend implements ChunkBackend {
         return future;
     }
 
+    @SuppressWarnings("deprecation")
     private ByteBuf serializeLevelChunkWithLight(ServerLevel level, LevelChunk chunk, int chunkX, int chunkZ) {
         ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer();
         FriendlyByteBuf buf = new FriendlyByteBuf(raw);
@@ -92,8 +91,7 @@ public final class PaperChunkBackend implements ChunkBackend {
                     new ChunkPos(chunkX, chunkZ),
                     level.getLightEngine(),
                     null,
-                    null
-            );
+                    null);
             lightData.write(buf);
             return raw;
         } catch (Throwable throwable) {
@@ -102,4 +100,3 @@ public final class PaperChunkBackend implements ChunkBackend {
         }
     }
 }
-
