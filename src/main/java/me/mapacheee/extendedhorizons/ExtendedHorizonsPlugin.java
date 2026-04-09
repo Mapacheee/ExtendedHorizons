@@ -7,6 +7,8 @@ import com.thewinterframework.plugin.WinterBootPlugin;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
 import me.mapacheee.extendedhorizons.fakechunks.backend.PaperChunkBackend;
+import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.FarPlayerBackend;
+import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.PaperFarPlayerBackend;
 
 @WinterBootPlugin
 public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
@@ -40,6 +42,7 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
     public void configure(Binder binder) {
         binder.bindScope(Service.class, Scopes.SINGLETON);
         binder.bind(ChunkBackend.class).to(PaperChunkBackend.class).in(Scopes.SINGLETON);
+        binder.bind(FarPlayerBackend.class).to(PaperFarPlayerBackend.class).in(Scopes.SINGLETON);
     }
 }
 

@@ -6,13 +6,17 @@ import io.netty.channel.Channel;
 import me.mapacheee.extendedhorizons.config.ConfigFacade;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkDispatchService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
+import me.mapacheee.extendedhorizons.fakechunks.farplayers.FarPlayerTrackingService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+
+import java.util.UUID;
 
 @Service
 public final class FakeChunkOrchestratorService {
@@ -21,18 +25,21 @@ public final class FakeChunkOrchestratorService {
     private final SessionRegistry sessionRegistry;
     private final ChunkDispatchService dispatchService;
     private final ChannelInjectionService channelInjectionService;
+    private final FarPlayerTrackingService farPlayerTrackingService;
 
     @Inject
     public FakeChunkOrchestratorService(
-            ConfigFacade configFacade,
-            SessionRegistry sessionRegistry,
-            ChunkDispatchService dispatchService,
-            ChannelInjectionService channelInjectionService
+        ConfigFacade configFacade,
+        SessionRegistry sessionRegistry,
+        ChunkDispatchService dispatchService,
+        ChannelInjectionService channelInjectionService,
+        FarPlayerTrackingService farPlayerTrackingService
     ) {
         this.configFacade = configFacade;
         this.sessionRegistry = sessionRegistry;
         this.dispatchService = dispatchService;
         this.channelInjectionService = channelInjectionService;
+        this.farPlayerTrackingService = farPlayerTrackingService;
     }
 
     public void tickPlayer(Player player, long maxTimePerPlayerNanos) {
@@ -54,19 +61,21 @@ public final class FakeChunkOrchestratorService {
         this.channelInjectionService.inject(player, session);
         this.channelInjectionService.bindSession(channel, session);
 
-        int chunkX = player.getLocation().getBlockX() >> 4;
-        int chunkZ = player.getLocation().getBlockZ() >> 4;
+        Location loc = player.getLocation();
+        int chunkX = loc.getBlockX() >> 4;
+        int chunkZ = loc.getBlockZ() >> 4;
         int targetDistance = this.resolveClientDistance(player, worldName);
         int serverDistance = this.resolveServerDistance(player);
 
         TickSnapshot snapshot = new TickSnapshot(
-                world,
-                world.getUID(),
-                chunkX,
-                chunkZ,
-                targetDistance,
-                serverDistance,
-                System.nanoTime() + Math.max(250_000L, maxTimePerPlayerNanos)
+            world,
+            world.getUID(),
+            player.getUniqueId(),
+            chunkX,
+            chunkZ,
+            targetDistance,
+            serverDistance,
+            System.nanoTime() + Math.max(250_000L, maxTimePerPlayerNanos)
         );
         this.channelInjectionService.executeOnEventLoop(channel, () -> this.processOnNetty(channel, session, snapshot));
     }
@@ -90,6 +99,18 @@ public final class FakeChunkOrchestratorService {
 
         this.syncClientCenter(channel, snapshot.chunkX(), snapshot.chunkZ());
         this.syncClientRadius(channel, session, snapshot.targetDistance());
+
+        this.farPlayerTrackingService.track(
+            snapshot.viewerId(),
+            snapshot.worldId(),
+            snapshot.chunkX(),
+            snapshot.chunkZ(),
+            session,
+            channel,
+            snapshot.serverDistance(),
+            snapshot.targetDistance()
+        );
+
         this.dispatchService.processQueue(snapshot.world(), channel, session, snapshot.deadlineNanos());
         this.channelInjectionService.flush(channel);
     }
@@ -97,7 +118,6 @@ public final class FakeChunkOrchestratorService {
     private boolean preTick(PlayerSession session, int targetDistance, int serverDistance) {
         if (targetDistance <= serverDistance) {
             if (session.enabled()) {
-                // Handled by caller when disabling to ensure unload packets are actually sent.
                 session.enabled(false);
             }
             return false;
@@ -157,15 +177,15 @@ public final class FakeChunkOrchestratorService {
     }
 
     private record TickSnapshot(
-            World world,
-            java.util.UUID worldId,
-            int chunkX,
-            int chunkZ,
-            int targetDistance,
-            int serverDistance,
-            long deadlineNanos
-    ) {
-    }
+        World world,
+        UUID worldId,
+        UUID viewerId,
+        int chunkX,
+        int chunkZ,
+        int targetDistance,
+        int serverDistance,
+        long deadlineNanos
+    ) {}
 }
 
 
