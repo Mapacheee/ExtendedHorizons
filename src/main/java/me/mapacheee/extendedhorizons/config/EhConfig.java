@@ -126,6 +126,20 @@ public record EhConfig(
         return Math.max(1, this.fakeChunks.runtime().periodTicks());
     }
 
+    public int farPlayerMoveTicks() {
+        if (this.fakeChunks == null || this.fakeChunks.farPlayers() == null) {
+            return 4;
+        }
+        return Math.max(1, this.fakeChunks.farPlayers().moveTicks());
+    }
+
+    public int farPlayerEquipTicks() {
+        if (this.fakeChunks == null || this.fakeChunks.farPlayers() == null) {
+            return 15;
+        }
+        return Math.max(1, this.fakeChunks.farPlayers().equipTicks());
+    }
+
     private WorldSettingsConfig world(String worldName) {
         if (worldName == null || worldName.isBlank() || this.worldSettings == null || this.worldSettings.isEmpty()) {
             return null;
@@ -157,7 +171,8 @@ public record EhConfig(
         @Setting("unavailable-retry-ms") long unavailableRetryMs,
         @Setting("safe-square-factor") double safeSquareFactor,
         CacheConfig cache,
-        RuntimeConfig runtime
+        RuntimeConfig runtime,
+        @Setting("far-players") FarPlayersConfig farPlayers
     ) {}
 
     @ConfigSerializable
@@ -176,6 +191,12 @@ public record EhConfig(
     public record WorldSettingsConfig(
         @Setting("enable-fakechunks") boolean enableFakechunks,
         @Setting("target-distance") int targetDistance
+    ) {}
+
+    @ConfigSerializable
+    public record FarPlayersConfig(
+        @Setting("move-ticks") int moveTicks,
+        @Setting("equip-ticks") int equipTicks
     ) {}
 }
 

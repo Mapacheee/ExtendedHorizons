@@ -3,6 +3,8 @@ package me.mapacheee.extendedhorizons.fakechunks.farplayers;
 import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
+import me.mapacheee.extendedhorizons.config.ConfigFacade;
+import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.FarPlayerBackend;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
@@ -17,16 +19,19 @@ import java.util.UUID;
 @Service
 public final class FarPlayerTrackingService {
 
+    private final ConfigFacade configFacade;
     private final FarPlayerCacheService cacheService;
     private final FarPlayerBackend backend;
     private final ChannelInjectionService channelInjectionService;
 
     @Inject
     public FarPlayerTrackingService(
+        ConfigFacade configFacade,
         FarPlayerCacheService cacheService,
         FarPlayerBackend backend,
         ChannelInjectionService channelInjectionService
     ) {
+        this.configFacade = configFacade;
         this.cacheService = cacheService;
         this.backend = backend;
         this.channelInjectionService = channelInjectionService;
@@ -46,8 +51,9 @@ public final class FarPlayerTrackingService {
         newlyFound.clear();
 
         int tick = session.incrementTrackingTicker();
-        boolean syncMove = Math.floorMod(tick, 4) == 0;
-        boolean syncEquip = Math.floorMod(tick, 15) == 0;
+        EhConfig config = this.configFacade.get();
+        boolean syncMove = Math.floorMod(tick, config.farPlayerMoveTicks()) == 0;
+        boolean syncEquip = Math.floorMod(tick, config.farPlayerEquipTicks()) == 0;
 
         for (FarPlayerState state : this.cacheService.getNearbyPlayers(worldId, viewerChunkX, viewerChunkZ, targetDistance)) {
             if (state.uuid().equals(viewerId)) {

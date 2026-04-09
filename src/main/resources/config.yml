@@ -13,6 +13,9 @@ fake-chunks:
   safe-square-factor: 0.80
   runtime:
     period-ticks: 1
+  far-players:
+    move-ticks: 4
+    equip-ticks: 15
   cache:
     ttl-seconds: 15
     max-entries: 1500
