@@ -17,10 +17,10 @@ public final class FoliaTaskUtil {
 
     public static ScheduledTask runGlobalTimer(Plugin plugin, Runnable runnable, long initialDelayTicks, long periodTicks) {
         return Bukkit.getGlobalRegionScheduler().runAtFixedRate(
-                plugin,
-                task -> runnable.run(),
-                Math.max(1L, initialDelayTicks),
-                Math.max(1L, periodTicks)
+            plugin,
+            task -> runnable.run(),
+            Math.max(1L, initialDelayTicks),
+            Math.max(1L, periodTicks)
         );
     }
 

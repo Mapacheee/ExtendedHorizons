@@ -9,9 +9,9 @@ import java.util.Map;
 @ConfigSerializable
 @Configurate("config")
 public record EhConfig(
-        DebugConfig debug,
-        @Setting("fake-chunks") FakeChunksConfig fakeChunks,
-        @Setting("world-settings") Map<String, WorldSettingsConfig> worldSettings
+    DebugConfig debug,
+    @Setting("fake-chunks") FakeChunksConfig fakeChunks,
+    @Setting("world-settings") Map<String, WorldSettingsConfig> worldSettings
 ) {
 
     public static EhConfig empty() {
@@ -143,44 +143,39 @@ public record EhConfig(
     }
 
     @ConfigSerializable
-    public record DebugConfig(boolean enabled) {
-    }
+    public record DebugConfig(boolean enabled) {}
 
     @ConfigSerializable
     public record FakeChunksConfig(
-            @Setting("target-view-distance") int targetViewDistance,
-            @Setting("max-send-per-cycle") int maxSendPerCycle,
-            @Setting("max-inflight-per-player") int maxInflightPerPlayer,
-            @Setting("chunk-queue-size") int chunkQueueSize,
-            @Setting("dispatch-time-budget-nanos") long dispatchTimeBudgetNanos,
-            @Setting("generate-missing-chunks") boolean generateMissingChunks,
-            @Setting("force-plan-interval-ms") long forcePlanIntervalMs,
-            @Setting("unavailable-retry-ms") long unavailableRetryMs,
-            @Setting("safe-square-factor") double safeSquareFactor,
-            CacheConfig cache,
-            RuntimeConfig runtime
-    ) {
-    }
+        @Setting("target-view-distance") int targetViewDistance,
+        @Setting("max-send-per-cycle") int maxSendPerCycle,
+        @Setting("max-inflight-per-player") int maxInflightPerPlayer,
+        @Setting("chunk-queue-size") int chunkQueueSize,
+        @Setting("dispatch-time-budget-nanos") long dispatchTimeBudgetNanos,
+        @Setting("generate-missing-chunks") boolean generateMissingChunks,
+        @Setting("force-plan-interval-ms") long forcePlanIntervalMs,
+        @Setting("unavailable-retry-ms") long unavailableRetryMs,
+        @Setting("safe-square-factor") double safeSquareFactor,
+        CacheConfig cache,
+        RuntimeConfig runtime
+    ) {}
 
     @ConfigSerializable
     public record CacheConfig(
-            @Setting("ttl-seconds") int ttlSeconds,
-            @Setting("max-entries") int maxEntries,
-            @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs
-    ) {
-    }
+        @Setting("ttl-seconds") int ttlSeconds,
+        @Setting("max-entries") int maxEntries,
+        @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs
+    ) {}
 
     @ConfigSerializable
     public record RuntimeConfig(
-            @Setting("period-ticks") int periodTicks
-    ) {
-    }
+        @Setting("period-ticks") int periodTicks
+    ) {}
 
     @ConfigSerializable
     public record WorldSettingsConfig(
-            @Setting("enable-fakechunks") boolean enableFakechunks,
-            @Setting("target-distance") int targetDistance
-    ) {
-    }
+        @Setting("enable-fakechunks") boolean enableFakechunks,
+        @Setting("target-distance") int targetDistance
+    ) {}
 }
 

@@ -23,11 +23,11 @@ public final class PaperChunkBackend implements ChunkBackend {
 
     @Override
     public CompletableFuture<ByteBuf> buildChunkPayload(
-            World world,
-            int chunkX,
-            int chunkZ,
-            boolean generateMissingChunks,
-            ChunkScheduler scheduler) {
+        World world,
+        int chunkX,
+        int chunkZ,
+        boolean generateMissingChunks,
+        ChunkScheduler scheduler) {
         if (world == null || scheduler == null) {
             return CompletableFuture.completedFuture(null);
         }
@@ -42,10 +42,10 @@ public final class PaperChunkBackend implements ChunkBackend {
                     return;
                 }
                 ByteBuf packetData = this.serializeLevelChunkWithLight(
-                        level,
-                        levelChunk,
-                        chunkX,
-                        chunkZ);
+                    level,
+                    levelChunk,
+                    chunkX,
+                    chunkZ);
                 future.complete(packetData);
             } catch (Throwable throwable) {
                 future.complete(null);
@@ -54,16 +54,16 @@ public final class PaperChunkBackend implements ChunkBackend {
 
         if (generateMissingChunks) {
             world.getChunkAtAsync(chunkX, chunkZ, true)
-                    .thenRun(() -> {
-                        boolean accepted = scheduler.runAtChunk(world, chunkX, chunkZ, task);
-                        if (!accepted) {
-                            future.complete(null);
-                        }
-                    })
-                    .exceptionally(throwable -> {
+                .thenRun(() -> {
+                    boolean accepted = scheduler.runAtChunk(world, chunkX, chunkZ, task);
+                    if (!accepted) {
                         future.complete(null);
-                        return null;
-                    });
+                    }
+                })
+                .exceptionally(throwable -> {
+                    future.complete(null);
+                    return null;
+                });
         } else {
             boolean accepted = scheduler.runAtChunk(world, chunkX, chunkZ, task);
             if (!accepted) {
@@ -88,10 +88,10 @@ public final class PaperChunkBackend implements ChunkBackend {
             chunkData.write(registryBuf);
 
             ClientboundLightUpdatePacketData lightData = new ClientboundLightUpdatePacketData(
-                    new ChunkPos(chunkX, chunkZ),
-                    level.getLightEngine(),
-                    null,
-                    null);
+                new ChunkPos(chunkX, chunkZ),
+                level.getLightEngine(),
+                null,
+                null);
             lightData.write(buf);
             return raw;
         } catch (Throwable throwable) {

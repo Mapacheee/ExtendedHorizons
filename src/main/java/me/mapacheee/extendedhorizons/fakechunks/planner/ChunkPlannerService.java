@@ -18,15 +18,15 @@ public final class ChunkPlannerService {
             int current = radius;
             List<Integer> range = IntStream.rangeClosed(-radius, radius).boxed().toList();
             RADIUS_ITERATION_LIST[radius] = range.stream()
-                    .flatMap(x -> range.stream().map(z -> ChunkPos.asLong(x, z)))
-                    .filter(key -> isWithinRange(ChunkPos.getX(key), ChunkPos.getZ(key), current))
-                    .sorted(Comparator.comparingInt(key -> {
-                        int x = ChunkPos.getX(key);
-                        int z = ChunkPos.getZ(key);
-                        return x * x + z * z;
-                    }))
-                    .mapToLong(Long::longValue)
-                    .toArray();
+                .flatMap(x -> range.stream().map(z -> ChunkPos.asLong(x, z)))
+                .filter(key -> isWithinRange(ChunkPos.getX(key), ChunkPos.getZ(key), current))
+                .sorted(Comparator.comparingInt(key -> {
+                    int x = ChunkPos.getX(key);
+                    int z = ChunkPos.getZ(key);
+                    return x * x + z * z;
+                }))
+                .mapToLong(Long::longValue)
+                .toArray();
         }
     }
 

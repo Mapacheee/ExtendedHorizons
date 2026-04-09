@@ -38,20 +38,20 @@ public final class ChunkBuildCacheService {
         long bypassMs = this.configFacade.get().cacheBypassAfterRealInteractionMs();
 
         this.serializedCache = Caffeine.newBuilder()
-                .maximumSize(maxEntries)
-                .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
-                .removalListener((ChunkKey key, ByteBuf value, RemovalCause cause) -> ReferenceCountUtil.release(value))
-                .build();
+            .maximumSize(maxEntries)
+            .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
+            .removalListener((ChunkKey key, ByteBuf value, RemovalCause cause) -> ReferenceCountUtil.release(value))
+            .build();
 
         this.buildEntryCache = Caffeine.newBuilder()
-                .maximumSize(maxEntries)
-                .expireAfterAccess(Duration.ofSeconds(ttlSeconds))
-                .build();
+            .maximumSize(maxEntries)
+            .expireAfterAccess(Duration.ofSeconds(ttlSeconds))
+            .build();
 
         this.bypassCache = Caffeine.newBuilder()
-                .maximumSize(maxEntries)
-                .expireAfterWrite(Duration.ofMillis(bypassMs))
-                .build();
+            .maximumSize(maxEntries)
+            .expireAfterWrite(Duration.ofMillis(bypassMs))
+            .build();
     }
 
     public ByteBuf getSerialized(UUID worldId, long chunkKey) {
@@ -66,9 +66,9 @@ public final class ChunkBuildCacheService {
     }
 
     public CompletableFuture<ByteBuf> getOrStartBuildFuture(
-            UUID worldId,
-            long chunkKey,
-            Supplier<CompletableFuture<ByteBuf>> starter
+        UUID worldId,
+        long chunkKey,
+        Supplier<CompletableFuture<ByteBuf>> starter
     ) {
         if (worldId == null || starter == null) {
             return CompletableFuture.completedFuture(null);

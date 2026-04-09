@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.ConfigFacade;
+import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
@@ -29,10 +30,10 @@ public final class ChunkDispatchService {
 
     @Inject
     public ChunkDispatchService(
-            ConfigFacade configFacade,
-            ChunkBuildCacheService cacheService,
-            ChunkBackend chunkBackend,
-            ChannelInjectionService channelInjectionService
+        ConfigFacade configFacade,
+        ChunkBuildCacheService cacheService,
+        ChunkBackend chunkBackend,
+        ChannelInjectionService channelInjectionService
     ) {
         this.configFacade = configFacade;
         this.cacheService = cacheService;
@@ -44,8 +45,9 @@ public final class ChunkDispatchService {
         if (world == null || channel == null || session == null) {
             return;
         }
-        int chunksPerTick = this.configFacade.get().maxSendPerCycle();
-        int chunkQueueSize = this.configFacade.get().chunkQueueSize();
+        EhConfig config = this.configFacade.get();
+        int chunksPerTick = config.maxSendPerCycle();
+        int chunkQueueSize = config.chunkQueueSize();
 
         do {
             session.chunkQueue().removeIf(entry -> this.checkQueueEntry(world, channel, session, entry));
@@ -63,11 +65,7 @@ public final class ChunkDispatchService {
             int chunkZ = ChunkPos.getZ(chunkKey);
             CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
             session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
-            session.onChunkQueued(chunkKey);
-
-            if (chunksPerTick-- <= 0) {
-                break;
-            }
+            if (chunksPerTick-- <= 0) { break; }
         } while (System.nanoTime() < deadlineNanos);
     }
 
@@ -83,11 +81,11 @@ public final class ChunkDispatchService {
     }
 
     private CompletableFuture<ByteBuf> buildChunk(
-            World world,
-            PlayerSession session,
-            int chunkX,
-            int chunkZ,
-            long chunkKey
+        World world,
+        PlayerSession session,
+        int chunkX,
+        int chunkZ,
+        long chunkKey
     ) {
         UUID expectedWorldId = session.worldId();
         if (this.cacheService.isTemporarilyUnavailable(expectedWorldId, chunkKey)) {
@@ -103,30 +101,28 @@ public final class ChunkDispatchService {
         }
 
         return this.cacheService.getOrStartBuildFuture(
-                        expectedWorldId,
-                        chunkKey,
-                        () -> this.chunkBackend.buildChunkPayload(
-                                world,
-                                chunkX,
-                                chunkZ,
-                                this.configFacade.get().generateMissingChunks(),
-                                (worldRef, cx, cz, runnable) -> {
-                                    ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
-                                    if (plugin == null || !plugin.isEnabled()) {
-                                        return false;
-                                    }
-                                    return FoliaTaskUtil.runAtChunk(worldRef, cx, cz, plugin, runnable);
-                                }
-                        )
-                )
-                .thenApply(payload -> {
-                    if (payload == null) {
-                        this.cacheService.markUnavailable(expectedWorldId, chunkKey);
-                        return null;
+            expectedWorldId,
+            chunkKey,
+            () -> this.chunkBackend.buildChunkPayload(
+                world,
+                chunkX,
+                chunkZ,
+                this.configFacade.get().generateMissingChunks(),
+                (worldRef, cx, cz, runnable) -> {
+                    ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
+                    if (plugin == null || !plugin.isEnabled()) {
+                        return false;
                     }
-                    return payload;
-                })
-                .exceptionally(throwable -> null);
+                    return FoliaTaskUtil.runAtChunk(worldRef, cx, cz, plugin, runnable);
+                }
+            )
+        )
+        .whenComplete((payload, throwable) -> {
+            if (payload == null && throwable == null) {
+                this.cacheService.markUnavailable(expectedWorldId, chunkKey);
+            }
+        })
+        .exceptionally(throwable -> null);
     }
 
     private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry) {
@@ -154,12 +150,12 @@ public final class ChunkDispatchService {
     }
 
     private boolean trySend(
-            Channel channel,
-            PlayerSession session,
-            UUID expectedWorldId,
-            long expectedEpoch,
-            ByteBuf payload,
-            long chunkKey
+        Channel channel,
+        PlayerSession session,
+        UUID expectedWorldId,
+        long expectedEpoch,
+        ByteBuf payload,
+        long chunkKey
     ) {
         if (!this.isSessionValid(session, expectedWorldId, expectedEpoch)) {
             ReferenceCountUtil.release(payload);
@@ -180,6 +176,4 @@ public final class ChunkDispatchService {
                 && worldId.equals(session.worldId())
                 && session.epoch() == epoch;
     }
-
 }
-

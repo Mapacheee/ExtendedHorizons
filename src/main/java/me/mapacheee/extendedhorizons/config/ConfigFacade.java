@@ -11,7 +11,7 @@ public final class ConfigFacade {
 
     @Inject
     public ConfigFacade(Container<EhConfig> configContainer) {
-        this.configContainer = configContainer;
+      this.configContainer = configContainer;
     }
 
     public EhConfig get() {
