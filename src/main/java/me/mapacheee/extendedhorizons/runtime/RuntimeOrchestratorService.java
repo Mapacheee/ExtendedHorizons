@@ -10,12 +10,21 @@ import io.netty.util.internal.SystemPropertyUtil;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.ConfigFacade;
 import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
+import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import com.mojang.datafixers.util.Pair;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,22 +35,27 @@ public final class RuntimeOrchestratorService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeOrchestratorService.class);
     private static final int TICK_LENGTH_DIVISOR = 2;
+    private static final int EQUIPMENT_POLL_INTERVAL = 15;
 
     private final ConfigFacade configFacade;
     private final SessionRegistry sessionRegistry;
     private final FakeChunkOrchestratorService fakeChunkOrchestratorService;
+    private final FarPlayerCacheService farPlayerCacheService;
 
     private volatile ScheduledTask runtimeTask;
+    private int orchestratorTick;
 
     @Inject
     public RuntimeOrchestratorService(
-            ConfigFacade configFacade,
-            SessionRegistry sessionRegistry,
-            FakeChunkOrchestratorService fakeChunkOrchestratorService
+        ConfigFacade configFacade,
+        SessionRegistry sessionRegistry,
+        FakeChunkOrchestratorService fakeChunkOrchestratorService,
+        FarPlayerCacheService farPlayerCacheService
     ) {
         this.configFacade = configFacade;
         this.sessionRegistry = sessionRegistry;
         this.fakeChunkOrchestratorService = fakeChunkOrchestratorService;
+        this.farPlayerCacheService = farPlayerCacheService;
     }
 
     @OnEnable
@@ -72,16 +86,55 @@ public final class RuntimeOrchestratorService {
         Collections.shuffle(players);
 
         int nettyThreadCount = Math.max(1, SystemPropertyUtil.getInt(
-                "io.netty.eventLoopThreads", NettyRuntime.availableProcessors() * 2));
+            "io.netty.eventLoopThreads", NettyRuntime.availableProcessors() * 2));
         long periodTicks = Math.max(1L, this.configFacade.get().runtimePeriodTicks());
         long nanosPerServerTick = 50_000_000L * periodTicks;
         long tickLengthNanos = nanosPerServerTick / TICK_LENGTH_DIVISOR;
         long maxTimePerPlayerNanos = (nettyThreadCount * tickLengthNanos) / Math.max(nettyThreadCount, players.size());
 
+        this.orchestratorTick = (this.orchestratorTick + 1) & Integer.MAX_VALUE;
+        boolean pollEquipment = Math.floorMod(this.orchestratorTick, EQUIPMENT_POLL_INTERVAL) == 0;
+
         for (Player player : players) {
             this.sessionRegistry.ensureFor(player, false);
             FoliaTaskUtil.runForPlayer(player, plugin, () -> {
                 try {
+                    Location loc = player.getLocation();
+                    ServerPlayer nmsPlayer = ((CraftPlayer) player).getHandle();
+
+                    List<SynchedEntityData.DataValue<?>> metadata;
+                    List<Pair<EquipmentSlot, ItemStack>> equipment;
+
+                    if (pollEquipment) {
+                        metadata = nmsPlayer.getEntityData().getNonDefaultValues();
+                        equipment = new ArrayList<>(6);
+                        for (EquipmentSlot slot : EquipmentSlot.values()) {
+                            ItemStack item = nmsPlayer.getItemBySlot(slot);
+                            equipment.add(Pair.of(slot, item != null ? item.copy() : ItemStack.EMPTY));
+                        }
+                        this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
+                    } else {
+                        metadata = null;
+                        equipment = this.farPlayerCacheService.getEquipment(player.getUniqueId());
+                        if (equipment == null) {
+                            equipment = Collections.emptyList();
+                        }
+                    }
+
+                    this.farPlayerCacheService.updateState(player.getUniqueId(), new FarPlayerState(
+                        player.getEntityId(),
+                        player.getUniqueId(),
+                        player.getWorld().getUID(),
+                        loc.getX(),
+                        loc.getY(),
+                        loc.getZ(),
+                        loc.getYaw(),
+                        loc.getPitch(),
+                        player.getEyeLocation().getYaw(),
+                        equipment,
+                        metadata
+                    ));
+
                     this.fakeChunkOrchestratorService.tickPlayer(player, maxTimePerPlayerNanos);
                 } catch (Throwable throwable) {
                     LOGGER.error("Error while ticking fake chunks for {}", player.getName(), throwable);
