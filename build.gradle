@@ -46,10 +46,10 @@ dependencies {
     }
     annotationProcessor("com.thewinterframework:paper:1.0.4")
     
-    api('com.thewinterframework:configuration:1.0.2') {
+    api('com.thewinterframework:configuration:1.0.4') {
         exclude group: 'io.papermc.paper', module: 'paper-api'
     }
-    annotationProcessor('com.thewinterframework:configuration:1.0.2')
+    annotationProcessor('com.thewinterframework:configuration:1.0.4')
     
     api('com.thewinterframework:command:1.0.1') {
         exclude group: 'io.papermc.paper', module: 'paper-api'
@@ -142,4 +142,9 @@ checkstyle {
     toolVersion = '10.12.5'
     configFile = file('checkstyle.xml')
     ignoreFailures = true
+}
+
+task runMergeTest(type: JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'me.mapacheee.extendedhorizons.MergeTest'
 }
