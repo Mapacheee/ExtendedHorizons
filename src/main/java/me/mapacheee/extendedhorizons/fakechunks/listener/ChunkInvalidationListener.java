@@ -3,15 +3,16 @@ package me.mapacheee.extendedhorizons.fakechunks.listener;
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import org.bukkit.block.Block;
-import org.bukkit.entity.Player;
+import net.minecraft.world.level.ChunkPos;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+
+import java.util.UUID;
 
 @ListenerComponent
 public final class ChunkInvalidationListener implements Listener {
@@ -38,15 +39,14 @@ public final class ChunkInvalidationListener implements Listener {
     private void invalidate(Block block) {
         int chunkX = block.getX() >> 4;
         int chunkZ = block.getZ() >> 4;
-        long chunkKey = net.minecraft.world.level.ChunkPos.asLong(chunkX, chunkZ);
-        this.cacheService.invalidate(block.getWorld().getUID(), chunkKey);
+        long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+        UUID worldId = block.getWorld().getUID();
+        this.cacheService.invalidate(worldId, chunkKey);
 
-        for (Player player : block.getWorld().getPlayers()) {
-            PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
-            if (session == null) {
-                continue;
+        this.sessionRegistry.forEachSession(session -> {
+            if (worldId.equals(session.worldId())) {
+                session.invalidateChunk(chunkKey);
             }
-            session.invalidateChunk(chunkKey);
-        }
+        });
     }
 }

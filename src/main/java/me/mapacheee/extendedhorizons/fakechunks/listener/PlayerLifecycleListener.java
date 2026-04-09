@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.fakechunks.listener;
 
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
+import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
@@ -18,11 +19,17 @@ public final class PlayerLifecycleListener implements Listener {
 
     private final SessionRegistry sessionRegistry;
     private final ChannelInjectionService channelInjectionService;
+    private final FarPlayerCacheService farPlayerCacheService;
 
     @Inject
-    public PlayerLifecycleListener(SessionRegistry sessionRegistry, ChannelInjectionService channelInjectionService) {
+    public PlayerLifecycleListener(
+            SessionRegistry sessionRegistry,
+            ChannelInjectionService channelInjectionService,
+            FarPlayerCacheService farPlayerCacheService
+    ) {
         this.sessionRegistry = sessionRegistry;
         this.channelInjectionService = channelInjectionService;
+        this.farPlayerCacheService = farPlayerCacheService;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -44,6 +51,7 @@ public final class PlayerLifecycleListener implements Listener {
         Player player = event.getPlayer();
         this.channelInjectionService.uninject(player);
         this.sessionRegistry.remove(player.getUniqueId());
+        this.farPlayerCacheService.removePlayer(player.getUniqueId());
     }
 }
 

@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 @Service
 public final class SessionRegistry {
@@ -32,6 +33,9 @@ public final class SessionRegistry {
         });
     }
 
+    public void forEachSession(Consumer<PlayerSession> action) {
+        this.sessions.values().forEach(action);
+    }
 
     public PlayerSession get(UUID playerId) {
         return this.sessions.get(playerId);

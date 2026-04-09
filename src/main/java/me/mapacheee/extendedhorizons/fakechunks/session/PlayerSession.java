@@ -5,36 +5,37 @@ import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import net.minecraft.world.level.ChunkPos;
 
 import java.util.Deque;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
-import java.util.stream.LongStream;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.LongStream;
 
 public final class PlayerSession {
 
     private static final long[] EMPTY_LONG_ARRAY = new long[0];
-    private static final ChunkState[] EMPTY_STATE_ARRAY = new ChunkState[0];
-
+    private static final ChunkState DUMMY_STATE = new ChunkState();
     private final UUID playerId;
     private volatile UUID worldId;
     private final AtomicLong epoch = new AtomicLong(0L);
-
     private volatile long chunkKey = ChunkPos.asLong(Integer.MIN_VALUE, Integer.MIN_VALUE);
     private volatile int distance;
     private volatile int storageRadius;
     private volatile int storageDiameter;
     private volatile int iterationIndex;
-
+    private volatile int trackingTicker = 0;
     private volatile boolean enabled;
     private volatile boolean initiated;
-
     private volatile long[] chunksInDistance = EMPTY_LONG_ARRAY;
-    private volatile ChunkState[] chunkStates = EMPTY_STATE_ARRAY;
-
+    private volatile ChunkState[] chunkStates = new ChunkState[0];
     private volatile int lastAdvertisedDistance = -1;
     private volatile int serverViewDistance = 2;
-
     private final Deque<ChunkSendQueueEntry> chunkQueue = new ConcurrentLinkedDeque<>();
+    private final Map<UUID, Integer> trackedFarPlayers = new ConcurrentHashMap<>();
+    private final Set<UUID> trackingBuffer = new HashSet<>();
 
     public PlayerSession(UUID playerId, UUID worldId) {
         this.playerId = playerId;
@@ -55,6 +56,14 @@ public final class PlayerSession {
 
     public void bumpEpoch() {
         this.epoch.incrementAndGet();
+    }
+
+    public int incrementTrackingTicker() {
+        return this.trackingTicker = (this.trackingTicker + 1) & Integer.MAX_VALUE;
+    }
+
+    public Set<UUID> trackingBuffer() {
+        return this.trackingBuffer;
     }
 
     public boolean enabled() {
@@ -111,6 +120,10 @@ public final class PlayerSession {
 
     public Deque<ChunkSendQueueEntry> chunkQueue() {
         return this.chunkQueue;
+    }
+
+    public Map<UUID, Integer> trackedFarPlayers() {
+        return this.trackedFarPlayers;
     }
 
     public void updateDistance(int newDistance) {
@@ -189,7 +202,7 @@ public final class PlayerSession {
     }
 
     public void serverChunkAdd(int chunkX, int chunkZ) {
-        if (!this.canStore(chunkX, chunkZ)) {
+        if (this.chunkStates.length == 0 || !this.canStore(chunkX, chunkZ)) {
             return;
         }
         ChunkState state = this.getState(chunkX, chunkZ);
@@ -200,6 +213,9 @@ public final class PlayerSession {
     }
 
     public boolean serverChunkRemove(int chunkX, int chunkZ) {
+        if (this.chunkStates.length == 0) {
+            return false;
+        }
         int centerX = ChunkPos.getX(this.chunkKey);
         int centerZ = ChunkPos.getZ(this.chunkKey);
         if (!ChunkPlannerService.isWithinRange(chunkX - centerX, chunkZ - centerZ, this.distance)) {
@@ -238,10 +254,6 @@ public final class PlayerSession {
         }
         this.iterationIndex = 0;
         return null;
-    }
-
-    public void onChunkQueued(long chunkKey) {
-        // state is already set to BV_QUEUED by pollNextChunkKey.
     }
 
     public void onChunkBuildFailed(long chunkKey) {
@@ -336,7 +348,7 @@ public final class PlayerSession {
 
     private ChunkState getState(int chunkX, int chunkZ) {
         if (this.chunkStates.length == 0) {
-            return new ChunkState();
+            return DUMMY_STATE;
         }
         return this.chunkStates[calcIndex(chunkX, chunkZ, this.storageDiameter)];
     }
