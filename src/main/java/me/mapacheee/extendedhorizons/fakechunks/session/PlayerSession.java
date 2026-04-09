@@ -33,6 +33,7 @@ public final class PlayerSession {
     private volatile ChunkState[] chunkStates = new ChunkState[0];
     private volatile int lastAdvertisedDistance = -1;
     private volatile int serverViewDistance = 2;
+    private volatile int playerOverrideDistance = -1;
     private final Deque<ChunkSendQueueEntry> chunkQueue = new ConcurrentLinkedDeque<>();
     private final Map<UUID, Integer> trackedFarPlayers = new ConcurrentHashMap<>();
     private final Set<UUID> trackingBuffer = new HashSet<>();
@@ -96,6 +97,18 @@ public final class PlayerSession {
 
     public void serverViewDistance(int serverViewDistance) {
         this.serverViewDistance = Math.max(2, serverViewDistance);
+    }
+
+    public int playerOverrideDistance() {
+        return this.playerOverrideDistance;
+    }
+
+    public void playerOverrideDistance(int distance) {
+        this.playerOverrideDistance = distance;
+    }
+
+    public void resetPlayerOverrideDistance() {
+        this.playerOverrideDistance = -1;
     }
 
     public void setWorld(UUID worldId) {

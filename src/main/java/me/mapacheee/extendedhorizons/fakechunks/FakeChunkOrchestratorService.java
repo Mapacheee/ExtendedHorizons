@@ -18,10 +18,14 @@ import org.bukkit.entity.Player;
 
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 @Service
 public final class FakeChunkOrchestratorService {
 
     private final ConfigFacade configFacade;
+    private final static Logger LOGGER = LoggerFactory.getLogger(FakeChunkOrchestratorService.class);
     private final SessionRegistry sessionRegistry;
     private final ChunkDispatchService dispatchService;
     private final ChannelInjectionService channelInjectionService;
@@ -147,7 +151,8 @@ public final class FakeChunkOrchestratorService {
         int playerDistance;
         try {
             playerDistance = player.getViewDistance();
-        } catch (Throwable ignored) {
+        } catch (Throwable throwable) {
+            LOGGER.error("Error on get player view distance", throwable);
             playerDistance = globalDistance;
         }
         if (playerDistance > 0) {
@@ -157,7 +162,41 @@ public final class FakeChunkOrchestratorService {
     }
 
     private int resolveClientDistance(Player player, String worldName) {
-        return Math.max(2, this.configFacade.get().targetViewDistance(worldName));
+        PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
+
+        int baseDistance;
+        if (session != null && session.playerOverrideDistance() > 0) {
+            baseDistance = session.playerOverrideDistance();
+        } else {
+            baseDistance = this.configFacade.get().targetViewDistance(worldName);
+        }
+
+        int permissionCap = resolvePermissionCap(player);
+        if (permissionCap > 0) {
+            baseDistance = Math.min(baseDistance, permissionCap);
+        }
+
+        return Math.max(2, baseDistance);
+    }
+
+    private static int resolvePermissionCap(Player player) {
+        int maxFound = -1;
+        for (var perm : player.getEffectivePermissions()) {
+            String name = perm.getPermission();
+            if (!name.startsWith("extendedhorizons.max.")) {
+                continue;
+            }
+            String suffix = name.substring("extendedhorizons.max.".length());
+            try {
+                int value = Integer.parseInt(suffix);
+                if (value > maxFound) {
+                    maxFound = value;
+                }
+            } catch (NumberFormatException throwable) {
+                LOGGER.error("Error on parse permission", throwable);
+            }
+        }
+        return maxFound;
     }
 
     private void clearSessionState(Channel channel, PlayerSession session) {
