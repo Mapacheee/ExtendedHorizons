@@ -26,33 +26,45 @@ The artifact will be generated in `build/libs/ExtendedHorizons-{version}.jar` re
 ---
 ## For developers
 
-You can access ExtendedHorizons services directly via injector.
+ExtendedHorizons is built entirely with WinterFramework (Guice), so you can inject its services directly or resolve them statically.
 
-Add this to your `plugin.yml`:
+Add this to your `plugin.yml` or `paper-plugin.yml`:
 ```yaml
-softdepend: [ExtendedHorizons]
+depend:
+  - ExtendedHorizons
 ```
 
-Resolve services like this:
+### Accessing Services
+
+The easiest way to obtain core services is through the main plugin class:
+
 ```java
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import me.mapacheee.extendedhorizons.chunk.FakeChunkService;
-import me.mapacheee.extendedhorizons.config.ConfigService;
-import org.bukkit.plugin.java.JavaPlugin;
+import me.mapacheee.extendedhorizons.config.ConfigFacade;
+import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
+import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 
-ExtendedHorizonsPlugin eh = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
-FakeChunkService fakeChunkService = eh.getInjector().getInstance(FakeChunkService.class);
-ConfigService configService = eh.getInjector().getInstance(ConfigService.class);
+// Retrieve services
+SessionRegistry sessionRegistry = ExtendedHorizonsPlugin.getService(SessionRegistry.class);
+ConfigFacade configFacade = ExtendedHorizonsPlugin.getService(ConfigFacade.class);
 ```
 
-You can find a ready-to-use integration example in the `examples` directory.
+### What you can do through these services:
 
-What you can do through these services:
-- Get the advertised distance for a player with `FakeChunkService#getAdvertisedDistance(UUID)`.
-- Apply or override player distance with `FakeChunkService#applyDistancePreference(Player, int)`.
-- Trigger fake-chunk refresh for changed chunks with `FakeChunkService#handleRealChunkInteraction(World, int, int)` or `FakeChunkService#handleRealChunkInteraction(UUID, int, int)`.
-- Read runtime config with `ConfigService#get()`.
-- Check feature flags from config like `fakeChunksEnabledForWorld(worldName)` and `farPlayersEnabled()`.
+- **Override view distance:** Set a custom radius for specific players dynamically.
+  ```java
+  PlayerSession session = sessionRegistry.ensureFor(player, false);
+  session.playerOverrideDistance(64); // See up to 64 fake chunks
+  ```
+- **Reset view distance:** Clear the custom override and allow the plugin to fall back to `world-settings` or `permissions`.
+  ```java
+  PlayerSession session = sessionRegistry.get(player.getUniqueId());
+  if (session != null) {
+      session.resetPlayerOverrideDistance();
+  }
+  ```
+- **Read configuration:** Access world rules, safe factors, and far-player settings dynamically via `configFacade.get()`.
+- **Track Far Players:** ExtendedHorizons natively syncs far players. You can read the `trackedFarPlayers()` from a `PlayerSession` to see exactly which entities are being simulated locally.
 
 ---
 ## Contribute
