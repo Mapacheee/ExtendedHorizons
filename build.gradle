@@ -53,6 +53,9 @@ dependencies {
     }
     
     annotationProcessor files("libs/MapacheeeLib-1.0.0.jar")
+    annotationProcessor("com.thewinterframework:paper:1.0.6")
+    annotationProcessor('com.thewinterframework:configuration:1.0.4')
+    annotationProcessor('com.thewinterframework:command:1.0.1')
     
     paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
 
