@@ -54,21 +54,24 @@ public final class PaperChunkBackend implements ChunkBackend {
 
         if (generateMissingChunks) {
             world.getChunkAtAsync(chunkX, chunkZ, true)
-                .thenRun(() -> {
-                    boolean accepted = scheduler.runAtChunk(world, chunkX, chunkZ, task);
-                    if (!accepted) {
-                        future.complete(null);
-                    }
-                })
+                .thenRun(task)
                 .exceptionally(throwable -> {
                     future.complete(null);
                     return null;
                 });
         } else {
-            boolean accepted = scheduler.runAtChunk(world, chunkX, chunkZ, task);
-            if (!accepted) {
-                future.complete(null);
-            }
+            world.getChunkAtAsync(chunkX, chunkZ, false)
+                .thenAccept((chunk) -> {
+                    if (chunk == null) {
+                        future.complete(null);
+                        return;
+                    }
+                    task.run();
+                })
+                .exceptionally(throwable -> {
+                    future.complete(null);
+                    return null;
+                });
         }
 
         return future;
