@@ -15,7 +15,10 @@ java {
 
 repositories {
     mavenCentral()
-    mavenLocal()    
+    mavenLocal()
+    flatDir {
+        dirs 'libs'
+    }
     maven {
         name = 'papermc-repo'
         url = 'https://repo.papermc.io/repository/maven-public/'
@@ -39,29 +42,17 @@ repositories {
 }
 
 dependencies {
-    api("com.thewinterframework:paper:1.0.4") {
-        exclude group: 'io.papermc.paper', module: 'paper-api'
-        exclude group: 'com.google.guava', module: 'guava'
-        exclude group: 'com.google.code.gson', module: 'gson'
-    }
-    annotationProcessor("com.thewinterframework:paper:1.0.4")
-    
-    api('com.thewinterframework:configuration:1.0.4') {
-        exclude group: 'io.papermc.paper', module: 'paper-api'
-    }
-    annotationProcessor('com.thewinterframework:configuration:1.0.4')
-    
-    api('com.thewinterframework:command:1.0.1') {
+    api("me.mapacheee:MapacheeeLib:1.0.0") {
         exclude group: 'io.papermc.paper', module: 'paper-api'
         exclude group: 'org.incendo', module: 'cloud-paper'
         exclude group: 'org.incendo', module: 'cloud-annotations'
         exclude group: 'org.incendo', module: 'cloud-bukkit'
         exclude group: 'org.incendo', module: 'cloud-core'
+        exclude group: 'com.google.guava', module: 'guava'
+        exclude group: 'com.google.code.gson', module: 'gson'
     }
-    annotationProcessor('com.thewinterframework:command:1.0.1')
     
-    api('org.incendo:cloud-paper:2.0.0-beta.10')
-    api('org.incendo:cloud-annotations:2.0.0')
+    annotationProcessor files("libs/MapacheeeLib-1.0.0.jar")
     
     paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
 
@@ -106,6 +97,7 @@ shadowJar {
     exclude 'module-info.class'
     exclude '**/module-info.class'
     exclude 'META-INF/*.kotlin_module'
+    exclude 'paper-plugin.yml'
     
     mergeServiceFiles()
     
@@ -142,9 +134,4 @@ checkstyle {
     toolVersion = '10.12.5'
     configFile = file('checkstyle.xml')
     ignoreFailures = true
-}
-
-task runMergeTest(type: JavaExec) {
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'me.mapacheee.extendedhorizons.MergeTest'
 }
