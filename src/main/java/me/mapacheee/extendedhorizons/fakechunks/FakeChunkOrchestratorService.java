@@ -162,21 +162,30 @@ public final class FakeChunkOrchestratorService {
     }
 
     private int resolveClientDistance(Player player, String worldName) {
-        PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
-
-        int baseDistance;
-        if (session != null && session.playerOverrideDistance() > 0) {
-            baseDistance = session.playerOverrideDistance();
-        } else {
-            baseDistance = this.configFacade.get().targetViewDistance(worldName);
-        }
-
+        int worldDistance = this.configFacade.get().targetViewDistance(worldName);
         int permissionCap = resolvePermissionCap(player);
+        boolean hasBypass = player.hasPermission("extendedhorizons.bypass");
+
+        int effectiveCap;
         if (permissionCap > 0) {
-            baseDistance = Math.min(baseDistance, permissionCap);
+            if (hasBypass) {
+                effectiveCap = permissionCap;
+            } else {
+                effectiveCap = Math.min(worldDistance, permissionCap);
+            }
+        } else {
+            effectiveCap = worldDistance;
         }
 
-        return Math.max(2, baseDistance);
+        PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
+        int base;
+        if (session != null && session.playerOverrideDistance() > 0) {
+            base = session.playerOverrideDistance();
+        } else {
+            base = worldDistance;
+        }
+
+        return Math.max(2, Math.min(base, effectiveCap));
     }
 
     private static int resolvePermissionCap(Player player) {
