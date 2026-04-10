@@ -10,7 +10,6 @@ It renders distant terrain using optimized fake chunks and optional far-player s
 
 ---
 ## Dependencies
-- [PacketEvents](https://github.com/retrooper/packetevents)
 - [PlaceholderAPI](https://github.com/PlaceholderAPI/PlaceholderAPI) *(optional)*
 - [TheWinterFramework](https://github.com/thewinterframework/winter) *(shaded in artifact)*
 
@@ -36,16 +35,20 @@ depend:
 
 ### Accessing Services
 
-The easiest way to obtain core services is through the main plugin class:
+You can access services natively through the Guice Injector provided by WinterFramework:
 
 ```java
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.ConfigFacade;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
-import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import org.bukkit.plugin.java.JavaPlugin;
 
-// Retrieve services
-SessionRegistry sessionRegistry = ExtendedHorizonsPlugin.getService(SessionRegistry.class);
+ExtendedHorizonsPlugin eh = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
+
+// Retrieve via standard Guice Injector:
+SessionRegistry sessionRegistry = eh.getInjector().getInstance(SessionRegistry.class);
+
+// Or via the static helper:
 ConfigFacade configFacade = ExtendedHorizonsPlugin.getService(ConfigFacade.class);
 ```
 
