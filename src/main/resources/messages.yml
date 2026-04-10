@@ -1,0 +1,7 @@
+reload-success: "<bold><gradient:#CB356B:#BD3F32>ExtendedHorizons</gradient></bold> <dark_gray>»</dark_gray> <gray>Configuration reloaded successfully.</gray>"
+setme-success: "<bold><gradient:#CB356B:#BD3F32>ExtendedHorizons</gradient></bold> <dark_gray>»</dark_gray> <gray>Your view distance has been set to</gray> <color:#CB356B><distance></color> <gray>chunks.</gray>"
+set-success: "<bold><gradient:#CB356B:#BD3F32>ExtendedHorizons</gradient></bold> <dark_gray>»</dark_gray> <gray>View distance for</gray> <color:#CB356B><player></color> <gray>set to</gray> <color:#CB356B><distance></color> <gray>chunks.</gray>"
+set-notify: "<bold><gradient:#CB356B:#BD3F32>ExtendedHorizons</gradient></bold> <dark_gray>»</dark_gray> <gray>Your view distance has been set to</gray> <color:#CB356B><distance></color> <gray>chunks by an admin.</gray>"
+reset-success: "<bold><gradient:#CB356B:#BD3F32>ExtendedHorizons</gradient></bold> <dark_gray>»</dark_gray> <gray>View distance for</gray> <color:#CB356B><player></color> <gray>has been reset to defaults.</gray>"
+reset-self-success: "<bold><gradient:#CB356B:#BD3F32>ExtendedHorizons</gradient></bold> <dark_gray>»</dark_gray> <gray>Your view distance has been reset to defaults.</gray>"
+reset-console-error: "<bold><gradient:#CB356B:#BD3F32>ExtendedHorizons</gradient></bold> <dark_gray>»</dark_gray> <color:#BD3F32>Please specify a player when running from console.</color>"
