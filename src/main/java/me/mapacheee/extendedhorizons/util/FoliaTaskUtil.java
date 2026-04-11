@@ -24,6 +24,14 @@ public final class FoliaTaskUtil {
         );
     }
 
+    public static ScheduledTask runGlobalDelayed(Plugin plugin, Runnable runnable, long delayTicks) {
+        return Bukkit.getGlobalRegionScheduler().runDelayed(
+            plugin,
+            task -> runnable.run(),
+            Math.max(1L, delayTicks)
+        );
+    }
+
     public static void runForPlayer(Player player, Plugin plugin, Runnable runnable) {
         if (player == null || plugin == null || runnable == null) {
             return;
