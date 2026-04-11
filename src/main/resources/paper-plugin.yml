@@ -9,4 +9,7 @@ dependencies:
   server:
     MapacheeeLib:
       load: BEFORE
-      required: true
+      required: true
+    WorldEdit:
+      load: BEFORE
+      required: false
