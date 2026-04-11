@@ -1,0 +1,12 @@
+name: ExtendedHorizons
+version: ${version}
+main: me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin
+api-version: '1.21'
+folia-supported: true
+description: ${description}
+author: Mapacheee
+dependencies:
+  server:
+    MapacheeeLib:
+      load: BEFORE
+      required: true
