@@ -53,7 +53,7 @@ dependencies {
     annotationProcessor("com.thewinterframework:paper:1.0.6")
     annotationProcessor("com.thewinterframework:configuration:1.0.4")
 
-    compileOnly("me.clip:placeholderapi:2.11.7")
+    compileOnly("me.clip:placeholderapi:2.12.2")
     compileOnly(platform("com.intellectualsites.bom:bom-newest:1.56"))
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Core")
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit") { transitive = false }

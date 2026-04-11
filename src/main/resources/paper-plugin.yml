@@ -13,3 +13,6 @@ dependencies:
     WorldEdit:
       load: BEFORE
       required: false
+    PlaceholderAPI:
+      load: BEFORE
+      required: false
