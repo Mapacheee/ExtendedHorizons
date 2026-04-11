@@ -4,6 +4,7 @@ import com.thewinterframework.configurate.config.Configurate;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Setting;
 
+import java.util.List;
 import java.util.Map;
 
 @ConfigSerializable
@@ -13,6 +14,28 @@ public record EhConfig(
     @Setting("fake-chunks") FakeChunksConfig fakeChunks,
     @Setting("world-settings") Map<String, WorldSettingsConfig> worldSettings
 ) {
+
+    private static final List<String> DEFAULT_ANTI_XRAY_HIDDEN_BLOCKS = List.of(
+        "minecraft:diamond_ore",
+        "minecraft:deepslate_diamond_ore",
+        "minecraft:gold_ore",
+        "minecraft:deepslate_gold_ore",
+        "minecraft:iron_ore",
+        "minecraft:deepslate_iron_ore",
+        "minecraft:emerald_ore",
+        "minecraft:deepslate_emerald_ore",
+        "minecraft:redstone_ore",
+        "minecraft:deepslate_redstone_ore",
+        "minecraft:lapis_ore",
+        "minecraft:deepslate_lapis_ore",
+        "minecraft:coal_ore",
+        "minecraft:deepslate_coal_ore",
+        "minecraft:copper_ore",
+        "minecraft:deepslate_copper_ore",
+        "minecraft:nether_gold_ore",
+        "minecraft:nether_quartz_ore",
+        "minecraft:ancient_debris"
+    );
 
     public static EhConfig empty() {
         return new EhConfig(null, null, null);
@@ -43,6 +66,13 @@ public record EhConfig(
             return 6;
         }
         return Math.max(1, this.fakeChunks.maxSendPerCycle());
+    }
+
+    public int maxGlobalGenerationsPerTick() {
+        if (this.fakeChunks == null) {
+            return 6;
+        }
+        return Math.max(1, this.fakeChunks.maxGlobalGenerationsPerTick());
     }
 
     public int maxInflightPerPlayer() {
@@ -140,6 +170,30 @@ public record EhConfig(
         return Math.max(1, this.fakeChunks.farPlayers().equipTicks());
     }
 
+    public boolean antiXrayEnabled(String worldName) {
+        WorldSettingsConfig worldConfig = this.world(worldName);
+        if (worldConfig != null && worldConfig.antiXray() != null && worldConfig.antiXray().enabled() != null) {
+            return worldConfig.antiXray().enabled();
+        }
+        if (this.fakeChunks == null || this.fakeChunks.antiXray() == null) {
+            return false;
+        }
+        return this.fakeChunks.antiXray().enabled();
+    }
+
+    public List<String> antiXrayHiddenBlocks(String worldName) {
+        WorldSettingsConfig worldConfig = this.world(worldName);
+        if (worldConfig != null && worldConfig.antiXray() != null
+            && worldConfig.antiXray().hiddenBlocks() != null && !worldConfig.antiXray().hiddenBlocks().isEmpty()) {
+            return worldConfig.antiXray().hiddenBlocks();
+        }
+        if (this.fakeChunks == null || this.fakeChunks.antiXray() == null
+            || this.fakeChunks.antiXray().hiddenBlocks() == null || this.fakeChunks.antiXray().hiddenBlocks().isEmpty()) {
+            return DEFAULT_ANTI_XRAY_HIDDEN_BLOCKS;
+        }
+        return this.fakeChunks.antiXray().hiddenBlocks();
+    }
+
     private WorldSettingsConfig world(String worldName) {
         if (worldName == null || worldName.isBlank() || this.worldSettings == null || this.worldSettings.isEmpty()) {
             return null;
@@ -163,6 +217,7 @@ public record EhConfig(
     public record FakeChunksConfig(
         @Setting("target-view-distance") int targetViewDistance,
         @Setting("max-send-per-cycle") int maxSendPerCycle,
+        @Setting("max-global-generations-per-tick") int maxGlobalGenerationsPerTick,
         @Setting("max-inflight-per-player") int maxInflightPerPlayer,
         @Setting("chunk-queue-size") int chunkQueueSize,
         @Setting("dispatch-time-budget-nanos") long dispatchTimeBudgetNanos,
@@ -170,6 +225,7 @@ public record EhConfig(
         @Setting("force-plan-interval-ms") long forcePlanIntervalMs,
         @Setting("unavailable-retry-ms") long unavailableRetryMs,
         @Setting("safe-square-factor") double safeSquareFactor,
+        @Setting("anti-xray") AntiXrayConfig antiXray,
         CacheConfig cache,
         RuntimeConfig runtime,
         @Setting("far-players") FarPlayersConfig farPlayers
@@ -190,7 +246,20 @@ public record EhConfig(
     @ConfigSerializable
     public record WorldSettingsConfig(
         @Setting("enable-fakechunks") boolean enableFakechunks,
-        @Setting("target-distance") int targetDistance
+        @Setting("target-distance") int targetDistance,
+        @Setting("anti-xray") WorldAntiXrayConfig antiXray
+    ) {}
+
+    @ConfigSerializable
+    public record AntiXrayConfig(
+        boolean enabled,
+        @Setting("hidden-blocks") List<String> hiddenBlocks
+    ) {}
+
+    @ConfigSerializable
+    public record WorldAntiXrayConfig(
+        Boolean enabled,
+        @Setting("hidden-blocks") List<String> hiddenBlocks
     ) {}
 
     @ConfigSerializable

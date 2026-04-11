@@ -11,6 +11,7 @@ import io.netty.util.internal.SystemPropertyUtil;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
+import me.mapacheee.extendedhorizons.fakechunks.dispatch.GlobalGenerationLimiterService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
@@ -40,6 +41,7 @@ public final class RuntimeOrchestratorService {
     private final Container<EhConfig> configContainer;
     private final SessionRegistry sessionRegistry;
     private final FakeChunkOrchestratorService fakeChunkOrchestratorService;
+    private final GlobalGenerationLimiterService generationLimiterService;
     private final FarPlayerCacheService farPlayerCacheService;
 
     private volatile ScheduledTask runtimeTask;
@@ -50,11 +52,13 @@ public final class RuntimeOrchestratorService {
         Container<EhConfig> configContainer,
         SessionRegistry sessionRegistry,
         FakeChunkOrchestratorService fakeChunkOrchestratorService,
+        GlobalGenerationLimiterService generationLimiterService,
         FarPlayerCacheService farPlayerCacheService
     ) {
         this.configContainer = configContainer;
         this.sessionRegistry = sessionRegistry;
         this.fakeChunkOrchestratorService = fakeChunkOrchestratorService;
+        this.generationLimiterService = generationLimiterService;
         this.farPlayerCacheService = farPlayerCacheService;
     }
 
@@ -88,6 +92,7 @@ public final class RuntimeOrchestratorService {
         int nettyThreadCount = Math.max(1, SystemPropertyUtil.getInt(
             "io.netty.eventLoopThreads", NettyRuntime.availableProcessors() * 2));
         EhConfig config = this.configContainer.get();
+        this.generationLimiterService.reset(config.maxGlobalGenerationsPerTick());
         long periodTicks = Math.max(1L, config.runtimePeriodTicks());
         long nanosPerServerTick = 50_000_000L * periodTicks;
         long tickLengthNanos = nanosPerServerTick / TICK_LENGTH_DIVISOR;
@@ -111,7 +116,7 @@ public final class RuntimeOrchestratorService {
                         equipment = new ArrayList<>(6);
                         for (EquipmentSlot slot : EquipmentSlot.values()) {
                             ItemStack item = nmsPlayer.getItemBySlot(slot);
-                            equipment.add(Pair.of(slot, item != null ? item.copy() : ItemStack.EMPTY));
+                            equipment.add(Pair.of(slot, item.copy()));
                         }
                         this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
                     } else {

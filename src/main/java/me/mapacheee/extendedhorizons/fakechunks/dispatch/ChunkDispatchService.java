@@ -48,11 +48,13 @@ public final class ChunkDispatchService {
         EhConfig config = this.configContainer.get();
         int chunksPerTick = config.maxSendPerCycle();
         int chunkQueueSize = config.chunkQueueSize();
+        int maxInflight = config.maxInflightPerPlayer();
+        int maxPending = Math.min(chunkQueueSize, maxInflight);
 
         do {
             session.chunkQueue().removeIf(entry -> this.checkQueueEntry(world, channel, session, entry));
 
-            if (session.chunkQueue().size() >= chunkQueueSize) {
+            if (session.chunkQueue().size() >= maxPending) {
                 break;
             }
 
@@ -65,7 +67,9 @@ public final class ChunkDispatchService {
             int chunkZ = ChunkPos.getZ(chunkKey);
             CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
             session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
-            if (chunksPerTick-- <= 0) { break; }
+            if (--chunksPerTick <= 0) {
+                break;
+            }
         } while (System.nanoTime() < deadlineNanos);
     }
 

@@ -4,6 +4,7 @@ debug:
 fake-chunks:
   target-view-distance: 32
   max-send-per-cycle: 3
+  max-global-generations-per-tick: 6
   max-inflight-per-player: 5
   chunk-queue-size: 16
   dispatch-time-budget-nanos: 900000
@@ -11,6 +12,8 @@ fake-chunks:
   force-plan-interval-ms: 900
   unavailable-retry-ms: 150
   safe-square-factor: 0.80
+  anti-xray:
+    enabled: false
   runtime:
     period-ticks: 1
   far-players:
@@ -25,7 +28,33 @@ world-settings:
   world:
     enable-fakechunks: true
     target-distance: 32
+    anti-xray:
+      enabled: false
+      hidden-blocks:
+        - minecraft:diamond_ore
+        - minecraft:deepslate_diamond_ore
+        - minecraft:gold_ore
+        - minecraft:deepslate_gold_ore
+        - minecraft:iron_ore
+        - minecraft:deepslate_iron_ore
+        - minecraft:emerald_ore
+        - minecraft:deepslate_emerald_ore
+        - minecraft:redstone_ore
+        - minecraft:deepslate_redstone_ore
+        - minecraft:lapis_ore
+        - minecraft:deepslate_lapis_ore
+        - minecraft:coal_ore
+        - minecraft:deepslate_coal_ore
+        - minecraft:copper_ore
+        - minecraft:deepslate_copper_ore
+        - minecraft:ancient_debris
   world_nether:
     enable-fakechunks: false
     target-distance: 16
+    anti-xray:
+      enabled: false
+      hidden-blocks:
+        - minecraft:nether_gold_ore
+        - minecraft:nether_quartz_ore
+        - minecraft:ancient_debris
 
