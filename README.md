@@ -11,7 +11,7 @@ It renders distant terrain using optimized fake chunks and optional far-player s
 ---
 ## Dependencies
 - [PlaceholderAPI](https://github.com/PlaceholderAPI/PlaceholderAPI) *(optional)*
-- [TheWinterFramework](https://github.com/thewinterframework/winter) *(shaded in artifact)*
+- [MapacheeeLib](https://github.com/Mapacheee/MapacheeeLib)
 
 ---
 ## How to build
@@ -49,7 +49,7 @@ ExtendedHorizonsPlugin eh = JavaPlugin.getPlugin(ExtendedHorizonsPlugin.class);
 SessionRegistry sessionRegistry = eh.getInjector().getInstance(SessionRegistry.class);
 
 // Or via the static helper:
-ConfigFacade configFacade = ExtendedHorizonsPlugin.getService(ConfigFacade.class);
+sessionRegistry = ExtendedHorizonsPlugin.getService(SessionRegistry.class);
 ```
 
 ### What you can do through these services:
