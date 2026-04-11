@@ -38,7 +38,7 @@ jobs:
       - name: Checkout Winter Configuration
         uses: actions/checkout@v4
         with:
-          repository: thewinterframework/configuration
+          repository: Mapacheee/configuration
           path: deps/configuration
           token: ${{ secrets.GH_TOKEN || github.token }}
 
