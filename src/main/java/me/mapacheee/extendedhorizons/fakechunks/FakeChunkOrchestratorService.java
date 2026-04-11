@@ -1,9 +1,10 @@
 package me.mapacheee.extendedhorizons.fakechunks;
 
 import com.google.inject.Inject;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
-import me.mapacheee.extendedhorizons.config.ConfigFacade;
+import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkDispatchService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.FarPlayerTrackingService;
@@ -24,7 +25,7 @@ import org.slf4j.LoggerFactory;
 @Service
 public final class FakeChunkOrchestratorService {
 
-    private final ConfigFacade configFacade;
+    private final Container<EhConfig> configContainer;
     private final static Logger LOGGER = LoggerFactory.getLogger(FakeChunkOrchestratorService.class);
     private final SessionRegistry sessionRegistry;
     private final ChunkDispatchService dispatchService;
@@ -33,13 +34,13 @@ public final class FakeChunkOrchestratorService {
 
     @Inject
     public FakeChunkOrchestratorService(
-        ConfigFacade configFacade,
+        Container<EhConfig> configContainer,
         SessionRegistry sessionRegistry,
         ChunkDispatchService dispatchService,
         ChannelInjectionService channelInjectionService,
         FarPlayerTrackingService farPlayerTrackingService
     ) {
-        this.configFacade = configFacade;
+        this.configContainer = configContainer;
         this.sessionRegistry = sessionRegistry;
         this.dispatchService = dispatchService;
         this.channelInjectionService = channelInjectionService;
@@ -55,7 +56,7 @@ public final class FakeChunkOrchestratorService {
         World world = player.getWorld();
         String worldName = world.getName();
         Channel channel = this.channelInjectionService.resolveChannel(player);
-        if (!this.configFacade.get().fakeChunksEnabledForWorld(worldName)) {
+        if (!this.configContainer.get().fakeChunksEnabledForWorld(worldName)) {
             this.clearSessionState(channel, session);
             return;
         }
@@ -162,7 +163,7 @@ public final class FakeChunkOrchestratorService {
     }
 
     private int resolveClientDistance(Player player, String worldName) {
-        int worldDistance = this.configFacade.get().targetViewDistance(worldName);
+        int worldDistance = this.configContainer.get().targetViewDistance(worldName);
         int permissionCap = resolvePermissionCap(player);
         boolean hasBypass = player.hasPermission("extendedhorizons.bypass");
 

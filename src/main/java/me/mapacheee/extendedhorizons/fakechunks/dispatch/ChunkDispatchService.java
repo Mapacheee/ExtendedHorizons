@@ -1,12 +1,12 @@
 package me.mapacheee.extendedhorizons.fakechunks.dispatch;
 
 import com.google.inject.Inject;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import me.mapacheee.extendedhorizons.config.ConfigFacade;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
@@ -23,19 +23,19 @@ import java.util.concurrent.CompletableFuture;
 @Service
 public final class ChunkDispatchService {
 
-    private final ConfigFacade configFacade;
+    private final Container<EhConfig> configContainer;
     private final ChunkBuildCacheService cacheService;
     private final ChunkBackend chunkBackend;
     private final ChannelInjectionService channelInjectionService;
 
     @Inject
     public ChunkDispatchService(
-        ConfigFacade configFacade,
+        Container<EhConfig> configContainer,
         ChunkBuildCacheService cacheService,
         ChunkBackend chunkBackend,
         ChannelInjectionService channelInjectionService
     ) {
-        this.configFacade = configFacade;
+        this.configContainer = configContainer;
         this.cacheService = cacheService;
         this.chunkBackend = chunkBackend;
         this.channelInjectionService = channelInjectionService;
@@ -45,7 +45,7 @@ public final class ChunkDispatchService {
         if (world == null || channel == null || session == null) {
             return;
         }
-        EhConfig config = this.configFacade.get();
+        EhConfig config = this.configContainer.get();
         int chunksPerTick = config.maxSendPerCycle();
         int chunkQueueSize = config.chunkQueueSize();
 
@@ -107,7 +107,7 @@ public final class ChunkDispatchService {
                 world,
                 chunkX,
                 chunkZ,
-                this.configFacade.get().generateMissingChunks(),
+                this.configContainer.get().generateMissingChunks(),
                 (worldRef, cx, cz, runnable) -> {
                     ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
                     if (plugin == null || !plugin.isEnabled()) {

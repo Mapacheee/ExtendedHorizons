@@ -1,6 +1,7 @@
 package me.mapacheee.extendedhorizons.runtime;
 
 import com.google.inject.Inject;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
@@ -8,7 +9,6 @@ import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import io.netty.util.NettyRuntime;
 import io.netty.util.internal.SystemPropertyUtil;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
-import me.mapacheee.extendedhorizons.config.ConfigFacade;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
@@ -37,7 +37,7 @@ public final class RuntimeOrchestratorService {
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeOrchestratorService.class);
     private static final int TICK_LENGTH_DIVISOR = 2;
 
-    private final ConfigFacade configFacade;
+    private final Container<EhConfig> configContainer;
     private final SessionRegistry sessionRegistry;
     private final FakeChunkOrchestratorService fakeChunkOrchestratorService;
     private final FarPlayerCacheService farPlayerCacheService;
@@ -47,12 +47,12 @@ public final class RuntimeOrchestratorService {
 
     @Inject
     public RuntimeOrchestratorService(
-        ConfigFacade configFacade,
+        Container<EhConfig> configContainer,
         SessionRegistry sessionRegistry,
         FakeChunkOrchestratorService fakeChunkOrchestratorService,
         FarPlayerCacheService farPlayerCacheService
     ) {
-        this.configFacade = configFacade;
+        this.configContainer = configContainer;
         this.sessionRegistry = sessionRegistry;
         this.fakeChunkOrchestratorService = fakeChunkOrchestratorService;
         this.farPlayerCacheService = farPlayerCacheService;
@@ -65,7 +65,7 @@ public final class RuntimeOrchestratorService {
             return;
         }
         this.cancelTask();
-        long period = this.configFacade.get().runtimePeriodTicks();
+        long period = this.configContainer.get().runtimePeriodTicks();
         this.runtimeTask = FoliaTaskUtil.runGlobalTimer(plugin, this::runtimeTick, 1L, period);
     }
 
@@ -87,7 +87,7 @@ public final class RuntimeOrchestratorService {
 
         int nettyThreadCount = Math.max(1, SystemPropertyUtil.getInt(
             "io.netty.eventLoopThreads", NettyRuntime.availableProcessors() * 2));
-        EhConfig config = this.configFacade.get();
+        EhConfig config = this.configContainer.get();
         long periodTicks = Math.max(1L, config.runtimePeriodTicks());
         long nanosPerServerTick = 50_000_000L * periodTicks;
         long tickLengthNanos = nanosPerServerTick / TICK_LENGTH_DIVISOR;

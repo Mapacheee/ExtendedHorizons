@@ -1,9 +1,9 @@
 package me.mapacheee.extendedhorizons.fakechunks.farplayers;
 
 import com.google.inject.Inject;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
-import me.mapacheee.extendedhorizons.config.ConfigFacade;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.FarPlayerBackend;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
@@ -19,19 +19,19 @@ import java.util.UUID;
 @Service
 public final class FarPlayerTrackingService {
 
-    private final ConfigFacade configFacade;
+    private final Container<EhConfig> configContainer;
     private final FarPlayerCacheService cacheService;
     private final FarPlayerBackend backend;
     private final ChannelInjectionService channelInjectionService;
 
     @Inject
     public FarPlayerTrackingService(
-        ConfigFacade configFacade,
+        Container<EhConfig> configContainer,
         FarPlayerCacheService cacheService,
         FarPlayerBackend backend,
         ChannelInjectionService channelInjectionService
     ) {
-        this.configFacade = configFacade;
+        this.configContainer = configContainer;
         this.cacheService = cacheService;
         this.backend = backend;
         this.channelInjectionService = channelInjectionService;
@@ -51,7 +51,7 @@ public final class FarPlayerTrackingService {
         newlyFound.clear();
 
         int tick = session.incrementTrackingTicker();
-        EhConfig config = this.configFacade.get();
+        EhConfig config = this.configContainer.get();
         boolean syncMove = Math.floorMod(tick, config.farPlayerMoveTicks()) == 0;
         boolean syncEquip = Math.floorMod(tick, config.farPlayerEquipTicks()) == 0;
 

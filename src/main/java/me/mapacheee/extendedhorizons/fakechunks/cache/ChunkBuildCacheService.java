@@ -4,10 +4,11 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.google.inject.Inject;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCountUtil;
-import me.mapacheee.extendedhorizons.config.ConfigFacade;
+import me.mapacheee.extendedhorizons.config.EhConfig;
 
 import java.time.Duration;
 import java.util.Map;
@@ -19,7 +20,7 @@ import java.util.function.Supplier;
 @Service
 public final class ChunkBuildCacheService {
 
-    private final ConfigFacade configFacade;
+    private final Container<EhConfig> configContainer;
 
     private volatile Cache<ChunkKey, ByteBuf> serializedCache;
     private volatile Cache<ChunkKey, CompletableFuture<ByteBuf>> buildEntryCache;
@@ -27,15 +28,15 @@ public final class ChunkBuildCacheService {
     private final Map<ChunkKey, Long> unavailableUntilMs = new ConcurrentHashMap<>();
 
     @Inject
-    public ChunkBuildCacheService(ConfigFacade configFacade) {
-        this.configFacade = configFacade;
+    public ChunkBuildCacheService(Container<EhConfig> configContainer) {
+        this.configContainer = configContainer;
         this.rebuildCaches();
     }
 
     public synchronized void rebuildCaches() {
-        int ttlSeconds = this.configFacade.get().cacheTtlSeconds();
-        int maxEntries = this.configFacade.get().cacheMaxEntries();
-        long bypassMs = this.configFacade.get().cacheBypassAfterRealInteractionMs();
+        int ttlSeconds = this.configContainer.get().cacheTtlSeconds();
+        int maxEntries = this.configContainer.get().cacheMaxEntries();
+        long bypassMs = this.configContainer.get().cacheBypassAfterRealInteractionMs();
 
         this.serializedCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
@@ -121,7 +122,7 @@ public final class ChunkBuildCacheService {
         if (worldId == null) {
             return;
         }
-        long retryAt = System.currentTimeMillis() + this.configFacade.get().unavailableRetryMs();
+        long retryAt = System.currentTimeMillis() + this.configContainer.get().unavailableRetryMs();
         this.unavailableUntilMs.put(new ChunkKey(worldId, chunkKey), retryAt);
     }
 
