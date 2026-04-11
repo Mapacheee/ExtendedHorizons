@@ -39,6 +39,10 @@ repositories {
         name = 'codemc-snapshots'
         url = 'https://repo.codemc.io/repository/maven-snapshots/'
     }
+    maven {
+        name = 'enginehub-repo'
+        url = 'https://maven.enginehub.org/repo/'
+    }
 }
 
 dependencies {
@@ -50,6 +54,9 @@ dependencies {
     annotationProcessor("com.thewinterframework:configuration:1.0.4")
 
     compileOnly("me.clip:placeholderapi:2.11.7")
+    compileOnly(platform("com.intellectualsites.bom:bom-newest:1.56"))
+    compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Core")
+    compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit") { transitive = false }
     implementation("com.github.ben-manes.caffeine:caffeine:3.2.3")
 }
 
