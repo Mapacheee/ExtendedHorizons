@@ -1,8 +1,8 @@
 package me.mapacheee.extendedhorizons.fakechunks.cache;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.RemovalCause;
+import me.mapacheee.lib.caffeine.cache.Cache;
+import me.mapacheee.lib.caffeine.cache.Caffeine;
+import me.mapacheee.lib.caffeine.cache.RemovalCause;
 import com.google.inject.Inject;
 import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;

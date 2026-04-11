@@ -57,7 +57,6 @@ dependencies {
     compileOnly(platform("com.intellectualsites.bom:bom-newest:1.56"))
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Core")
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit") { transitive = false }
-    implementation("com.github.ben-manes.caffeine:caffeine:3.2.3")
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -66,7 +65,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 shadowJar {
-    relocate 'com.github.benmanes.caffeine', 'me.mapacheee.extendedhorizons.libs.caffeine'
+    relocate 'com.github.benmanes.caffeine', 'me.mapacheee.lib.caffeine'
     manifest {
         attributes(
             'Implementation-Title': project.name,
