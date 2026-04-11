@@ -42,22 +42,12 @@ repositories {
 }
 
 dependencies {
-    api("me.mapacheee:MapacheeeLib:1.0.0") {
-        exclude group: 'io.papermc.paper', module: 'paper-api'
-        exclude group: 'org.incendo', module: 'cloud-paper'
-        exclude group: 'org.incendo', module: 'cloud-annotations'
-        exclude group: 'org.incendo', module: 'cloud-bukkit'
-        exclude group: 'org.incendo', module: 'cloud-core'
-        exclude group: 'com.google.guava', module: 'guava'
-        exclude group: 'com.google.code.gson', module: 'gson'
-    }
-    
-    annotationProcessor files("libs/MapacheeeLib-1.0.0.jar")
-    annotationProcessor("com.thewinterframework:paper:1.0.6")
-    annotationProcessor('com.thewinterframework:configuration:1.0.4')
-    annotationProcessor('com.thewinterframework:command:1.0.1')
-    
+    compileOnlyApi("me.mapacheee:MapacheeeLib:1.0.0")
+    annotationProcessor("me.mapacheee:MapacheeeLib:1.0.0")
     paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
+    
+    annotationProcessor("com.thewinterframework:paper:1.0.6")
+    annotationProcessor("com.thewinterframework:configuration:1.0.4")
 
     compileOnly("me.clip:placeholderapi:2.11.7")
     implementation("com.github.ben-manes.caffeine:caffeine:3.2.3")
@@ -69,41 +59,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 shadowJar {
-    minimize {
-        exclude(dependency('com.thewinterframework:.*'))
-        exclude(dependency('com.google.inject:.*'))
-        exclude(dependency('com.thewinterframework:configuration:.*'))
-        exclude(dependency('org.incendo:.*'))
-        exclude(dependency('com.github.ben-manes.caffeine:.*'))
-    }
-    
-    relocate 'com.thewinterframework', 'me.mapacheee.extendedhorizons.libs.winter'
-    relocate 'com.google.inject', 'me.mapacheee.extendedhorizons.libs.guice'
-    relocate 'org.incendo', 'me.mapacheee.extendedhorizons.libs.cloud'
-
-    relocate 'javax.inject', 'me.mapacheee.extendedhorizons.libs.inject'
-    relocate 'aopalliance', 'me.mapacheee.extendedhorizons.libs.aopalliance'
-
-    exclude 'org/checkerframework/**'
-    exclude 'META-INF/maven/org.checkerframework/**'
-    exclude 'com/google/errorprone/**'
-    exclude 'com/google/j2objc/**'
-
-    exclude 'META-INF/MANIFEST.MF'
-    exclude 'META-INF/*.SF'
-    exclude 'META-INF/*.DSA'
-    exclude 'META-INF/*.RSA'
-    exclude 'META-INF/versions/**'
-    exclude 'META-INF/maven/**'
-    exclude 'META-INF/proguard/**'
-    exclude 'META-INF/native-image/**'
-    exclude 'module-info.class'
-    exclude '**/module-info.class'
-    exclude 'META-INF/*.kotlin_module'
-    exclude 'paper-plugin.yml'
-    
-    mergeServiceFiles()
-    
+    relocate 'com.github.benmanes.caffeine', 'me.mapacheee.extendedhorizons.libs.caffeine'
     manifest {
         attributes(
             'Implementation-Title': project.name,
@@ -128,8 +84,8 @@ tasks.build {
 
 processResources {
     filteringCharset = 'UTF-8'
-    filesMatching('plugin.yml') {
-        expand project.properties
+    filesMatching(['plugin.yml', 'paper-plugin.yml']) {
+        expand(version: project.version, description: project.description)
     }
 }
 
