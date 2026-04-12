@@ -1,6 +1,7 @@
 package me.mapacheee.extendedhorizons.hooks.worldedit;
 
 import com.sk89q.worldedit.WorldEdit;
+import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.event.extent.EditSessionEvent;
@@ -42,7 +43,13 @@ public final class InternalWorldEditListener {
 
     @Subscribe
     public void onEditSession(EditSessionEvent event) {
+        if (event.getStage() != EditSession.Stage.BEFORE_HISTORY) {
+            return;
+        }
         if (event.getWorld() == null) {
+            return;
+        }
+        if (event.getExtent() == null || event.getExtent() instanceof InvalidationExtent) {
             return;
         }
 
@@ -67,7 +74,13 @@ public final class InternalWorldEditListener {
             return;
         }
 
-        FoliaTaskUtil.runGlobalDelayed(plugin, () -> this.doInvalidateSelection(player), 5L);
+        this.scheduleSelectionInvalidation(plugin, player, 2L);
+        this.scheduleSelectionInvalidation(plugin, player, 10L);
+        this.scheduleSelectionInvalidation(plugin, player, 30L);
+    }
+
+    private void scheduleSelectionInvalidation(ExtendedHorizonsPlugin plugin, Player player, long delayTicks) {
+        FoliaTaskUtil.runGlobalDelayed(plugin, () -> this.doInvalidateSelection(player), Math.max(1L, delayTicks));
     }
 
     private void doInvalidateSelection(Player player) {
@@ -130,20 +143,26 @@ public final class InternalWorldEditListener {
 
         @Override
         public <T extends BlockStateHolder<T>> boolean setBlock(BlockVector3 location, T block) throws WorldEditException {
-            int chunkX = location.x() >> 4;
-            int chunkZ = location.z() >> 4;
-            long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
-            this.bulkService.queueInvalidation(this.worldId, chunkKey);
-            return super.setBlock(location, block);
+            boolean changed = super.setBlock(location, block);
+            if (changed) {
+                int chunkX = location.x() >> 4;
+                int chunkZ = location.z() >> 4;
+                long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+                this.bulkService.queueInvalidation(this.worldId, chunkKey);
+            }
+            return changed;
         }
 
         @Override
         public <T extends BlockStateHolder<T>> boolean setBlock(int x, int y, int z, T block) throws WorldEditException {
-            int chunkX = x >> 4;
-            int chunkZ = z >> 4;
-            long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
-            this.bulkService.queueInvalidation(this.worldId, chunkKey);
-            return super.setBlock(x, y, z, block);
+            boolean changed = super.setBlock(x, y, z, block);
+            if (changed) {
+                int chunkX = x >> 4;
+                int chunkZ = z >> 4;
+                long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+                this.bulkService.queueInvalidation(this.worldId, chunkKey);
+            }
+            return changed;
         }
     }
 }
