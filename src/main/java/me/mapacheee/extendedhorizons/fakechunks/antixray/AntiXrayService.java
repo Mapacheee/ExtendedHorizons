@@ -67,17 +67,17 @@ public final class AntiXrayService {
         switch (world.getEnvironment()) {
             case NETHER -> {
                 int netherrack = Block.BLOCK_STATE_REGISTRY.getId(Blocks.NETHERRACK.defaultBlockState());
-                above = new int[] { netherrack };
+                above = new int[]{netherrack};
                 below = above;
             }
             case THE_END -> {
                 int endStone = Block.BLOCK_STATE_REGISTRY.getId(Blocks.END_STONE.defaultBlockState());
-                above = new int[] { endStone };
+                above = new int[]{endStone};
                 below = above;
             }
             default -> {
-                above = new int[] { Block.BLOCK_STATE_REGISTRY.getId(Blocks.STONE.defaultBlockState()) };
-                below = new int[] { Block.BLOCK_STATE_REGISTRY.getId(Blocks.DEEPSLATE.defaultBlockState()) };
+                above = new int[]{Block.BLOCK_STATE_REGISTRY.getId(Blocks.STONE.defaultBlockState())};
+                below = new int[]{Block.BLOCK_STATE_REGISTRY.getId(Blocks.DEEPSLATE.defaultBlockState())};
             }
         }
 
@@ -118,6 +118,10 @@ public final class AntiXrayService {
     }
 
     private record CachedProfile(EhConfig config, List<String> hiddenBlocks, AntiXrayProcessor processor) {
+    }
+
+    public void invalidateAllProfiles() {
+        this.cachedProfiles.clear();
     }
 }
 

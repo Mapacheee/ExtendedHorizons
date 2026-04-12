@@ -1,35 +1,72 @@
+# Global debug options.
 debug:
+  # Enables extra internal behavior toggles (not runtime spam logs).
   enabled: false
 
 fake-chunks:
+  # Maximum fake chunk view distance used as global default when a world has no override.
   target-view-distance: 32
+
+  # Serialization backend.
+  # FAST = optimized binary writer (recommended), VANILLA = Mojang packet writer fallback mode.
+  serializer-mode: FAST
+
+  # Number of serializer workers.
+  # 0 = inline, 1..16 = async pool threads (used for non anti-xray serialization).
+  serialization-workers: 1
+
+  # Max newly queued fake chunks per player processing cycle.
   max-send-per-cycle: 3
+
+  # Global limit of new chunk generations per tick (protects TPS under load).
   max-global-generations-per-tick: 6
+
+  # Max in-flight chunk builds per player.
   max-inflight-per-player: 5
+
+  # Hard queue cap per player.
   chunk-queue-size: 16
-  dispatch-time-budget-nanos: 900000
-  generate-missing-chunks: true
-  force-plan-interval-ms: 900
+
+  # If true, missing chunks can be generated. If false, only already-available chunks are used.
+  generate-missing-chunks: false
+
+  # Retry delay (ms) for chunks temporarily unavailable.
   unavailable-retry-ms: 150
-  safe-square-factor: 0.80
+
+
   anti-xray:
+    # Global anti-xray master switch. Per-world value can override this.
     enabled: false
+
   runtime:
+    # Main runtime task period in ticks.
     period-ticks: 1
+
   far-players:
+    # Update interval for far-player movement packets.
     move-ticks: 4
-    equip-ticks: 15
+    # Update interval for far-player equipment/metadata packets.
+    equip-ticks: 20
+
   cache:
+    # Serialized fake chunk cache TTL.
     ttl-seconds: 15
+    # Max cache entries.
     max-entries: 1500
+    # Cache bypass window after real interaction invalidation.
     bypass-after-real-interaction-ms: 3000
 
+# Per-world overrides.
 world-settings:
   world:
+    # Enables fake chunks in this world.
     enable-fakechunks: true
+    # Effective fake chunk target distance for this world.
     target-distance: 32
     anti-xray:
+      # World override for anti-xray.
       enabled: false
+      # Block states to hide in fake chunks when anti-xray is enabled.
       hidden-blocks:
         - minecraft:diamond_ore
         - minecraft:deepslate_diamond_ore
@@ -48,6 +85,7 @@ world-settings:
         - minecraft:copper_ore
         - minecraft:deepslate_copper_ore
         - minecraft:ancient_debris
+
   world_nether:
     enable-fakechunks: false
     target-distance: 16

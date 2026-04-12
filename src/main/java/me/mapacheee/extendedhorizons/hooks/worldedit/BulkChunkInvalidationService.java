@@ -6,7 +6,9 @@ import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 
@@ -20,14 +22,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class BulkChunkInvalidationService {
 
     private final ChunkBuildCacheService cacheService;
+    private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
+    private final LightPayloadCacheService lightPayloadCacheService;
     private final SessionRegistry sessionRegistry;
     private final ConcurrentHashMap<UUID, Set<Long>> pendingInvalidations = new ConcurrentHashMap<>();
-    
+
     private volatile ScheduledTask processorTask;
 
     @Inject
-    public BulkChunkInvalidationService(ChunkBuildCacheService cacheService, SessionRegistry sessionRegistry) {
+    public BulkChunkInvalidationService(
+        ChunkBuildCacheService cacheService,
+        AntiXrayPayloadCacheService antiXrayPayloadCacheService,
+        LightPayloadCacheService lightPayloadCacheService,
+        SessionRegistry sessionRegistry
+    ) {
         this.cacheService = cacheService;
+        this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
+        this.lightPayloadCacheService = lightPayloadCacheService;
         this.sessionRegistry = sessionRegistry;
     }
 
@@ -39,7 +50,7 @@ public final class BulkChunkInvalidationService {
         }
         this.processorTask = FoliaTaskUtil.runGlobalTimer(plugin, this::processPending, 1L, 1L);
     }
-    
+
     @OnDisable
     public void onDisable() {
         if (this.processorTask != null) {
@@ -73,6 +84,8 @@ public final class BulkChunkInvalidationService {
 
             for (Long chunkKey : keys) {
                 this.cacheService.invalidate(worldId, chunkKey);
+                this.antiXrayPayloadCacheService.invalidateChunk(worldId, chunkKey);
+                this.lightPayloadCacheService.invalidate(worldId, chunkKey);
             }
 
             this.sessionRegistry.forEachSession(session -> {

@@ -2,7 +2,9 @@ package me.mapacheee.extendedhorizons.fakechunks.listener;
 
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
+import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import org.bukkit.block.Block;
 import net.minecraft.world.level.ChunkPos;
@@ -18,11 +20,20 @@ import java.util.UUID;
 public final class ChunkInvalidationListener implements Listener {
 
     private final ChunkBuildCacheService cacheService;
+    private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
+    private final LightPayloadCacheService lightPayloadCacheService;
     private final SessionRegistry sessionRegistry;
 
     @Inject
-    public ChunkInvalidationListener(ChunkBuildCacheService cacheService, SessionRegistry sessionRegistry) {
+    public ChunkInvalidationListener(
+        ChunkBuildCacheService cacheService,
+        AntiXrayPayloadCacheService antiXrayPayloadCacheService,
+        LightPayloadCacheService lightPayloadCacheService,
+        SessionRegistry sessionRegistry
+    ) {
         this.cacheService = cacheService;
+        this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
+        this.lightPayloadCacheService = lightPayloadCacheService;
         this.sessionRegistry = sessionRegistry;
     }
 
@@ -42,6 +53,8 @@ public final class ChunkInvalidationListener implements Listener {
         long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
         UUID worldId = block.getWorld().getUID();
         this.cacheService.invalidate(worldId, chunkKey);
+        this.antiXrayPayloadCacheService.invalidateChunk(worldId, chunkKey);
+        this.lightPayloadCacheService.invalidate(worldId, chunkKey);
 
         this.sessionRegistry.forEachSession(session -> {
             if (worldId.equals(session.worldId())) {

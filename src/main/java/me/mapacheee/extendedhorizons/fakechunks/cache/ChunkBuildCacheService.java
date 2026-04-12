@@ -143,6 +143,13 @@ public final class ChunkBuildCacheService {
         return true;
     }
 
+    public void invalidateAll() {
+        this.serializedCache.invalidateAll();
+        this.buildEntryCache.invalidateAll();
+        this.bypassCache.invalidateAll();
+        this.unavailableUntilMs.clear();
+    }
+
     public record ChunkKey(UUID worldId, long chunkKey) {
     }
 

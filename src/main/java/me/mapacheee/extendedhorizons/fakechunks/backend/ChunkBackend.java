@@ -12,5 +12,11 @@ public interface ChunkBackend {
         boolean runAtChunk(World world, int chunkX, int chunkZ, Runnable runnable);
     }
 
-    CompletableFuture<ByteBuf> buildChunkPayload(World world, int chunkX, int chunkZ, boolean generateMissingChunks, ChunkScheduler scheduler);
+    CompletableFuture<ByteBuf> buildChunkPayload(
+        World world,
+        int chunkX,
+        int chunkZ,
+        boolean generateMissingChunks,
+        ChunkScheduler scheduler
+    );
 }

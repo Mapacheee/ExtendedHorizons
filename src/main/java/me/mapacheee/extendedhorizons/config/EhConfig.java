@@ -68,6 +68,21 @@ public record EhConfig(
         return Math.max(1, this.fakeChunks.maxSendPerCycle());
     }
 
+    public SerializerMode serializerMode() {
+        if (this.fakeChunks == null || this.fakeChunks.serializerMode() == null) {
+            return SerializerMode.FAST;
+        }
+        return this.fakeChunks.serializerMode();
+    }
+
+    public int serializationWorkers() {
+        if (this.fakeChunks == null) {
+            return 0;
+        }
+        int configured = this.fakeChunks.serializationWorkers();
+        return Math.clamp(configured, 0, 16);
+    }
+
     public int maxGlobalGenerationsPerTick() {
         if (this.fakeChunks == null) {
             return 6;
@@ -89,13 +104,6 @@ public record EhConfig(
         return Math.max(8, this.fakeChunks.chunkQueueSize());
     }
 
-    public long dispatchTimeBudgetNanos() {
-        if (this.fakeChunks == null) {
-            return 1_200_000L;
-        }
-        return Math.max(250_000L, this.fakeChunks.dispatchTimeBudgetNanos());
-    }
-
     public long unavailableRetryMs() {
         if (this.fakeChunks == null) {
             return 150L;
@@ -108,24 +116,6 @@ public record EhConfig(
             return true;
         }
         return this.fakeChunks.generateMissingChunks();
-    }
-
-    public long forcePlanIntervalMs() {
-        if (this.fakeChunks == null) {
-            return 2500L;
-        }
-        return Math.max(250L, this.fakeChunks.forcePlanIntervalMs());
-    }
-
-    public double safeSquareFactor() {
-        if (this.fakeChunks == null) {
-            return 0.8d;
-        }
-        double value = this.fakeChunks.safeSquareFactor();
-        if (Double.isNaN(value) || value <= 0.0d) {
-            return 0.8d;
-        }
-        return Math.min(1.5d, value);
     }
 
     public int cacheTtlSeconds() {
@@ -216,15 +206,14 @@ public record EhConfig(
     @ConfigSerializable
     public record FakeChunksConfig(
         @Setting("target-view-distance") int targetViewDistance,
+        @Setting("serializer-mode") SerializerMode serializerMode,
+        @Setting("serialization-workers") int serializationWorkers,
         @Setting("max-send-per-cycle") int maxSendPerCycle,
         @Setting("max-global-generations-per-tick") int maxGlobalGenerationsPerTick,
         @Setting("max-inflight-per-player") int maxInflightPerPlayer,
         @Setting("chunk-queue-size") int chunkQueueSize,
-        @Setting("dispatch-time-budget-nanos") long dispatchTimeBudgetNanos,
         @Setting("generate-missing-chunks") boolean generateMissingChunks,
-        @Setting("force-plan-interval-ms") long forcePlanIntervalMs,
         @Setting("unavailable-retry-ms") long unavailableRetryMs,
-        @Setting("safe-square-factor") double safeSquareFactor,
         @Setting("anti-xray") AntiXrayConfig antiXray,
         CacheConfig cache,
         RuntimeConfig runtime,
@@ -267,5 +256,10 @@ public record EhConfig(
         @Setting("move-ticks") int moveTicks,
         @Setting("equip-ticks") int equipTicks
     ) {}
+
+    public enum SerializerMode {
+        FAST,
+        VANILLA
+    }
 }
 

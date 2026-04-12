@@ -9,9 +9,11 @@ import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
+import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.world.level.ChunkPos;
@@ -25,6 +27,8 @@ public final class ChunkDispatchService {
 
     private final Container<EhConfig> configContainer;
     private final ChunkBuildCacheService cacheService;
+    private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
+    private final ChunkBuildMetricsService metricsService;
     private final ChunkBackend chunkBackend;
     private final ChannelInjectionService channelInjectionService;
 
@@ -32,11 +36,15 @@ public final class ChunkDispatchService {
     public ChunkDispatchService(
         Container<EhConfig> configContainer,
         ChunkBuildCacheService cacheService,
+        AntiXrayPayloadCacheService antiXrayPayloadCacheService,
+        ChunkBuildMetricsService metricsService,
         ChunkBackend chunkBackend,
         ChannelInjectionService channelInjectionService
     ) {
         this.configContainer = configContainer;
         this.cacheService = cacheService;
+        this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
+        this.metricsService = metricsService;
         this.chunkBackend = chunkBackend;
         this.channelInjectionService = channelInjectionService;
     }
@@ -92,11 +100,31 @@ public final class ChunkDispatchService {
         long chunkKey
     ) {
         UUID expectedWorldId = session.worldId();
+        EhConfig config = this.configContainer.get();
+        boolean antiXrayEnabled = config.antiXrayEnabled(world.getName());
+        String antiXrayProfileHash = antiXrayEnabled
+            ? this.antiXrayPayloadCacheService.resolveProfileHash(world, config)
+            : null;
+
+        if (antiXrayProfileHash != null) {
+            ByteBuf antiXrayCached = this.antiXrayPayloadCacheService.get(
+                expectedWorldId,
+                chunkKey,
+                antiXrayProfileHash,
+                config.serializerMode()
+            );
+            if (antiXrayCached != null) {
+                this.metricsService.recordAntiXrayFinalCacheHit();
+                return CompletableFuture.completedFuture(antiXrayCached);
+            }
+            this.metricsService.recordAntiXrayFinalCacheMiss();
+        }
+
         if (this.cacheService.isTemporarilyUnavailable(expectedWorldId, chunkKey)) {
             return CompletableFuture.completedFuture(null);
         }
 
-        boolean bypass = this.cacheService.shouldBypass(expectedWorldId, chunkKey);
+        boolean bypass = antiXrayEnabled || this.cacheService.shouldBypass(expectedWorldId, chunkKey);
         if (!bypass) {
             ByteBuf cached = this.cacheService.getSerialized(expectedWorldId, chunkKey);
             if (cached != null) {
@@ -111,7 +139,7 @@ public final class ChunkDispatchService {
                 world,
                 chunkX,
                 chunkZ,
-                this.configContainer.get().generateMissingChunks(),
+                config.generateMissingChunks(),
                 (worldRef, cx, cz, runnable) -> {
                     ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
                     if (plugin == null || !plugin.isEnabled()) {
@@ -124,6 +152,16 @@ public final class ChunkDispatchService {
         .whenComplete((payload, throwable) -> {
             if (payload == null && throwable == null) {
                 this.cacheService.markUnavailable(expectedWorldId, chunkKey);
+                return;
+            }
+            if (throwable == null && payload != null && antiXrayProfileHash != null) {
+                this.antiXrayPayloadCacheService.put(
+                    expectedWorldId,
+                    chunkKey,
+                    antiXrayProfileHash,
+                    config.serializerMode(),
+                    payload
+                );
             }
         })
         .exceptionally(throwable -> null);

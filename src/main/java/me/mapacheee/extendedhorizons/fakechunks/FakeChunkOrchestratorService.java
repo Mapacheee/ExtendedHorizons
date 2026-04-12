@@ -12,12 +12,16 @@ import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
+import net.minecraft.world.level.ChunkPos;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 
+import java.time.Duration;
 import java.util.UUID;
+import me.mapacheee.lib.caffeine.cache.Cache;
+import me.mapacheee.lib.caffeine.cache.Caffeine;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,12 +29,16 @@ import org.slf4j.LoggerFactory;
 @Service
 public final class FakeChunkOrchestratorService {
 
+    private static final Duration PERMISSION_CACHE_TTL = Duration.ofSeconds(5);
+    private static final long PERMISSION_CACHE_MAX_SIZE = 4096L;
+
     private final Container<EhConfig> configContainer;
-    private final static Logger LOGGER = LoggerFactory.getLogger(FakeChunkOrchestratorService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(FakeChunkOrchestratorService.class);
     private final SessionRegistry sessionRegistry;
     private final ChunkDispatchService dispatchService;
     private final ChannelInjectionService channelInjectionService;
     private final FarPlayerTrackingService farPlayerTrackingService;
+    private final Cache<UUID, PermissionCacheEntry> permissionCache;
 
     @Inject
     public FakeChunkOrchestratorService(
@@ -45,6 +53,10 @@ public final class FakeChunkOrchestratorService {
         this.dispatchService = dispatchService;
         this.channelInjectionService = channelInjectionService;
         this.farPlayerTrackingService = farPlayerTrackingService;
+        this.permissionCache = Caffeine.newBuilder()
+            .maximumSize(PERMISSION_CACHE_MAX_SIZE)
+            .expireAfterWrite(PERMISSION_CACHE_TTL)
+            .build();
     }
 
     public void tickPlayer(Player player, long maxTimePerPlayerNanos) {
@@ -108,8 +120,7 @@ public final class FakeChunkOrchestratorService {
         this.farPlayerTrackingService.track(
             snapshot.viewerId(),
             snapshot.worldId(),
-            snapshot.chunkX(),
-            snapshot.chunkZ(),
+            ChunkPos.asLong(snapshot.chunkX(), snapshot.chunkZ()),
             session,
             channel,
             snapshot.serverDistance(),
@@ -164,8 +175,9 @@ public final class FakeChunkOrchestratorService {
 
     private int resolveClientDistance(Player player, String worldName) {
         int worldDistance = this.configContainer.get().targetViewDistance(worldName);
-        int permissionCap = resolvePermissionCap(player);
-        boolean hasBypass = player.hasPermission("extendedhorizons.bypass");
+        PermissionCacheEntry permissionSnapshot = this.resolvePermissionSnapshot(player);
+        int permissionCap = permissionSnapshot.permissionCap();
+        boolean hasBypass = permissionSnapshot.hasBypass();
 
         int effectiveCap;
         if (permissionCap > 0) {
@@ -189,9 +201,26 @@ public final class FakeChunkOrchestratorService {
         return Math.max(2, Math.min(base, effectiveCap));
     }
 
+    private PermissionCacheEntry resolvePermissionSnapshot(Player player) {
+        UUID playerId = player.getUniqueId();
+        PermissionCacheEntry cached = this.permissionCache.getIfPresent(playerId);
+        if (cached != null) {
+            return cached;
+        }
+
+        int permissionCap = resolvePermissionCap(player);
+        boolean hasBypass = player.hasPermission("extendedhorizons.bypass");
+        PermissionCacheEntry updated = new PermissionCacheEntry(permissionCap, hasBypass);
+        this.permissionCache.put(playerId, updated);
+        return updated;
+    }
+
     private static int resolvePermissionCap(Player player) {
         int maxFound = -1;
         for (var perm : player.getEffectivePermissions()) {
+            if (!perm.getValue()) {
+                continue;
+            }
             String name = perm.getPermission();
             if (!name.startsWith("extendedhorizons.max.")) {
                 continue;
@@ -207,6 +236,17 @@ public final class FakeChunkOrchestratorService {
             }
         }
         return maxFound;
+    }
+
+    public void invalidatePermissionCache(UUID playerId) {
+        if (playerId == null) {
+            return;
+        }
+        this.permissionCache.invalidate(playerId);
+    }
+
+    public void invalidateAllPermissionCache() {
+        this.permissionCache.invalidateAll();
     }
 
     private void clearSessionState(Channel channel, PlayerSession session) {
@@ -235,6 +275,8 @@ public final class FakeChunkOrchestratorService {
         int serverDistance,
         long deadlineNanos
     ) {}
+
+    private record PermissionCacheEntry(int permissionCap, boolean hasBypass) {}
 }
 
 
