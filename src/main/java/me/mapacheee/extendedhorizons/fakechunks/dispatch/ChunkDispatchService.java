@@ -54,6 +54,11 @@ public final class ChunkDispatchService {
             return;
         }
         EhConfig config = this.configContainer.get();
+        session.configureBandwidthLimiter(
+            config.bandwidthEnabled(),
+            config.bandwidthBytesPerSecond(),
+            config.bandwidthBurstBytes()
+        );
         int chunksPerTick = config.maxSendPerCycle();
         int chunkQueueSize = config.chunkQueueSize();
         int maxInflight = config.maxInflightPerPlayer();
@@ -182,6 +187,10 @@ public final class ChunkDispatchService {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
             return true;
+        }
+        long payloadBytes = payload.readableBytes();
+        if (!session.tryConsumeBandwidth(payloadBytes)) {
+            return false;
         }
         ByteBuf toSend = payload.retainedDuplicate();
         if (!this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {

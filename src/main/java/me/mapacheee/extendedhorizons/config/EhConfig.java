@@ -68,6 +68,28 @@ public record EhConfig(
         return Math.max(1, this.fakeChunks.maxSendPerCycle());
     }
 
+    public boolean bandwidthEnabled() {
+        if (this.fakeChunks == null || this.fakeChunks.bandwidth() == null) {
+            return false;
+        }
+        return this.fakeChunks.bandwidth().enabled();
+    }
+
+    public long bandwidthBytesPerSecond() {
+        if (this.fakeChunks == null || this.fakeChunks.bandwidth() == null) {
+            return 512_000L;
+        }
+        return Math.max(32_768L, this.fakeChunks.bandwidth().bytesPerSecond());
+    }
+
+    public long bandwidthBurstBytes() {
+        if (this.fakeChunks == null || this.fakeChunks.bandwidth() == null) {
+            return 1_024_000L;
+        }
+        long configured = this.fakeChunks.bandwidth().burstBytes();
+        return Math.max(this.bandwidthBytesPerSecond(), configured);
+    }
+
     public SerializerMode serializerMode() {
         if (this.fakeChunks == null || this.fakeChunks.serializerMode() == null) {
             return SerializerMode.FAST;
@@ -208,6 +230,7 @@ public record EhConfig(
         @Setting("target-view-distance") int targetViewDistance,
         @Setting("serializer-mode") SerializerMode serializerMode,
         @Setting("serialization-workers") int serializationWorkers,
+        BandwidthConfig bandwidth,
         @Setting("max-send-per-cycle") int maxSendPerCycle,
         @Setting("max-global-generations-per-tick") int maxGlobalGenerationsPerTick,
         @Setting("max-inflight-per-player") int maxInflightPerPlayer,
@@ -230,6 +253,13 @@ public record EhConfig(
     @ConfigSerializable
     public record RuntimeConfig(
         @Setting("period-ticks") int periodTicks
+    ) {}
+
+    @ConfigSerializable
+    public record BandwidthConfig(
+        boolean enabled,
+        @Setting("bytes-per-second") long bytesPerSecond,
+        @Setting("burst-bytes") long burstBytes
     ) {}
 
     @ConfigSerializable

@@ -34,6 +34,11 @@ public final class PlayerSession {
     private volatile int lastAdvertisedDistance = -1;
     private volatile int serverViewDistance = 2;
     private volatile int playerOverrideDistance = -1;
+    private volatile boolean bandwidthLimiterEnabled;
+    private volatile long bandwidthBytesPerSecond;
+    private volatile long bandwidthCapacityBytes;
+    private volatile long bandwidthTokens;
+    private volatile long bandwidthLastRefillNanos;
     private final Deque<ChunkSendQueueEntry> chunkQueue = new ConcurrentLinkedDeque<>();
     private final Map<UUID, Integer> trackedFarPlayers = new ConcurrentHashMap<>();
     private final Set<UUID> trackingBuffer = new HashSet<>();
@@ -113,6 +118,39 @@ public final class PlayerSession {
 
     public void setWorld(UUID worldId) {
         this.worldId = worldId;
+    }
+
+    public void configureBandwidthLimiter(boolean enabled, long bytesPerSecond, long burstBytes) {
+        long normalizedBytesPerSecond = Math.max(1L, bytesPerSecond);
+        long normalizedBurst = Math.max(normalizedBytesPerSecond, burstBytes);
+        if (this.bandwidthLimiterEnabled == enabled
+            && this.bandwidthBytesPerSecond == normalizedBytesPerSecond
+            && this.bandwidthCapacityBytes == normalizedBurst) {
+            return;
+        }
+
+        this.bandwidthLimiterEnabled = enabled;
+        this.bandwidthBytesPerSecond = normalizedBytesPerSecond;
+        this.bandwidthCapacityBytes = normalizedBurst;
+        this.bandwidthTokens = normalizedBurst;
+        this.bandwidthLastRefillNanos = System.nanoTime();
+    }
+
+    public boolean tryConsumeBandwidth(long bytes) {
+        if (!this.bandwidthLimiterEnabled || bytes <= 0L) {
+            return true;
+        }
+        this.refillBandwidthTokens(System.nanoTime());
+        if (this.bandwidthTokens < bytes) {
+            return false;
+        }
+        this.bandwidthTokens -= bytes;
+        return true;
+    }
+
+    public void resetBandwidthLimiter() {
+        this.bandwidthTokens = this.bandwidthCapacityBytes;
+        this.bandwidthLastRefillNanos = System.nanoTime();
     }
 
     public long chunkKey() {
@@ -326,16 +364,40 @@ public final class PlayerSession {
             state.reset();
         }
         this.clearChunkQueue();
+        this.resetBandwidthLimiter();
         this.enabled = false;
         this.iterationIndex = 0;
     }
 
     public void clearDispatchState() {
         this.clearChunkQueue();
+        this.resetBandwidthLimiter();
         this.lastAdvertisedDistance = -1;
         this.enabled = false;
         this.initiated = false;
         this.iterationIndex = 0;
+    }
+
+    private void refillBandwidthTokens(long nowNanos) {
+        long last = this.bandwidthLastRefillNanos;
+        if (last <= 0L) {
+            this.bandwidthLastRefillNanos = nowNanos;
+            return;
+        }
+        long elapsed = nowNanos - last;
+        if (elapsed <= 0L) {
+            return;
+        }
+        long add = (elapsed * this.bandwidthBytesPerSecond) / 1_000_000_000L;
+        if (add <= 0L) {
+            return;
+        }
+        long next = this.bandwidthTokens + add;
+        if (next < 0L || next > this.bandwidthCapacityBytes) {
+            next = this.bandwidthCapacityBytes;
+        }
+        this.bandwidthTokens = next;
+        this.bandwidthLastRefillNanos = nowNanos;
     }
 
     private void purgeQueuedChunk(int chunkX, int chunkZ) {

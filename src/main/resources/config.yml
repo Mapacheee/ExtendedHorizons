@@ -15,6 +15,15 @@ fake-chunks:
   # 0 = inline, 1..16 = async pool threads (used for non anti-xray serialization).
   serialization-workers: 1
 
+  bandwidth:
+    # Per-player bandwidth limiter for fake chunk payloads.
+    # When enabled, payload sends are paced by a token bucket.
+    enabled: false
+    # Sustained budget in bytes per second per player.
+    bytes-per-second: 512000
+    # Burst capacity in bytes (must be >= bytes-per-second).
+    burst-bytes: 1024000
+
   # Max newly queued fake chunks per player processing cycle.
   max-send-per-cycle: 3
 
