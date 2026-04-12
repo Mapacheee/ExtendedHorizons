@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'me.mapacheee'
-version = '3.1.0-dev#1'
+version = '3.1.0-dev#2'
 description = 'ExtendedHorizons - Advanced view distance extension plugin'
 
 java {
@@ -49,7 +49,7 @@ dependencies {
     compileOnlyApi("me.mapacheee:MapacheeeLib:1.0.0")
     annotationProcessor("me.mapacheee:MapacheeeLib:1.0.0")
     paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
-    
+
     annotationProcessor("com.thewinterframework:paper:1.0.6")
     annotationProcessor("com.thewinterframework:configuration:1.0.4")
 
@@ -79,7 +79,7 @@ shadowJar {
     archiveVersion = project.version
 
     configurations = [project.configurations.runtimeClasspath]
-    
+
     preserveFileTimestamps = false
     reproducibleFileOrder = true
 }
