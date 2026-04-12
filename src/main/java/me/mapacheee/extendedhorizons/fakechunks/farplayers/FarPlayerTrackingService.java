@@ -10,6 +10,7 @@ import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheS
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import net.minecraft.world.level.ChunkPos;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -40,13 +41,14 @@ public final class FarPlayerTrackingService {
     public void track(
         UUID viewerId,
         UUID worldId,
-        int viewerChunkX,
-        int viewerChunkZ,
+        long viewerChunkKey,
         PlayerSession session,
         Channel channel,
         int serverDistance,
         int targetDistance
     ) {
+        int viewerChunkX = ChunkPos.getX(viewerChunkKey);
+        int viewerChunkZ = ChunkPos.getZ(viewerChunkKey);
         Set<UUID> newlyFound = session.trackingBuffer();
         newlyFound.clear();
 
@@ -92,12 +94,12 @@ public final class FarPlayerTrackingService {
     private void spawn(Channel channel, PlayerSession session, FarPlayerState state) {
         Object spawnPacket = this.backend.createSpawnPacket(state);
         this.channelInjectionService.writeBypass(channel, spawnPacket);
-        
+
         if (state.metadata() != null && !state.metadata().isEmpty()) {
             Object metaPacket = this.backend.createMetadataPacket(state.entityId(), state.metadata());
             this.channelInjectionService.writeBypass(channel, metaPacket);
         }
-        
+
         if (state.equipment() != null && !state.equipment().isEmpty()) {
             Object equipPacket = this.backend.createEquipmentPacket(state.entityId(), state.equipment());
             this.channelInjectionService.writeBypass(channel, equipPacket);

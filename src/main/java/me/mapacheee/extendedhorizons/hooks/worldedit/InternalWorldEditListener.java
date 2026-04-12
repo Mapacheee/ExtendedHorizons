@@ -122,7 +122,7 @@ public final class InternalWorldEditListener {
         private final UUID worldId;
         private final BulkChunkInvalidationService bulkService;
 
-        public InvalidationExtent(Extent extent, UUID worldId, BulkChunkInvalidationService bulkService) {
+        InvalidationExtent(Extent extent, UUID worldId, BulkChunkInvalidationService bulkService) {
             super(extent);
             this.worldId = worldId;
             this.bulkService = bulkService;

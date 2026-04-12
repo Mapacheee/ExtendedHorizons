@@ -43,6 +43,7 @@ public final class RuntimeOrchestratorService {
     private final FakeChunkOrchestratorService fakeChunkOrchestratorService;
     private final GlobalGenerationLimiterService generationLimiterService;
     private final FarPlayerCacheService farPlayerCacheService;
+    private final ChunkBuildMetricsService chunkBuildMetricsService;
 
     private volatile ScheduledTask runtimeTask;
     private int orchestratorTick;
@@ -53,13 +54,15 @@ public final class RuntimeOrchestratorService {
         SessionRegistry sessionRegistry,
         FakeChunkOrchestratorService fakeChunkOrchestratorService,
         GlobalGenerationLimiterService generationLimiterService,
-        FarPlayerCacheService farPlayerCacheService
+        FarPlayerCacheService farPlayerCacheService,
+        ChunkBuildMetricsService chunkBuildMetricsService
     ) {
         this.configContainer = configContainer;
         this.sessionRegistry = sessionRegistry;
         this.fakeChunkOrchestratorService = fakeChunkOrchestratorService;
         this.generationLimiterService = generationLimiterService;
         this.farPlayerCacheService = farPlayerCacheService;
+        this.chunkBuildMetricsService = chunkBuildMetricsService;
     }
 
     @OnEnable
@@ -146,6 +149,21 @@ public final class RuntimeOrchestratorService {
                     LOGGER.error("Error while ticking fake chunks for {}", player.getName(), throwable);
                 }
             });
+        }
+
+        if (config.debugEnabled() && Math.floorMod(this.orchestratorTick, 200) == 0) {
+            ChunkBuildMetricsService.Snapshot metrics = this.chunkBuildMetricsService.snapshotAndReset();
+            if (metrics.hasData()) {
+                LOGGER.info(
+                    "EH metrics: antiXraySnapshot avg={}us (n={}), antiXrayAsync avg={}us (n={}), antiXrayCacheHitRate={}%, fallback={}",
+                    metrics.antiXraySnapshotAvgMicros(),
+                    metrics.antiXraySnapshotCount(),
+                    metrics.antiXrayAsyncAvgMicros(),
+                    metrics.antiXrayAsyncCount(),
+                    Math.round(metrics.antiXrayCacheHitRate() * 10000.0d) / 100.0d,
+                    metrics.antiXrayFallbackCount()
+                );
+            }
         }
     }
 

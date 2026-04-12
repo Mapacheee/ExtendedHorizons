@@ -3,6 +3,12 @@ package me.mapacheee.extendedhorizons.commands;
 import com.google.inject.Inject;
 import com.thewinterframework.command.CommandComponent;
 import com.thewinterframework.service.ReloadServiceManager;
+import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
+import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkSerializationExecutorService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
@@ -21,23 +27,26 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @CommandComponent
-@SuppressWarnings("UnstableApiUsage")
 public class EhCommands {
 
-    private final ReloadServiceManager reloadServiceManager;
-    private final SessionRegistry sessionRegistry;
-    private final MessagesFacade messages;
-
     @Inject
-    public EhCommands(
-        ReloadServiceManager reloadServiceManager,
-        SessionRegistry sessionRegistry,
-        MessagesFacade messages
-    ) {
-        this.reloadServiceManager = reloadServiceManager;
-        this.sessionRegistry = sessionRegistry;
-        this.messages = messages;
-    }
+    private ReloadServiceManager reloadServiceManager;
+    @Inject
+    private ChunkBuildCacheService chunkBuildCacheService;
+    @Inject
+    private LightPayloadCacheService lightPayloadCacheService;
+    @Inject
+    private AntiXrayPayloadCacheService antiXrayPayloadCacheService;
+    @Inject
+    private AntiXrayService antiXrayService;
+    @Inject
+    private ChunkSerializationExecutorService chunkSerializationExecutorService;
+    @Inject
+    private FakeChunkOrchestratorService fakeChunkOrchestratorService;
+    @Inject
+    private SessionRegistry sessionRegistry;
+    @Inject
+    private MessagesFacade messages;
 
     @Suggestions("online-players")
     public List<String> suggestOnlinePlayers(CommandContext<?> ctx, CommandInput input) {
@@ -52,6 +61,15 @@ public class EhCommands {
     @Permission("extendedhorizons.reload")
     public void reloadCommand(Source source) {
         this.reloadServiceManager.reload();
+        this.chunkBuildCacheService.rebuildCaches();
+        this.chunkBuildCacheService.invalidateAll();
+        this.lightPayloadCacheService.rebuild();
+        this.lightPayloadCacheService.invalidateAll();
+        this.antiXrayPayloadCacheService.rebuild();
+        this.antiXrayPayloadCacheService.invalidateAll();
+        this.antiXrayService.invalidateAllProfiles();
+        this.fakeChunkOrchestratorService.invalidateAllPermissionCache();
+        this.chunkSerializationExecutorService.rebuild();
         source.source().sendMessage(this.messages.reloadSuccess());
     }
 

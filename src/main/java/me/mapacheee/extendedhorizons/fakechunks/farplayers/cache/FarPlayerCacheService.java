@@ -7,7 +7,13 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -25,19 +31,19 @@ public final class FarPlayerCacheService {
 
     public void updateState(UUID playerId, FarPlayerState state) {
         this.states.put(playerId, state);
-        
+
         UUID worldId = state.worldId();
         int chunkX = (int) Math.floor(state.x()) >> 4;
         int chunkZ = (int) Math.floor(state.z()) >> 4;
         long regionKey = getRegionKey(chunkX, chunkZ);
-        
+
         UUID prevWorld = this.playerLastWorld.get(playerId);
         Long prevRegion = this.playerLastRegion.get(playerId);
-        
+
         if (prevWorld != null && (!prevWorld.equals(worldId) || prevRegion == null || prevRegion != regionKey)) {
             removeFromSpatialIndex(playerId, prevWorld, prevRegion);
         }
-        
+
         if (prevWorld == null || !prevWorld.equals(worldId) || prevRegion == null || prevRegion != regionKey) {
             this.spatialIndex.computeIfAbsent(worldId, k -> new ConcurrentHashMap<>())
                 .computeIfAbsent(regionKey, k -> Collections.newSetFromMap(new ConcurrentHashMap<>()))
@@ -62,7 +68,7 @@ public final class FarPlayerCacheService {
     public void updateEquipment(UUID playerId, List<Pair<EquipmentSlot, ItemStack>> equipment) {
         this.equipmentCache.put(playerId, equipment);
     }
-    
+
     public List<Pair<EquipmentSlot, ItemStack>> getEquipment(UUID playerId) {
         return this.equipmentCache.get(playerId);
     }
@@ -84,17 +90,17 @@ public final class FarPlayerCacheService {
         if (regions == null || regions.isEmpty()) {
             return Collections.emptyList();
         }
-        
+
         int minChunkX = chunkX - radiusChunks;
         int maxChunkX = chunkX + radiusChunks;
         int minChunkZ = chunkZ - radiusChunks;
         int maxChunkZ = chunkZ + radiusChunks;
-        
+
         int minRegionX = minChunkX >> 5;
         int maxRegionX = maxChunkX >> 5;
         int minRegionZ = minChunkZ >> 5;
         int maxRegionZ = maxChunkZ >> 5;
-        
+
         List<FarPlayerState> nearby = new ArrayList<>();
         for (int rx = minRegionX; rx <= maxRegionX; rx++) {
             for (int rz = minRegionZ; rz <= maxRegionZ; rz++) {

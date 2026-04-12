@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 
 public final class FoliaTaskUtil {
 
-    private final static Logger LOGGER = LoggerFactory.getLogger(FoliaTaskUtil.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(FoliaTaskUtil.class);
 
     private FoliaTaskUtil() {}
 
@@ -24,12 +24,12 @@ public final class FoliaTaskUtil {
         );
     }
 
-    public static ScheduledTask runGlobalDelayed(Plugin plugin, Runnable runnable, long delayTicks) {
-        return Bukkit.getGlobalRegionScheduler().runDelayed(
-            plugin,
-            task -> runnable.run(),
-            Math.max(1L, delayTicks)
-        );
+    public static void runGlobalDelayed(Plugin plugin, Runnable runnable, long delayTicks) {
+      Bukkit.getGlobalRegionScheduler().runDelayed(
+        plugin,
+        task -> runnable.run(),
+        Math.max(1L, delayTicks)
+      );
     }
 
     public static void runForPlayer(Player player, Plugin plugin, Runnable runnable) {
