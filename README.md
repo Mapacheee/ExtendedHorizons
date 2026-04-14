@@ -10,8 +10,10 @@ It renders distant terrain using optimized fake chunks and optional far-player s
 
 ---
 ## Dependencies
-- [PlaceholderAPI](https://github.com/PlaceholderAPI/PlaceholderAPI) *(optional)*
+
 - [MapacheeeLib](https://github.com/Mapacheee/MapacheeeLib)
+- [PlaceholderAPI](https://github.com/PlaceholderAPI/PlaceholderAPI) *(optional hook)*
+- [FastAsyncWorldEdit](https://github.com/IntellectualSites/FastAsyncWorldEdit/releases) *(optional hook)*
 
 ---
 ## How to build
