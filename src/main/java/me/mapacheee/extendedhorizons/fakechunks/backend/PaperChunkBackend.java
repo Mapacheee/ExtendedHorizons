@@ -23,7 +23,6 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.util.Util;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftChunk;
@@ -46,7 +45,9 @@ public final class PaperChunkBackend implements ChunkBackend {
     private static final int[] SENDABLE_HEIGHTMAP_TYPE_IDS = Arrays.stream(SENDABLE_HEIGHTMAP_TYPES)
         .mapToInt(Enum::ordinal)
         .toArray();
-    private static final MethodHandle GET_NON_EMPTY_BLOCK_COUNT = Util.make(() -> {
+    private static final MethodHandle GET_NON_EMPTY_BLOCK_COUNT = createNonEmptyBlockCountHandle();
+
+    private static MethodHandle createNonEmptyBlockCountHandle() {
         try {
             MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(LevelChunkSection.class, MethodHandles.lookup());
             return lookup.findGetter(LevelChunkSection.class, "nonEmptyBlockCount", short.class)
@@ -54,7 +55,7 @@ public final class PaperChunkBackend implements ChunkBackend {
         } catch (ReflectiveOperationException exception) {
             throw new RuntimeException("Unable to access nonEmptyBlockCount", exception);
         }
-    });
+    }
 
     private final AntiXrayService antiXrayService;
     private final ChunkSerializationExecutorService serializationExecutorService;

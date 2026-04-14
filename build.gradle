@@ -16,9 +16,6 @@ java {
 repositories {
     mavenCentral()
     mavenLocal()
-    flatDir {
-        dirs 'libs'
-    }
     maven {
         name = 'papermc-repo'
         url = 'https://repo.papermc.io/repository/maven-public/'
@@ -48,7 +45,7 @@ repositories {
 dependencies {
     compileOnlyApi("me.mapacheee:MapacheeeLib:1.0.0")
     annotationProcessor("me.mapacheee:MapacheeeLib:1.0.0")
-    paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
+    paperweight.paperDevBundle("1.21.8-R0.1-SNAPSHOT")
 
     annotationProcessor("com.thewinterframework:paper:1.0.6")
     annotationProcessor("com.thewinterframework:configuration:1.0.4")

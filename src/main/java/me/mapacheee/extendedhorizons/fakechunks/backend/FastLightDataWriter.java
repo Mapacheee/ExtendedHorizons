@@ -4,7 +4,6 @@ import ca.spottedleaf.moonrise.patches.starlight.light.SWMRNibbleArray;
 import io.netty.buffer.ByteBuf;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.util.Util;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.lang.invoke.MethodHandle;
@@ -15,14 +14,16 @@ import java.util.List;
 
 final class FastLightDataWriter {
 
-    private static final MethodHandle GET_STORAGE_VISIBLE = Util.make(() -> {
+    private static final MethodHandle GET_STORAGE_VISIBLE = createStorageVisibleHandle();
+
+    private static MethodHandle createStorageVisibleHandle() {
         try {
             MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(SWMRNibbleArray.class, MethodHandles.lookup());
             return lookup.findGetter(SWMRNibbleArray.class, "storageVisible", byte[].class);
         } catch (ReflectiveOperationException exception) {
             throw new RuntimeException("Unable to access SWMRNibbleArray.storageVisible", exception);
         }
-    });
+    }
 
     private FastLightDataWriter() {
     }
