@@ -10,9 +10,9 @@ import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.FarPlayerTrackingService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
-import net.minecraft.world.level.ChunkPos;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -120,7 +120,7 @@ public final class FakeChunkOrchestratorService {
         this.farPlayerTrackingService.track(
             snapshot.viewerId(),
             snapshot.worldId(),
-            ChunkPos.asLong(snapshot.chunkX(), snapshot.chunkZ()),
+            ChunkKeyCodec.pack(snapshot.chunkX(), snapshot.chunkZ()),
             session,
             channel,
             snapshot.serverDistance(),

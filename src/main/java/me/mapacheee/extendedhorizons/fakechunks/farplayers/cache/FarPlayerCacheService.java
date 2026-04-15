@@ -3,9 +3,9 @@ package me.mapacheee.extendedhorizons.fakechunks.farplayers.cache;
 import com.mojang.datafixers.util.Pair;
 import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.ChunkPos;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -26,7 +26,7 @@ public final class FarPlayerCacheService {
     private final Map<UUID, List<Pair<EquipmentSlot, ItemStack>>> equipmentCache = new ConcurrentHashMap<>();
 
     private long getRegionKey(int chunkX, int chunkZ) {
-        return ChunkPos.asLong(chunkX >> 5, chunkZ >> 5);
+        return ChunkKeyCodec.pack(chunkX >> 5, chunkZ >> 5);
     }
 
     public void updateState(UUID playerId, FarPlayerState state) {
@@ -104,7 +104,7 @@ public final class FarPlayerCacheService {
         List<FarPlayerState> nearby = new ArrayList<>();
         for (int rx = minRegionX; rx <= maxRegionX; rx++) {
             for (int rz = minRegionZ; rz <= maxRegionZ; rz++) {
-                Set<UUID> playerIds = regions.get(ChunkPos.asLong(rx, rz));
+                Set<UUID> playerIds = regions.get(ChunkKeyCodec.pack(rx, rz));
                 if (playerIds != null) {
                     for (UUID pid : playerIds) {
                         FarPlayerState state = this.states.get(pid);

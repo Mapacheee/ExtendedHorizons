@@ -13,6 +13,7 @@ import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheServic
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
@@ -76,8 +77,8 @@ public final class ChunkDispatchService {
                 break;
             }
 
-            int chunkX = ChunkPos.getX(chunkKey);
-            int chunkZ = ChunkPos.getZ(chunkKey);
+            int chunkX = ChunkKeyCodec.x(chunkKey);
+            int chunkZ = ChunkKeyCodec.z(chunkKey);
             CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
             session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
             if (--chunksPerTick <= 0) {
@@ -90,8 +91,8 @@ public final class ChunkDispatchService {
         if (channel == null || session == null) {
             return;
         }
-        int chunkX = ChunkPos.getX(chunkKey);
-        int chunkZ = ChunkPos.getZ(chunkKey);
+        int chunkX = ChunkKeyCodec.x(chunkKey);
+        int chunkZ = ChunkKeyCodec.z(chunkKey);
 
         this.channelInjectionService.writeBypass(channel, new ClientboundForgetLevelChunkPacket(new ChunkPos(chunkX, chunkZ)));
         session.onChunkUnloaded(chunkKey);

@@ -2,7 +2,7 @@ package me.mapacheee.extendedhorizons.fakechunks.session;
 
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkSendQueueEntry;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
-import net.minecraft.world.level.ChunkPos;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
 import java.util.Deque;
 import java.util.HashSet;
@@ -21,7 +21,7 @@ public final class PlayerSession {
     private final UUID playerId;
     private volatile UUID worldId;
     private final AtomicLong epoch = new AtomicLong(0L);
-    private volatile long chunkKey = ChunkPos.asLong(Integer.MIN_VALUE, Integer.MIN_VALUE);
+    private volatile long chunkKey = ChunkKeyCodec.pack(Integer.MIN_VALUE, Integer.MIN_VALUE);
     private volatile int distance;
     private volatile int storageRadius;
     private volatile int storageDiameter;
@@ -158,11 +158,11 @@ public final class PlayerSession {
     }
 
     public void setChunkPos(int chunkX, int chunkZ) {
-        this.chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+        this.chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
     }
 
     public boolean hasChunkChanged(int chunkX, int chunkZ) {
-        return this.chunkKey != ChunkPos.asLong(chunkX, chunkZ);
+        return this.chunkKey != ChunkKeyCodec.pack(chunkX, chunkZ);
     }
 
     public int distance() {
@@ -191,8 +191,8 @@ public final class PlayerSession {
         }
 
         ChunkState[] newStates = new ChunkState[size];
-        int centerX = ChunkPos.getX(this.chunkKey);
-        int centerZ = ChunkPos.getZ(this.chunkKey);
+        int centerX = ChunkKeyCodec.x(this.chunkKey);
+        int centerZ = ChunkKeyCodec.z(this.chunkKey);
         for (ChunkState state : oldStates) {
             if (state == null || !state.hasCoords()) {
                 continue;
@@ -214,7 +214,7 @@ public final class PlayerSession {
     }
 
     public void moveTo(int chunkX, int chunkZ) {
-        long newKey = ChunkPos.asLong(chunkX, chunkZ);
+        long newKey = ChunkKeyCodec.pack(chunkX, chunkZ);
         long previous = this.chunkKey;
         if (newKey == previous) {
             return;
@@ -226,8 +226,8 @@ public final class PlayerSession {
             return;
         }
 
-        int prevX = ChunkPos.getX(previous);
-        int prevZ = ChunkPos.getZ(previous);
+        int prevX = ChunkKeyCodec.x(previous);
+        int prevZ = ChunkKeyCodec.z(previous);
         if (distanceSquared(prevX, prevZ, chunkX, chunkZ) > this.distance * this.distance) {
             this.unloadBvChunks();
             this.enabled = false;
@@ -267,8 +267,8 @@ public final class PlayerSession {
         if (this.chunkStates.length == 0) {
             return false;
         }
-        int centerX = ChunkPos.getX(this.chunkKey);
-        int centerZ = ChunkPos.getZ(this.chunkKey);
+        int centerX = ChunkKeyCodec.x(this.chunkKey);
+        int centerZ = ChunkKeyCodec.z(this.chunkKey);
         if (!ChunkPlannerService.isWithinRange(chunkX - centerX, chunkZ - centerZ, this.distance)) {
             if (this.canStore(chunkX, chunkZ, centerX, centerZ)) {
                 this.getState(chunkX, chunkZ).reset();
@@ -283,13 +283,13 @@ public final class PlayerSession {
     }
 
     public Long pollNextChunkKey() {
-        int centerX = ChunkPos.getX(this.chunkKey);
-        int centerZ = ChunkPos.getZ(this.chunkKey);
+        int centerX = ChunkKeyCodec.x(this.chunkKey);
+        int centerZ = ChunkKeyCodec.z(this.chunkKey);
         long[] offsets = this.chunksInDistance;
         while (this.iterationIndex < offsets.length) {
             long off = offsets[this.iterationIndex++];
-            int chunkX = ChunkPos.getX(off) + centerX;
-            int chunkZ = ChunkPos.getZ(off) + centerZ;
+            int chunkX = ChunkKeyCodec.x(off) + centerX;
+            int chunkZ = ChunkKeyCodec.z(off) + centerZ;
 
             if (!this.canStore(chunkX, chunkZ, centerX, centerZ)) {
                 continue;
@@ -301,7 +301,7 @@ public final class PlayerSession {
             }
 
             state.set(chunkX, chunkZ, ChunkLifecycle.BV_QUEUED);
-            return ChunkPos.asLong(chunkX, chunkZ);
+            return ChunkKeyCodec.pack(chunkX, chunkZ);
         }
         this.iterationIndex = 0;
         return null;
@@ -318,7 +318,7 @@ public final class PlayerSession {
     public void onChunkSent(long chunkKey) {
         ChunkState state = this.getStateByKey(chunkKey);
         if (state.lifecycle() == ChunkLifecycle.BV_QUEUED) {
-            state.set(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey), ChunkLifecycle.BV_LOADED);
+            state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.BV_LOADED);
         }
     }
 
@@ -344,7 +344,7 @@ public final class PlayerSession {
         LongStream.Builder builder = LongStream.builder();
         for (ChunkState state : this.chunkStates) {
             if (state.lifecycle() == ChunkLifecycle.BV_LOADED) {
-                builder.add(ChunkPos.asLong(state.chunkX(), state.chunkZ()));
+                builder.add(ChunkKeyCodec.pack(state.chunkX(), state.chunkZ()));
             }
         }
         return builder.build().toArray();
@@ -402,7 +402,7 @@ public final class PlayerSession {
 
     private void purgeQueuedChunk(int chunkX, int chunkZ) {
         this.chunkQueue.removeIf(entry -> {
-            if (entry.chunkKey() == ChunkPos.asLong(chunkX, chunkZ)) {
+            if (entry.chunkKey() == ChunkKeyCodec.pack(chunkX, chunkZ)) {
                 entry.releaseFuture();
                 return true;
             }
@@ -418,7 +418,7 @@ public final class PlayerSession {
     }
 
     private ChunkState getStateByKey(long chunkKey) {
-        return this.getState(ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
+        return this.getState(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey));
     }
 
     private ChunkState getState(int chunkX, int chunkZ) {
@@ -429,8 +429,8 @@ public final class PlayerSession {
     }
 
     private boolean canStore(int chunkX, int chunkZ) {
-        int centerX = ChunkPos.getX(this.chunkKey);
-        int centerZ = ChunkPos.getZ(this.chunkKey);
+        int centerX = ChunkKeyCodec.x(this.chunkKey);
+        int centerZ = ChunkKeyCodec.z(this.chunkKey);
         return this.canStore(chunkX, chunkZ, centerX, centerZ);
     }
 

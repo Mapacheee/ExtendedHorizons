@@ -10,7 +10,7 @@ import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheS
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
-import net.minecraft.world.level.ChunkPos;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -47,8 +47,8 @@ public final class FarPlayerTrackingService {
         int serverDistance,
         int targetDistance
     ) {
-        int viewerChunkX = ChunkPos.getX(viewerChunkKey);
-        int viewerChunkZ = ChunkPos.getZ(viewerChunkKey);
+        int viewerChunkX = ChunkKeyCodec.x(viewerChunkKey);
+        int viewerChunkZ = ChunkKeyCodec.z(viewerChunkKey);
         Set<UUID> newlyFound = session.trackingBuffer();
         newlyFound.clear();
 

@@ -12,6 +12,7 @@ import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.GlobalGenerationLimiterService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -98,7 +99,7 @@ public final class PaperChunkBackend implements ChunkBackend {
                 }
                 AntiXrayProcessor antiXrayProcessor = this.antiXrayService.resolve(world);
                 UUID worldId = world.getUID();
-                long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+                long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
 
                 boolean offloadSerialization = this.configContainer.get().serializationWorkers() > 0
                     && antiXrayProcessor == null;

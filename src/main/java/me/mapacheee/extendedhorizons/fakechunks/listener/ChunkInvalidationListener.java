@@ -6,8 +6,8 @@ import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheServic
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import org.bukkit.block.Block;
-import net.minecraft.world.level.ChunkPos;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -50,7 +50,7 @@ public final class ChunkInvalidationListener implements Listener {
     private void invalidate(Block block) {
         int chunkX = block.getX() >> 4;
         int chunkZ = block.getZ() >> 4;
-        long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+        long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
         UUID worldId = block.getWorld().getUID();
         this.cacheService.invalidate(worldId, chunkKey);
         this.antiXrayPayloadCacheService.invalidateChunk(worldId, chunkKey);

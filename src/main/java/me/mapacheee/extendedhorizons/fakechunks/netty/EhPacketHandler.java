@@ -4,6 +4,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkPosAccess;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
@@ -42,7 +43,11 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             }
             case ClientboundForgetLevelChunkPacket packet -> {
                 ChunkPos pos = packet.pos();
-                yield session.serverChunkRemove(pos.x, pos.z);
+                try {
+                    yield session.serverChunkRemove(ChunkPosAccess.x(pos), ChunkPosAccess.z(pos));
+                } catch (Throwable throwable) {
+                    yield false;
+                }
             }
             case ClientboundLoginPacket __ -> {
                 session.handleDimensionReset();

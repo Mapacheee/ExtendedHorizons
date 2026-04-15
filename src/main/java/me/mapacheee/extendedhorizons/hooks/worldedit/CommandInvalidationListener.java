@@ -2,7 +2,7 @@ package me.mapacheee.extendedhorizons.hooks.worldedit;
 
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
-import net.minecraft.world.level.ChunkPos;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.command.BlockCommandSender;
@@ -51,7 +51,7 @@ public final class CommandInvalidationListener implements Listener {
         String message = event.getMessage();
         String lowerCmd = message.toLowerCase();
 
-        if (event.getPlayer() != null && this.isWorldEditCommand(lowerCmd)) {
+        if (this.isWorldEditCommand(lowerCmd)) {
             this.worldEditInvalidationListener.invalidatePlayerSelection(event.getPlayer());
             return;
         }
@@ -95,7 +95,7 @@ public final class CommandInvalidationListener implements Listener {
             world = blockSender.getBlock().getWorld();
         }
 
-        if (world == null || sourceLoc == null) {
+        if (world == null) {
             return;
         }
 
@@ -120,7 +120,7 @@ public final class CommandInvalidationListener implements Listener {
 
             for (int cx = minChunkX; cx <= maxChunkX; cx++) {
                 for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-                    long chunkKey = ChunkPos.asLong(cx, cz);
+                    long chunkKey = ChunkKeyCodec.pack(cx, cz);
                     this.bulkChunkInvalidationService.queueInvalidation(worldId, chunkKey);
                 }
             }
@@ -139,7 +139,7 @@ public final class CommandInvalidationListener implements Listener {
 
                 for (int cx = dMinChunkX; cx <= dMaxChunkX; cx++) {
                     for (int cz = dMinChunkZ; cz <= dMaxChunkZ; cz++) {
-                        long chunkKey = ChunkPos.asLong(cx, cz);
+                        long chunkKey = ChunkKeyCodec.pack(cx, cz);
                         this.bulkChunkInvalidationService.queueInvalidation(worldId, chunkKey);
                     }
                 }

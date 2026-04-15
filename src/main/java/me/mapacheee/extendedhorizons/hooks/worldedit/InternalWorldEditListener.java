@@ -14,8 +14,8 @@ import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.world.block.BlockStateHolder;
 import com.sk89q.worldedit.util.eventbus.Subscribe;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
-import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
@@ -118,7 +118,7 @@ public final class InternalWorldEditListener {
 
             for (int cx = minChunkX; cx <= maxChunkX; cx++) {
                 for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-                    long chunkKey = ChunkPos.asLong(cx, cz);
+                    long chunkKey = ChunkKeyCodec.pack(cx, cz);
                     this.bulkService.queueInvalidation(worldId, chunkKey);
                 }
             }
@@ -147,7 +147,7 @@ public final class InternalWorldEditListener {
             if (changed) {
                 int chunkX = location.x() >> 4;
                 int chunkZ = location.z() >> 4;
-                long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+                long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
                 this.bulkService.queueInvalidation(this.worldId, chunkKey);
             }
             return changed;
@@ -159,7 +159,7 @@ public final class InternalWorldEditListener {
             if (changed) {
                 int chunkX = x >> 4;
                 int chunkZ = z >> 4;
-                long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+                long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
                 this.bulkService.queueInvalidation(this.worldId, chunkKey);
             }
             return changed;
