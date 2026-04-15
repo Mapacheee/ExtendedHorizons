@@ -7,18 +7,8 @@ import net.minecraft.network.VarInt;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.levelgen.Heightmap;
-
-import java.util.Arrays;
 
 final class FastChunkDataWriter {
-
-    private static final Heightmap.Types[] SENDABLE_HEIGHTMAP_TYPES = Arrays.stream(Heightmap.Types.values())
-        .filter(Heightmap.Types::sendToClient)
-        .toArray(Heightmap.Types[]::new);
-    private static final int[] SENDABLE_HEIGHTMAP_TYPE_IDS = Arrays.stream(SENDABLE_HEIGHTMAP_TYPES)
-        .mapToInt(Enum::ordinal)
-        .toArray();
 
     private FastChunkDataWriter() {}
 
@@ -31,22 +21,7 @@ final class FastChunkDataWriter {
             return 0;
         }
         int size = 0;
-        int heightmapsCount = 0;
-        for (Heightmap.Types type : SENDABLE_HEIGHTMAP_TYPES) {
-            if (chunk.hasPrimedHeightmap(type)) {
-                heightmapsCount++;
-            }
-        }
-        size += varIntSize(heightmapsCount);
-        for (int i = 0; i < SENDABLE_HEIGHTMAP_TYPES.length; i++) {
-            Heightmap.Types type = SENDABLE_HEIGHTMAP_TYPES[i];
-            if (!chunk.hasPrimedHeightmap(type)) {
-                continue;
-            }
-            long[] data = chunk.getOrCreateHeightmapUnprimed(type).getRawData();
-            size += varIntSize(SENDABLE_HEIGHTMAP_TYPE_IDS[i]);
-            size += varIntSize(data.length) + (data.length * Long.BYTES);
-        }
+        size += varIntSize(0);
 
         int sectionsSize = 0;
         LevelChunkSection[] sections = chunk.getSections();
@@ -90,23 +65,7 @@ final class FastChunkDataWriter {
     }
 
     private static void writeHeightmaps(FriendlyByteBuf out, LevelChunk chunk) {
-        int presentCount = 0;
-        for (Heightmap.Types type : SENDABLE_HEIGHTMAP_TYPES) {
-            if (!chunk.hasPrimedHeightmap(type)) {
-                continue;
-            }
-            presentCount++;
-        }
-
-        VarIntUtil.writeVarInt(out, presentCount);
-        for (int i = 0; i < SENDABLE_HEIGHTMAP_TYPES.length; i++) {
-            Heightmap.Types type = SENDABLE_HEIGHTMAP_TYPES[i];
-            if (!chunk.hasPrimedHeightmap(type)) {
-                continue;
-            }
-            VarIntUtil.writeVarInt(out, SENDABLE_HEIGHTMAP_TYPE_IDS[i]);
-            FriendlyByteBuf.writeLongArray(out, chunk.getOrCreateHeightmapUnprimed(type).getRawData());
-        }
+        VarIntUtil.writeVarInt(out, 0);
     }
 
     private static int varIntSize(int value) {

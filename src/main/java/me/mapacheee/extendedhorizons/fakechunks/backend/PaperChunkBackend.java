@@ -11,6 +11,7 @@ import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.GlobalGenerationLimiterService;
+import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -22,7 +23,6 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.level.levelgen.Heightmap;
 import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftChunk;
@@ -31,20 +31,12 @@ import org.bukkit.craftbukkit.CraftWorld;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 @Service
 public final class PaperChunkBackend implements ChunkBackend {
 
-    private static final byte LEVEL_CHUNK_WITH_LIGHT_PACKET_ID = 0x2C;
-    private static final Heightmap.Types[] SENDABLE_HEIGHTMAP_TYPES = Arrays.stream(Heightmap.Types.values())
-        .filter(Heightmap.Types::sendToClient)
-        .toArray(Heightmap.Types[]::new);
-    private static final int[] SENDABLE_HEIGHTMAP_TYPE_IDS = Arrays.stream(SENDABLE_HEIGHTMAP_TYPES)
-        .mapToInt(Enum::ordinal)
-        .toArray();
     private static final MethodHandle GET_NON_EMPTY_BLOCK_COUNT = createNonEmptyBlockCountHandle();
 
     private static MethodHandle createNonEmptyBlockCountHandle() {
@@ -89,6 +81,9 @@ public final class PaperChunkBackend implements ChunkBackend {
         boolean generateMissingChunks,
         ChunkScheduler scheduler) {
         if (world == null || scheduler == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        if (!PacketIdRegistry.hasLevelChunkWithLightId()) {
             return CompletableFuture.completedFuture(null);
         }
 
@@ -257,7 +252,7 @@ public final class PaperChunkBackend implements ChunkBackend {
         ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(initialCapacity, Integer.MAX_VALUE);
         FriendlyByteBuf buf = new FriendlyByteBuf(raw);
         try {
-            VarInt.write(buf, LEVEL_CHUNK_WITH_LIGHT_PACKET_ID);
+            VarInt.write(buf, PacketIdRegistry.getLevelChunkWithLightId());
             buf.writeInt(chunkX);
             buf.writeInt(chunkZ);
 
@@ -306,24 +301,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     }
 
     private static void writeHeightmaps(FriendlyByteBuf out, LevelChunk chunk) {
-        int[] presentIds = new int[SENDABLE_HEIGHTMAP_TYPES.length];
-        long[][] presentData = new long[SENDABLE_HEIGHTMAP_TYPES.length][];
-        int presentCount = 0;
-        for (int i = 0; i < SENDABLE_HEIGHTMAP_TYPES.length; i++) {
-            Heightmap.Types type = SENDABLE_HEIGHTMAP_TYPES[i];
-            if (!chunk.hasPrimedHeightmap(type)) {
-                continue;
-            }
-            presentIds[presentCount] = SENDABLE_HEIGHTMAP_TYPE_IDS[i];
-            presentData[presentCount] = chunk.getOrCreateHeightmapUnprimed(type).getRawData();
-            presentCount++;
-        }
-
-        VarIntUtil.writeVarInt(out, presentCount);
-        for (int i = 0; i < presentCount; i++) {
-            VarIntUtil.writeVarInt(out, presentIds[i]);
-            FriendlyByteBuf.writeLongArray(out, presentData[i]);
-        }
+        VarIntUtil.writeVarInt(out, 0);
     }
 
     private static void writeSection(
@@ -523,7 +501,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(Math.max(2048, estimated), Integer.MAX_VALUE);
             FriendlyByteBuf out = new FriendlyByteBuf(raw);
             try {
-                VarInt.write(out, LEVEL_CHUNK_WITH_LIGHT_PACKET_ID);
+                VarInt.write(out, PacketIdRegistry.getLevelChunkWithLightId());
                 out.writeInt(chunkX);
                 out.writeInt(chunkZ);
 

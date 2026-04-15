@@ -12,6 +12,7 @@ import org.bukkit.entity.Player;
 public final class ChannelInjectionService {
 
     public static final String EH_HANDLER = "eh_packet_handler";
+    public static final String EH_PACKET_ID_PROBE_HANDLER = "eh_packet_id_probe";
 
     public void inject(Player player) {
         this.inject(player, null);
@@ -23,6 +24,10 @@ public final class ChannelInjectionService {
             return;
         }
         Runnable action = () -> {
+            if (channel.pipeline().get("encoder") != null
+                && channel.pipeline().get(EH_PACKET_ID_PROBE_HANDLER) == null) {
+                channel.pipeline().addBefore("encoder", EH_PACKET_ID_PROBE_HANDLER, new EhPacketIdProbeHandler());
+            }
             if (channel.pipeline().get(EH_HANDLER) instanceof EhPacketHandler handler) {
                 handler.setSession(session);
                 return;
@@ -46,6 +51,9 @@ public final class ChannelInjectionService {
             if (channel.pipeline().get(EH_HANDLER) instanceof EhPacketHandler handler) {
                 handler.setSession(null);
                 channel.pipeline().remove(EH_HANDLER);
+            }
+            if (channel.pipeline().get(EH_PACKET_ID_PROBE_HANDLER) != null) {
+                channel.pipeline().remove(EH_PACKET_ID_PROBE_HANDLER);
             }
         };
         this.runOnEventLoop(channel, action);

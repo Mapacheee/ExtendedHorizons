@@ -18,6 +18,9 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+        if (msg instanceof ClientboundLevelChunkWithLightPacket) {
+            PacketIdRegistry.markPendingLevelChunkProbe(ctx.channel());
+        }
         if (this.handle(msg)) {
             return;
         }
