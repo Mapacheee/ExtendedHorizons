@@ -123,7 +123,6 @@ public final class FakeChunkOrchestratorService {
             ChunkKeyCodec.pack(snapshot.chunkX(), snapshot.chunkZ()),
             session,
             channel,
-            snapshot.serverDistance(),
             snapshot.targetDistance()
         );
 

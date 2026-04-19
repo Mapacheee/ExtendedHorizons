@@ -12,6 +12,8 @@ import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -19,6 +21,11 @@ import java.util.UUID;
 
 @Service
 public final class FarPlayerTrackingService {
+
+    private static final int FAR_ENTITY_ID_RANGE_START = 1_000_000_000;
+    private static final int FAR_ENTITY_ID_RANGE_END   = 1_900_000_000;
+    private static final int FAR_ENTITY_ID_ALLOCATION_ATTEMPTS = 10_000;
+    private static final double FAR_RADIUS_PADDING = 0.35d;
 
     private final Container<EhConfig> configContainer;
     private final FarPlayerCacheService cacheService;
@@ -44,94 +51,153 @@ public final class FarPlayerTrackingService {
         long viewerChunkKey,
         PlayerSession session,
         Channel channel,
-        int serverDistance,
         int targetDistance
     ) {
         int viewerChunkX = ChunkKeyCodec.x(viewerChunkKey);
         int viewerChunkZ = ChunkKeyCodec.z(viewerChunkKey);
-        Set<UUID> newlyFound = session.trackingBuffer();
-        newlyFound.clear();
 
         int tick = session.incrementTrackingTicker();
         EhConfig config = this.configContainer.get();
         boolean syncMove = Math.floorMod(tick, config.farPlayerMoveTicks()) == 0;
         boolean syncEquip = Math.floorMod(tick, config.farPlayerEquipTicks()) == 0;
 
-        for (FarPlayerState state : this.cacheService.getNearbyPlayers(worldId, viewerChunkX, viewerChunkZ, targetDistance)) {
+        double farLimit = targetDistance + FAR_RADIUS_PADDING;
+        double farLimitSq = farLimit * farLimit;
+
+        Collection<FarPlayerState> candidates = this.cacheService.getNearbyPlayers(
+            worldId, viewerChunkX, viewerChunkZ, targetDistance
+        );
+
+        Set<UUID> newlyRetained = session.trackingBuffer();
+        newlyRetained.clear();
+
+        for (FarPlayerState state : candidates) {
             if (state.uuid().equals(viewerId)) {
                 continue;
             }
 
-            int targetChunkX = (int) Math.floor(state.x()) >> 4;
-            int targetChunkZ = (int) Math.floor(state.z()) >> 4;
-            int dx = Math.abs(targetChunkX - viewerChunkX);
-            int dz = Math.abs(targetChunkZ - viewerChunkZ);
-            int distance = Math.max(dx, dz);
+            Integer trackedEntityId = session.trackedFarPlayers().get(state.uuid());
+            boolean alreadyTracked = trackedEntityId != null;
 
-            boolean inFarRange = distance > serverDistance && distance <= targetDistance;
-            boolean alreadyTracked = session.trackedFarPlayers().containsKey(state.uuid());
-
-            if (inFarRange) {
-                newlyFound.add(state.uuid());
-                if (!alreadyTracked) {
-                    this.spawn(channel, session, state);
-                } else {
-                    this.moveAndSync(channel, state, syncMove, syncEquip);
+            if (session.isServerTrackingEntity(state.entityId())) {
+                if (alreadyTracked) {
+                    this.despawnAndRemove(channel, session, state.uuid(), trackedEntityId);
                 }
+                continue;
+            }
+
+            int stateChunkX = (int) Math.floor(state.x()) >> 4;
+            int stateChunkZ = (int) Math.floor(state.z()) >> 4;
+            int relChunkX = stateChunkX - viewerChunkX;
+            int relChunkZ = stateChunkZ - viewerChunkZ;
+            double distSq = (double) relChunkX * relChunkX + (double) relChunkZ * relChunkZ;
+
+            if (distSq > farLimitSq) {
+                if (alreadyTracked) {
+                    this.despawnAndRemove(channel, session, state.uuid(), trackedEntityId);
+                }
+                continue;
+            }
+
+            newlyRetained.add(state.uuid());
+            if (!alreadyTracked) {
+                int farEntityId = this.allocateFarEntityId(session, state.uuid(), state.entityId());
+                this.spawn(channel, session, state, farEntityId);
+            } else {
+                this.moveAndSync(channel, trackedEntityId, state, syncMove, syncEquip);
             }
         }
 
         Iterator<Map.Entry<UUID, Integer>> iterator = session.trackedFarPlayers().entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<UUID, Integer> entry = iterator.next();
-            if (!newlyFound.contains(entry.getKey())) {
+            if (!newlyRetained.contains(entry.getKey())) {
                 this.despawn(channel, entry.getValue());
                 iterator.remove();
             }
         }
     }
 
-    private void spawn(Channel channel, PlayerSession session, FarPlayerState state) {
-        Object spawnPacket = this.backend.createSpawnPacket(state);
-        this.channelInjectionService.writeBypass(channel, spawnPacket);
+    private void spawn(Channel channel, PlayerSession session, FarPlayerState state, int farEntityId) {
+        FarPlayerState packetState = this.withEntityId(state, farEntityId);
+        this.channelInjectionService.writeBypass(channel, this.backend.createSpawnPacket(packetState));
 
         if (state.metadata() != null && !state.metadata().isEmpty()) {
-            Object metaPacket = this.backend.createMetadataPacket(state.entityId(), state.metadata());
-            this.channelInjectionService.writeBypass(channel, metaPacket);
+            this.channelInjectionService.writeBypass(channel, this.backend.createMetadataPacket(farEntityId, state.metadata()));
         }
 
         if (state.equipment() != null && !state.equipment().isEmpty()) {
-            Object equipPacket = this.backend.createEquipmentPacket(state.entityId(), state.equipment());
-            this.channelInjectionService.writeBypass(channel, equipPacket);
+            this.channelInjectionService.writeBypass(channel, this.backend.createEquipmentPacket(farEntityId, state.equipment()));
         }
 
-        session.trackedFarPlayers().put(state.uuid(), state.entityId());
+        session.trackedFarPlayers().put(state.uuid(), farEntityId);
     }
 
-    private void moveAndSync(Channel channel, FarPlayerState state, boolean syncMove, boolean syncEquip) {
+    private void moveAndSync(Channel channel, int trackedEntityId, FarPlayerState state, boolean syncMove, boolean syncEquip) {
         if (syncMove) {
-            Object movePacket = this.backend.createMovePacket(state);
-            this.channelInjectionService.writeBypass(channel, movePacket);
+            FarPlayerState packetState = this.withEntityId(state, trackedEntityId);
+            this.channelInjectionService.writeBypass(channel, this.backend.createMovePacket(packetState));
+            this.channelInjectionService.writeBypass(channel, this.backend.createRotateHeadPacket(trackedEntityId, state.headYaw()));
 
-            Object rotateHeadPacket = this.backend.createRotateHeadPacket(state.entityId(), state.headYaw());
-            this.channelInjectionService.writeBypass(channel, rotateHeadPacket);
-        }
-
-        if (syncEquip) {
             if (state.metadata() != null && !state.metadata().isEmpty()) {
-                Object metaPacket = this.backend.createMetadataPacket(state.entityId(), state.metadata());
-                this.channelInjectionService.writeBypass(channel, metaPacket);
-            }
-
-            if (state.equipment() != null && !state.equipment().isEmpty()) {
-                Object equipPacket = this.backend.createEquipmentPacket(state.entityId(), state.equipment());
-                this.channelInjectionService.writeBypass(channel, equipPacket);
+                this.channelInjectionService.writeBypass(channel, this.backend.createMetadataPacket(trackedEntityId, state.metadata()));
             }
         }
+
+        if (syncEquip && state.equipment() != null && !state.equipment().isEmpty()) {
+            this.channelInjectionService.writeBypass(channel, this.backend.createEquipmentPacket(trackedEntityId, state.equipment()));
+        }
+    }
+
+    private void despawnAndRemove(Channel channel, PlayerSession session, UUID uuid, int entityId) {
+        this.channelInjectionService.writeBypass(channel, this.backend.createDespawnPacket(entityId));
+        session.trackedFarPlayers().remove(uuid);
     }
 
     private void despawn(Channel channel, int entityId) {
-        Object packet = this.backend.createDespawnPacket(entityId);
-        this.channelInjectionService.writeBypass(channel, packet);
+        this.channelInjectionService.writeBypass(channel, this.backend.createDespawnPacket(entityId));
     }
+
+    private int allocateFarEntityId(PlayerSession session, UUID targetUuid, int realEntityId) {
+        Map<Integer, UUID> reverseLookup = buildReverseLookup(session.trackedFarPlayers());
+        int candidate = FAR_ENTITY_ID_RANGE_START + Math.floorMod(targetUuid.hashCode(), FAR_ENTITY_ID_RANGE_END - FAR_ENTITY_ID_RANGE_START);
+        for (int attempts = 0; attempts < FAR_ENTITY_ID_ALLOCATION_ATTEMPTS; attempts++) {
+            if (candidate != realEntityId && !reverseLookup.containsKey(candidate)) {
+                return candidate;
+            }
+            candidate++;
+            if (candidate >= FAR_ENTITY_ID_RANGE_END) {
+                candidate = FAR_ENTITY_ID_RANGE_START;
+            }
+        }
+        return realEntityId;
+    }
+
+    private static Map<Integer, UUID> buildReverseLookup(Map<UUID, Integer> trackedFarPlayers) {
+        Map<Integer, UUID> reverse = new HashMap<>(trackedFarPlayers.size() * 2);
+        for (Map.Entry<UUID, Integer> entry : trackedFarPlayers.entrySet()) {
+            reverse.put(entry.getValue(), entry.getKey());
+        }
+        return reverse;
+    }
+
+    private FarPlayerState withEntityId(FarPlayerState state, int entityId) {
+        if (state.entityId() == entityId) {
+            return state;
+        }
+        return new FarPlayerState(
+            entityId,
+            state.uuid(),
+            state.worldId(),
+            state.x(),
+            state.y(),
+            state.z(),
+            state.yaw(),
+            state.pitch(),
+            state.headYaw(),
+            state.equipment(),
+            state.metadata()
+        );
+    }
+
 }

@@ -2,7 +2,9 @@ package me.mapacheee.extendedhorizons.fakechunks.farplayers.backend;
 
 import com.mojang.datafixers.util.Pair;
 import com.thewinterframework.service.annotation.Service;
+import io.netty.buffer.Unpooled;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
@@ -15,8 +17,6 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
-import io.netty.buffer.Unpooled;
-import net.minecraft.network.FriendlyByteBuf;
 
 import java.util.Collections;
 import java.util.List;

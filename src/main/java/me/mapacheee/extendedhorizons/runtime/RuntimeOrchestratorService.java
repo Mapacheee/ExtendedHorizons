@@ -111,11 +111,10 @@ public final class RuntimeOrchestratorService {
                     Location loc = player.getLocation();
                     ServerPlayer nmsPlayer = ((CraftPlayer) player).getHandle();
 
-                    List<SynchedEntityData.DataValue<?>> metadata;
+                    List<SynchedEntityData.DataValue<?>> metadata = nmsPlayer.getEntityData().packAll();
                     List<Pair<EquipmentSlot, ItemStack>> equipment;
 
                     if (pollEquipment) {
-                        metadata = nmsPlayer.getEntityData().getNonDefaultValues();
                         equipment = new ArrayList<>(6);
                         for (EquipmentSlot slot : EquipmentSlot.values()) {
                             ItemStack item = nmsPlayer.getItemBySlot(slot);
@@ -123,7 +122,6 @@ public final class RuntimeOrchestratorService {
                         }
                         this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
                     } else {
-                        metadata = null;
                         equipment = this.farPlayerCacheService.getEquipment(player.getUniqueId());
                         if (equipment == null) {
                             equipment = Collections.emptyList();
