@@ -80,7 +80,15 @@ public final class ChannelInjectionService {
         if (channel == null || !channel.isActive()) {
             return false;
         }
-        Runnable action = () -> channel.write(new EhBypassPacket(payload));
+        if (!channel.isWritable()) {
+            return false;
+        }
+        Runnable action = () -> {
+            if (!channel.isActive() || !channel.isWritable()) {
+                return;
+            }
+            channel.write(new EhBypassPacket(payload));
+        };
         this.runOnEventLoop(channel, action);
         return true;
     }
@@ -118,7 +126,7 @@ public final class ChannelInjectionService {
     private void runOnEventLoop(Channel channel, Runnable action) {
         EventLoop eventLoop = channel.eventLoop();
         if (eventLoop.inEventLoop()) {
-            action.run();
+          action.run();
             return;
         }
         eventLoop.execute(action);

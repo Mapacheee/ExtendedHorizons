@@ -160,7 +160,7 @@ public final class ChunkDispatchService {
                 this.cacheService.markUnavailable(expectedWorldId, chunkKey);
                 return;
             }
-            if (throwable == null && payload != null && antiXrayProfileHash != null) {
+            if (throwable == null && antiXrayProfileHash != null) {
                 this.antiXrayPayloadCacheService.put(
                     expectedWorldId,
                     chunkKey,
@@ -189,7 +189,13 @@ public final class ChunkDispatchService {
             entry.releaseFuture();
             return true;
         }
+        if (!channel.isWritable()) {
+            return false;
+        }
         long payloadBytes = payload.readableBytes();
+        if (channel.bytesBeforeUnwritable() > 0 && channel.bytesBeforeUnwritable() < payloadBytes) {
+            return false;
+        }
         if (!session.tryConsumeBandwidth(payloadBytes)) {
             return false;
         }
