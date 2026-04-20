@@ -4,6 +4,7 @@ import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkSendQueueEntry;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.Map;
@@ -18,6 +19,10 @@ public final class PlayerSession {
 
     private static final long[] EMPTY_LONG_ARRAY = new long[0];
     private static final ChunkState DUMMY_STATE = new ChunkState();
+    private static final double DIRECTION_CHANGE_THRESHOLD = 0.7d;
+    private static final double DIRECTION_WEIGHT = 0.25d;
+    private static final long FAST_MOVEMENT_NANOS = 750_000_000L;
+    private static final long BUILD_FAILED_RETRY_NANOS = 1_000_000_000L;
     private final UUID playerId;
     private volatile UUID worldId;
     private final AtomicLong epoch = new AtomicLong(0L);
@@ -43,6 +48,10 @@ public final class PlayerSession {
     private final Map<UUID, Integer> trackedFarPlayers = new ConcurrentHashMap<>();
     private final Set<UUID> trackingBuffer = new HashSet<>();
     private final Set<Integer> serverTrackedEntityIds = ConcurrentHashMap.newKeySet();
+    private volatile double moveDirX;
+    private volatile double moveDirZ;
+    private volatile boolean hasMovementDirection;
+    private volatile long lastChunkCrossNanos;
 
     public PlayerSession(UUID playerId, UUID worldId) {
         this.playerId = playerId;
@@ -197,6 +206,10 @@ public final class PlayerSession {
         this.chunksInDistance = ChunkPlannerService.radiusIterationList(this.distance);
         this.iterationIndex = 0;
 
+        if (this.hasMovementDirection) {
+            this.rebuildDirectionalOrder();
+        }
+
         int size = this.storageDiameter * this.storageDiameter;
         ChunkState[] oldStates = this.chunkStates;
         if (oldStates.length == size) {
@@ -242,9 +255,23 @@ public final class PlayerSession {
         int prevX = ChunkKeyCodec.x(previous);
         int prevZ = ChunkKeyCodec.z(previous);
         if (distanceSquared(prevX, prevZ, chunkX, chunkZ) > this.distance * this.distance) {
-            this.unloadBvChunks();
+            this.unloadEhChunks();
             this.enabled = false;
+            this.hasMovementDirection = false;
             return;
+        }
+
+        long now = System.nanoTime();
+        boolean movingFast = this.lastChunkCrossNanos > 0
+            && (now - this.lastChunkCrossNanos) < FAST_MOVEMENT_NANOS;
+        this.lastChunkCrossNanos = now;
+
+        if (movingFast) {
+            this.updateMovementDirection(chunkX - prevX, chunkZ - prevZ);
+        } else if (this.hasMovementDirection) {
+            this.hasMovementDirection = false;
+            this.chunksInDistance = ChunkPlannerService.radiusIterationList(this.distance);
+            this.iterationIndex = 0;
         }
 
         for (ChunkState state : this.chunkStates) {
@@ -256,7 +283,7 @@ public final class PlayerSession {
             if (ChunkPlannerService.isWithinRange(stateX - chunkX, stateZ - chunkZ, this.distance)) {
                 continue;
             }
-            if (state.lifecycle() == ChunkLifecycle.BV_QUEUED) {
+            if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
                 this.purgeQueuedChunk(stateX, stateZ);
             }
             if (state.lifecycle() != ChunkLifecycle.SERVER_LOADED) {
@@ -270,7 +297,7 @@ public final class PlayerSession {
             return;
         }
         ChunkState state = this.getState(chunkX, chunkZ);
-        if (state.lifecycle() == ChunkLifecycle.BV_QUEUED) {
+        if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
             this.purgeQueuedChunk(chunkX, chunkZ);
         }
         state.set(chunkX, chunkZ, ChunkLifecycle.SERVER_LOADED);
@@ -290,7 +317,7 @@ public final class PlayerSession {
         }
         ChunkState state = this.getState(chunkX, chunkZ);
         if (state.lifecycle() == ChunkLifecycle.SERVER_LOADED) {
-            state.set(chunkX, chunkZ, ChunkLifecycle.BV_LOADED);
+            state.set(chunkX, chunkZ, ChunkLifecycle.EH_LOADED);
         }
         return true;
     }
@@ -309,12 +336,15 @@ public final class PlayerSession {
             }
 
             ChunkState state = this.getState(chunkX, chunkZ);
-            if (state.lifecycle() != ChunkLifecycle.UNLOADED) {
-                continue;
+            if (state.lifecycle() == ChunkLifecycle.UNLOADED) {
+                state.set(chunkX, chunkZ, ChunkLifecycle.EH_QUEUED);
+                return ChunkKeyCodec.pack(chunkX, chunkZ);
             }
-
-            state.set(chunkX, chunkZ, ChunkLifecycle.BV_QUEUED);
-            return ChunkKeyCodec.pack(chunkX, chunkZ);
+            if (state.lifecycle() == ChunkLifecycle.BUILD_FAILED
+                && System.nanoTime() - state.failedAtNanos() > BUILD_FAILED_RETRY_NANOS) {
+                state.set(chunkX, chunkZ, ChunkLifecycle.EH_QUEUED);
+                return ChunkKeyCodec.pack(chunkX, chunkZ);
+            }
         }
         this.iterationIndex = 0;
         return null;
@@ -322,29 +352,30 @@ public final class PlayerSession {
 
     public void onChunkBuildFailed(long chunkKey) {
         ChunkState state = this.getStateByKey(chunkKey);
-        if (state.lifecycle() == ChunkLifecycle.BV_QUEUED) {
-            state.reset();
-            this.iterationIndex = 0;
+        if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
+            state.markBuildFailed();
         }
     }
 
     public void onChunkSent(long chunkKey) {
         ChunkState state = this.getStateByKey(chunkKey);
-        if (state.lifecycle() == ChunkLifecycle.BV_QUEUED) {
-            state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.BV_LOADED);
+        if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
+            state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.EH_LOADED);
         }
     }
 
     public void onChunkUnloaded(long chunkKey) {
         ChunkState state = this.getStateByKey(chunkKey);
-        if (state.lifecycle() == ChunkLifecycle.BV_LOADED || state.lifecycle() == ChunkLifecycle.BV_QUEUED) {
+        ChunkLifecycle lc = state.lifecycle();
+        if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED) {
             state.reset();
         }
     }
 
     public void invalidateChunk(long chunkKey) {
         ChunkState state = this.getStateByKey(chunkKey);
-        if (state.lifecycle() == ChunkLifecycle.BV_LOADED || state.lifecycle() == ChunkLifecycle.BV_QUEUED) {
+        ChunkLifecycle lc = state.lifecycle();
+        if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED) {
             state.reset();
             this.iterationIndex = 0;
         }
@@ -356,16 +387,17 @@ public final class PlayerSession {
         }
         LongStream.Builder builder = LongStream.builder();
         for (ChunkState state : this.chunkStates) {
-            if (state.lifecycle() == ChunkLifecycle.BV_LOADED) {
+            if (state.lifecycle() == ChunkLifecycle.EH_LOADED) {
                 builder.add(ChunkKeyCodec.pack(state.chunkX(), state.chunkZ()));
             }
         }
         return builder.build().toArray();
     }
 
-    public void unloadBvChunks() {
+    public void unloadEhChunks() {
         for (ChunkState state : this.chunkStates) {
-            if (state.lifecycle() == ChunkLifecycle.BV_LOADED || state.lifecycle() == ChunkLifecycle.BV_QUEUED) {
+            ChunkLifecycle lc = state.lifecycle();
+            if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED) {
                 state.reset();
             }
         }
@@ -378,6 +410,8 @@ public final class PlayerSession {
         }
         this.clearChunkQueue();
         this.serverTrackedEntityIds.clear();
+        this.hasMovementDirection = false;
+        this.lastChunkCrossNanos = 0L;
         this.resetBandwidthLimiter();
         this.enabled = false;
         this.iterationIndex = 0;
@@ -390,6 +424,57 @@ public final class PlayerSession {
         this.lastAdvertisedDistance = -1;
         this.enabled = false;
         this.initiated = false;
+        this.iterationIndex = 0;
+    }
+
+    private void updateMovementDirection(int deltaX, int deltaZ) {
+        if (deltaX == 0 && deltaZ == 0) {
+            return;
+        }
+        double length = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+        double newDirX = deltaX / length;
+        double newDirZ = deltaZ / length;
+
+        if (this.hasMovementDirection) {
+            double dot = this.moveDirX * newDirX + this.moveDirZ * newDirZ;
+            if (dot >= DIRECTION_CHANGE_THRESHOLD) {
+                return;
+            }
+        }
+
+        this.moveDirX = newDirX;
+        this.moveDirZ = newDirZ;
+        this.hasMovementDirection = true;
+        this.rebuildDirectionalOrder();
+    }
+
+    private void rebuildDirectionalOrder() {
+        long[] base = ChunkPlannerService.radiusIterationList(this.distance);
+        int len = base.length;
+        double dirX = this.moveDirX;
+        double dirZ = this.moveDirZ;
+
+        Integer[] indices = new Integer[len];
+        for (int i = 0; i < len; i++) {
+            indices[i] = i;
+        }
+
+        java.util.Arrays.sort(indices, Comparator.comparingDouble(i -> {
+            int ox = ChunkKeyCodec.x(base[i]);
+            int oz = ChunkKeyCodec.z(base[i]);
+            double dist = Math.sqrt(ox * ox + oz * oz);
+            if (dist <= 0) {
+                return -1.0d;
+            }
+            double alignment = (ox * dirX + oz * dirZ) / dist;
+            return dist * (1.0d - DIRECTION_WEIGHT * alignment);
+        }));
+
+        long[] sorted = new long[len];
+        for (int i = 0; i < len; i++) {
+            sorted[i] = base[indices[i]];
+        }
+        this.chunksInDistance = sorted;
         this.iterationIndex = 0;
     }
 
@@ -466,8 +551,9 @@ public final class PlayerSession {
     public enum ChunkLifecycle {
         UNLOADED,
         SERVER_LOADED,
-        BV_QUEUED,
-        BV_LOADED,
+        EH_QUEUED,
+        EH_LOADED,
+        BUILD_FAILED,
     }
 
     public static final class ChunkState {
@@ -475,6 +561,7 @@ public final class PlayerSession {
         private int chunkX;
         private int chunkZ;
         private ChunkLifecycle lifecycle = ChunkLifecycle.UNLOADED;
+        private long failedAtNanos;
 
         public int chunkX() {
             return this.chunkX;
@@ -488,14 +575,24 @@ public final class PlayerSession {
             return this.lifecycle;
         }
 
+        public long failedAtNanos() {
+            return this.failedAtNanos;
+        }
+
         public void set(int chunkX, int chunkZ, ChunkLifecycle lifecycle) {
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
             this.lifecycle = lifecycle;
         }
 
+        public void markBuildFailed() {
+            this.lifecycle = ChunkLifecycle.BUILD_FAILED;
+            this.failedAtNanos = System.nanoTime();
+        }
+
         public void reset() {
             this.set(0, 0, ChunkLifecycle.UNLOADED);
+            this.failedAtNanos = 0L;
         }
 
         public boolean hasCoords() {

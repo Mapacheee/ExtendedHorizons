@@ -110,7 +110,7 @@ public final class FakeChunkOrchestratorService {
         if (!this.preTick(session, snapshot.targetDistance(), snapshot.serverDistance())) {
             this.unloadSessionChunks(channel, session);
             this.syncClientRadius(channel, session, snapshot.serverDistance());
-            session.unloadBvChunks();
+            session.unloadEhChunks();
             return;
         }
 
@@ -254,7 +254,7 @@ public final class FakeChunkOrchestratorService {
         }
         this.unloadSessionChunks(channel, session);
         this.channelInjectionService.writeBypass(channel, new ClientboundSetChunkCacheRadiusPacket(session.serverViewDistance()));
-        session.unloadBvChunks();
+        session.unloadEhChunks();
         session.clearDispatchState();
     }
 
