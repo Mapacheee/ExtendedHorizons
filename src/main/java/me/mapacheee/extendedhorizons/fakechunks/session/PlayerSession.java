@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicLong;
@@ -239,7 +240,7 @@ public final class PlayerSession {
         this.chunkStates = newStates;
     }
 
-    public void moveTo(int chunkX, int chunkZ) {
+    public void moveTo(int chunkX, int chunkZ, float yaw) {
         long newKey = ChunkKeyCodec.pack(chunkX, chunkZ);
         long previous = this.chunkKey;
         if (newKey == previous) {
@@ -267,7 +268,8 @@ public final class PlayerSession {
         this.lastChunkCrossNanos = now;
 
         if (movingFast) {
-            this.updateMovementDirection(chunkX - prevX, chunkZ - prevZ);
+            double radians = Math.toRadians(yaw);
+            this.updateLookDirection(-Math.sin(radians), Math.cos(radians));
         } else if (this.hasMovementDirection) {
             this.hasMovementDirection = false;
             this.chunksInDistance = ChunkPlannerService.radiusIterationList(this.distance);
@@ -427,14 +429,7 @@ public final class PlayerSession {
         this.iterationIndex = 0;
     }
 
-    private void updateMovementDirection(int deltaX, int deltaZ) {
-        if (deltaX == 0 && deltaZ == 0) {
-            return;
-        }
-        double length = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-        double newDirX = deltaX / length;
-        double newDirZ = deltaZ / length;
-
+    private void updateLookDirection(double newDirX, double newDirZ) {
         if (this.hasMovementDirection) {
             double dot = this.moveDirX * newDirX + this.moveDirZ * newDirZ;
             if (dot >= DIRECTION_CHANGE_THRESHOLD) {
@@ -459,7 +454,7 @@ public final class PlayerSession {
             indices[i] = i;
         }
 
-        java.util.Arrays.sort(indices, Comparator.comparingDouble(i -> {
+        Arrays.sort(indices, Comparator.comparingDouble(i -> {
             int ox = ChunkKeyCodec.x(base[i]);
             int oz = ChunkKeyCodec.z(base[i]);
             double dist = Math.sqrt(ox * ox + oz * oz);

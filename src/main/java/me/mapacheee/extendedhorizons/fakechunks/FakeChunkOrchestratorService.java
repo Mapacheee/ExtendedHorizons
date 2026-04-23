@@ -90,6 +90,7 @@ public final class FakeChunkOrchestratorService {
             player.getUniqueId(),
             chunkX,
             chunkZ,
+            loc.getYaw(),
             targetDistance,
             serverDistance,
             System.nanoTime() + Math.max(250_000L, maxTimePerPlayerNanos)
@@ -100,7 +101,7 @@ public final class FakeChunkOrchestratorService {
     private void processOnNetty(Channel channel, PlayerSession session, TickSnapshot snapshot) {
         session.setWorld(snapshot.worldId());
         session.serverViewDistance(snapshot.serverDistance());
-        session.moveTo(snapshot.chunkX(), snapshot.chunkZ());
+        session.moveTo(snapshot.chunkX(), snapshot.chunkZ(), snapshot.yaw());
 
         if (!session.initiated()) {
             session.initiated(true);
@@ -270,6 +271,7 @@ public final class FakeChunkOrchestratorService {
         UUID viewerId,
         int chunkX,
         int chunkZ,
+        float yaw,
         int targetDistance,
         int serverDistance,
         long deadlineNanos
