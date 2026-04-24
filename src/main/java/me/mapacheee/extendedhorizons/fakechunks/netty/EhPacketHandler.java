@@ -69,7 +69,10 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
                 session.handleDimensionReset();
                 yield false;
             }
-            case ClientboundSetChunkCacheRadiusPacket ignored -> true;
+            case ClientboundSetChunkCacheRadiusPacket ignored -> {
+                session.lastAdvertisedDistance(-1);
+                yield true;
+            }
             default -> false;
         };
     }
