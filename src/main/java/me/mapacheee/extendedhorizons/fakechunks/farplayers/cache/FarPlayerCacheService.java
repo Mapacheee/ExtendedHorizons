@@ -60,6 +60,12 @@ public final class FarPlayerCacheService {
                 Set<UUID> playersInRegion = regions.get(regionKey);
                 if (playersInRegion != null) {
                     playersInRegion.remove(playerId);
+                    if (playersInRegion.isEmpty()) {
+                        regions.remove(regionKey, playersInRegion);
+                        if (regions.isEmpty()) {
+                            this.spatialIndex.remove(worldId, regions);
+                        }
+                    }
                 }
             }
         }
