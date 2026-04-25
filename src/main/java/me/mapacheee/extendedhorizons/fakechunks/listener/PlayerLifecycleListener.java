@@ -44,11 +44,11 @@ public final class PlayerLifecycleListener implements Listener {
         this.channelInjectionService.inject(player, session);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTeleport(PlayerTeleportEvent event) {
         Player player = event.getPlayer();
         this.fakeChunkOrchestratorService.invalidatePermissionCache(player.getUniqueId());
-        PlayerSession session = this.sessionRegistry.ensureFor(player, true);
+        PlayerSession session = this.sessionRegistry.ensureFor(player, false);
         this.channelInjectionService.inject(player, session);
     }
 
