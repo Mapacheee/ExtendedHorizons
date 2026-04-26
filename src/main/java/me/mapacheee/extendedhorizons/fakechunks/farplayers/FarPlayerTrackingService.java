@@ -14,7 +14,6 @@ import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -108,19 +107,18 @@ public final class FarPlayerTrackingService {
             }
         }
 
-        Iterator<Map.Entry<UUID, Integer>> iterator = session.trackedFarPlayers().entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<UUID, Integer> entry = iterator.next();
-            if (!newlyRetained.contains(entry.getKey())) {
-                this.despawn(channel, entry.getValue());
-                iterator.remove();
+        for (Map.Entry<UUID, Integer> entry : session.trackedFarPlayers().entrySet()) {
+            if (!newlyRetained.contains(entry.getKey()) && this.despawn(channel, entry.getValue())) {
+                session.trackedFarPlayers().remove(entry.getKey(), entry.getValue());
             }
         }
     }
 
     private void spawn(Channel channel, PlayerSession session, FarPlayerState state, int farEntityId) {
         FarPlayerState packetState = this.withEntityId(state, farEntityId);
-        this.channelInjectionService.writeBypass(channel, this.backend.createSpawnPacket(packetState));
+        if (!this.channelInjectionService.writeBypass(channel, this.backend.createSpawnPacket(packetState))) {
+            return;
+        }
 
         if (state.metadata() != null && !state.metadata().isEmpty()) {
             this.channelInjectionService.writeBypass(channel, this.backend.createMetadataPacket(farEntityId, state.metadata()));
@@ -150,12 +148,25 @@ public final class FarPlayerTrackingService {
     }
 
     private void despawnAndRemove(Channel channel, PlayerSession session, UUID uuid, int entityId) {
-        this.channelInjectionService.writeBypass(channel, this.backend.createDespawnPacket(entityId));
-        session.trackedFarPlayers().remove(uuid);
+        if (this.despawn(channel, entityId)) {
+            session.trackedFarPlayers().remove(uuid, entityId);
+        }
     }
 
-    private void despawn(Channel channel, int entityId) {
-        this.channelInjectionService.writeBypass(channel, this.backend.createDespawnPacket(entityId));
+    private boolean despawn(Channel channel, int entityId) {
+        return this.channelInjectionService.writeBypass(channel, this.backend.createDespawnPacket(entityId));
+    }
+
+    public void clearTracked(Channel channel, PlayerSession session) {
+        if (channel == null || session == null) {
+            return;
+        }
+        for (Map.Entry<UUID, Integer> entry : session.trackedFarPlayers().entrySet()) {
+            if (this.despawn(channel, entry.getValue())) {
+                session.trackedFarPlayers().remove(entry.getKey(), entry.getValue());
+            }
+        }
+        session.trackingBuffer().clear();
     }
 
     private int allocateFarEntityId(PlayerSession session, UUID targetUuid, int realEntityId) {

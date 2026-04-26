@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.fakechunks.netty;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
+import io.netty.util.ReferenceCountUtil;
 import it.unimi.dsi.fastutil.ints.IntList;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkPosAccess;
@@ -27,6 +28,8 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             PacketIdRegistry.markPendingLevelChunkProbe(ctx.channel());
         }
         if (this.handle(msg)) {
+            ReferenceCountUtil.release(msg);
+            promise.setSuccess();
             return;
         }
         if (msg instanceof EhBypassPacket(Object payload)) {

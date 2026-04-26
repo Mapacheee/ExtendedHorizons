@@ -411,6 +411,7 @@ public final class PlayerSession {
             state.reset();
         }
         this.clearChunkQueue();
+        this.trackingBuffer.clear();
         this.serverTrackedEntityIds.clear();
         this.hasMovementDirection = false;
         this.lastChunkCrossNanos = 0L;
@@ -421,6 +422,7 @@ public final class PlayerSession {
 
     public void clearDispatchState() {
         this.clearChunkQueue();
+        this.trackingBuffer.clear();
         this.serverTrackedEntityIds.clear();
         this.resetBandwidthLimiter();
         this.lastAdvertisedDistance = -1;
