@@ -4,6 +4,7 @@ import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
 import io.netty.channel.EventLoop;
 import io.netty.channel.ChannelPromise;
+import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import net.minecraft.server.level.ServerPlayer;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -88,6 +89,7 @@ public final class ChannelInjectionService {
         ChannelPromise promise = channel.newPromise();
         Runnable action = () -> {
             if (!channel.isActive()) {
+                ReferenceCountUtil.release(payload);
                 promise.tryFailure(new IllegalStateException("Channel inactive"));
                 return;
             }

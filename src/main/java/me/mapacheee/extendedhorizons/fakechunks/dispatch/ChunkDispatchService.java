@@ -22,7 +22,7 @@ import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
 
 import java.util.UUID;
-import java.util.Iterator;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CompletableFuture;
 
 @Service
@@ -90,17 +90,15 @@ public final class ChunkDispatchService {
     }
 
     private int drainCompletedEntries(World world, Channel channel, PlayerSession session) {
-        int pending = 0;
-        Iterator<ChunkSendQueueEntry> iterator = session.chunkQueue().iterator();
-        while (iterator.hasNext()) {
-            ChunkSendQueueEntry entry = iterator.next();
-            if (this.checkQueueEntry(world, channel, session, entry)) {
-                iterator.remove();
-            } else {
-                pending++;
+        AtomicInteger pending = new AtomicInteger(0);
+        session.chunkQueue().removeIf(entry -> {
+            boolean processed = this.checkQueueEntry(world, channel, session, entry);
+            if (!processed) {
+                pending.incrementAndGet();
             }
-        }
-        return pending;
+            return processed;
+        });
+        return pending.get();
     }
 
     public void sendUnload(Channel channel, PlayerSession session, long chunkKey) {
