@@ -13,7 +13,7 @@ import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -66,6 +66,8 @@ public final class FarPlayerTrackingService {
         Collection<FarPlayerState> candidates = this.cacheService.getNearbyPlayers(
             worldId, viewerChunkX, viewerChunkZ, targetDistance
         );
+        Map<UUID, Integer> trackedFarPlayers = session.trackedFarPlayers();
+        Set<Integer> usedFarEntityIds = new HashSet<>(trackedFarPlayers.values());
 
         Set<UUID> newlyRetained = session.trackingBuffer();
         newlyRetained.clear();
@@ -75,12 +77,12 @@ public final class FarPlayerTrackingService {
                 continue;
             }
 
-            Integer trackedEntityId = session.trackedFarPlayers().get(state.uuid());
+            Integer trackedEntityId = trackedFarPlayers.get(state.uuid());
             boolean alreadyTracked = trackedEntityId != null;
 
             if (session.isServerTrackingEntity(state.entityId())) {
                 if (alreadyTracked) {
-                    this.despawnAndRemove(channel, session, state.uuid(), trackedEntityId);
+                    this.despawnAndRemove(channel, trackedFarPlayers, usedFarEntityIds, state.uuid(), trackedEntityId);
                 }
                 continue;
             }
@@ -93,28 +95,35 @@ public final class FarPlayerTrackingService {
 
             if (distSq > farLimitSq) {
                 if (alreadyTracked) {
-                    this.despawnAndRemove(channel, session, state.uuid(), trackedEntityId);
+                    this.despawnAndRemove(channel, trackedFarPlayers, usedFarEntityIds, state.uuid(), trackedEntityId);
                 }
                 continue;
             }
 
             newlyRetained.add(state.uuid());
             if (!alreadyTracked) {
-                int farEntityId = this.allocateFarEntityId(session, state.uuid(), state.entityId());
-                this.spawn(channel, session, state, farEntityId);
+                int farEntityId = this.allocateFarEntityId(usedFarEntityIds, state.uuid(), state.entityId());
+                this.spawn(channel, trackedFarPlayers, usedFarEntityIds, state, farEntityId);
             } else {
                 this.moveAndSync(channel, trackedEntityId, state, syncMove, syncEquip);
             }
         }
 
-        for (Map.Entry<UUID, Integer> entry : session.trackedFarPlayers().entrySet()) {
+        for (Map.Entry<UUID, Integer> entry : trackedFarPlayers.entrySet()) {
             if (!newlyRetained.contains(entry.getKey()) && this.despawn(channel, entry.getValue())) {
-                session.trackedFarPlayers().remove(entry.getKey(), entry.getValue());
+                trackedFarPlayers.remove(entry.getKey(), entry.getValue());
+                usedFarEntityIds.remove(entry.getValue());
             }
         }
     }
 
-    private void spawn(Channel channel, PlayerSession session, FarPlayerState state, int farEntityId) {
+    private void spawn(
+        Channel channel,
+        Map<UUID, Integer> trackedFarPlayers,
+        Set<Integer> usedFarEntityIds,
+        FarPlayerState state,
+        int farEntityId
+    ) {
         FarPlayerState packetState = this.withEntityId(state, farEntityId);
         if (!this.channelInjectionService.writeBypass(channel, this.backend.createSpawnPacket(packetState))) {
             return;
@@ -128,7 +137,8 @@ public final class FarPlayerTrackingService {
             this.channelInjectionService.writeBypass(channel, this.backend.createEquipmentPacket(farEntityId, state.equipment()));
         }
 
-        session.trackedFarPlayers().put(state.uuid(), farEntityId);
+        trackedFarPlayers.put(state.uuid(), farEntityId);
+        usedFarEntityIds.add(farEntityId);
     }
 
     private void moveAndSync(Channel channel, int trackedEntityId, FarPlayerState state, boolean syncMove, boolean syncEquip) {
@@ -147,9 +157,16 @@ public final class FarPlayerTrackingService {
         }
     }
 
-    private void despawnAndRemove(Channel channel, PlayerSession session, UUID uuid, int entityId) {
+    private void despawnAndRemove(
+        Channel channel,
+        Map<UUID, Integer> trackedFarPlayers,
+        Set<Integer> usedFarEntityIds,
+        UUID uuid,
+        int entityId
+    ) {
         if (this.despawn(channel, entityId)) {
-            session.trackedFarPlayers().remove(uuid, entityId);
+            trackedFarPlayers.remove(uuid, entityId);
+            usedFarEntityIds.remove(entityId);
         }
     }
 
@@ -169,11 +186,10 @@ public final class FarPlayerTrackingService {
         session.trackingBuffer().clear();
     }
 
-    private int allocateFarEntityId(PlayerSession session, UUID targetUuid, int realEntityId) {
-        Map<Integer, UUID> reverseLookup = buildReverseLookup(session.trackedFarPlayers());
+    private int allocateFarEntityId(Set<Integer> usedFarEntityIds, UUID targetUuid, int realEntityId) {
         int candidate = FAR_ENTITY_ID_RANGE_START + Math.floorMod(targetUuid.hashCode(), FAR_ENTITY_ID_RANGE_END - FAR_ENTITY_ID_RANGE_START);
         for (int attempts = 0; attempts < FAR_ENTITY_ID_ALLOCATION_ATTEMPTS; attempts++) {
-            if (candidate != realEntityId && !reverseLookup.containsKey(candidate)) {
+            if (candidate != realEntityId && !usedFarEntityIds.contains(candidate)) {
                 return candidate;
             }
             candidate++;
@@ -184,13 +200,6 @@ public final class FarPlayerTrackingService {
         return realEntityId;
     }
 
-    private static Map<Integer, UUID> buildReverseLookup(Map<UUID, Integer> trackedFarPlayers) {
-        Map<Integer, UUID> reverse = new HashMap<>(trackedFarPlayers.size() * 2);
-        for (Map.Entry<UUID, Integer> entry : trackedFarPlayers.entrySet()) {
-            reverse.put(entry.getValue(), entry.getKey());
-        }
-        return reverse;
-    }
 
     private FarPlayerState withEntityId(FarPlayerState state, int entityId) {
         if (state.entityId() == entityId) {

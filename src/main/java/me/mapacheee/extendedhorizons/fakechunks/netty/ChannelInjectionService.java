@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.fakechunks.netty;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
 import io.netty.channel.EventLoop;
+import io.netty.channel.ChannelPromise;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import net.minecraft.server.level.ServerPlayer;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -77,20 +78,23 @@ public final class ChannelInjectionService {
     }
 
     public boolean writeBypass(Channel channel, Object payload) {
+        return this.writeBypassFuture(channel, payload) != null;
+    }
+
+    public ChannelPromise writeBypassFuture(Channel channel, Object payload) {
         if (channel == null || !channel.isActive()) {
-            return false;
+            return null;
         }
-        if (!channel.isWritable()) {
-            return false;
-        }
+        ChannelPromise promise = channel.newPromise();
         Runnable action = () -> {
-            if (!channel.isActive() || !channel.isWritable()) {
+            if (!channel.isActive()) {
+                promise.tryFailure(new IllegalStateException("Channel inactive"));
                 return;
             }
-            channel.write(new EhBypassPacket(payload));
+            channel.write(new EhBypassPacket(payload), promise);
         };
         this.runOnEventLoop(channel, action);
-        return true;
+        return promise;
     }
 
     public void flush(Player player) {

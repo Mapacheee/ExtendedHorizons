@@ -4,6 +4,7 @@ import com.google.inject.Inject;
 import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelPromise;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
@@ -21,6 +22,7 @@ import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
 
 import java.util.UUID;
+import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 
 @Service
@@ -64,11 +66,10 @@ public final class ChunkDispatchService {
         int chunkQueueSize = config.chunkQueueSize();
         int maxInflight = config.maxInflightPerPlayer();
         int maxPending = Math.min(chunkQueueSize, maxInflight);
+        int pending = this.drainCompletedEntries(world, channel, session);
 
         do {
-            session.chunkQueue().removeIf(entry -> this.checkQueueEntry(world, channel, session, entry));
-
-            if (session.chunkQueue().size() >= maxPending) {
+            if (pending >= maxPending) {
                 break;
             }
 
@@ -81,10 +82,25 @@ public final class ChunkDispatchService {
             int chunkZ = ChunkKeyCodec.z(chunkKey);
             CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
             session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
+            pending++;
             if (--chunksPerTick <= 0) {
                 break;
             }
         } while (System.nanoTime() < deadlineNanos);
+    }
+
+    private int drainCompletedEntries(World world, Channel channel, PlayerSession session) {
+        int pending = 0;
+        Iterator<ChunkSendQueueEntry> iterator = session.chunkQueue().iterator();
+        while (iterator.hasNext()) {
+            ChunkSendQueueEntry entry = iterator.next();
+            if (this.checkQueueEntry(world, channel, session, entry)) {
+                iterator.remove();
+            } else {
+                pending++;
+            }
+        }
+        return pending;
     }
 
     public void sendUnload(Channel channel, PlayerSession session, long chunkKey) {
@@ -219,14 +235,19 @@ public final class ChunkDispatchService {
             ReferenceCountUtil.release(payload);
             return false;
         }
-        boolean sent = this.channelInjectionService.writeBypass(channel, payload);
-        if (!sent) {
+        ChannelPromise writePromise = this.channelInjectionService.writeBypassFuture(channel, payload);
+        if (writePromise == null) {
             ReferenceCountUtil.release(payload);
+            return false;
         }
-        if (sent) {
-            session.onChunkSent(chunkKey);
-        }
-        return sent;
+        writePromise.addListener(future -> {
+            if (future.isSuccess()) {
+                session.onChunkSent(chunkKey);
+            } else {
+                session.onChunkBuildFailed(chunkKey);
+            }
+        });
+        return true;
     }
 
     private boolean isSessionValid(PlayerSession session, UUID worldId, long epoch) {
