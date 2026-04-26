@@ -102,7 +102,8 @@ public final class RuntimeOrchestratorService {
         long maxTimePerPlayerNanos = (nettyThreadCount * tickLengthNanos) / Math.max(nettyThreadCount, players.size());
 
         this.orchestratorTick = (this.orchestratorTick + 1) & Integer.MAX_VALUE;
-        boolean pollEquipment = Math.floorMod(this.orchestratorTick, config.farPlayerEquipTicks()) == 0;
+        boolean farPlayersEnabled = config.farPlayersEnabled();
+        boolean pollEquipment = farPlayersEnabled && Math.floorMod(this.orchestratorTick, config.farPlayerEquipTicks()) == 0;
 
         for (Player player : players) {
             this.sessionRegistry.ensureFor(player, false);
@@ -111,36 +112,38 @@ public final class RuntimeOrchestratorService {
                     Location loc = player.getLocation();
                     ServerPlayer nmsPlayer = ((CraftPlayer) player).getHandle();
 
-                    List<SynchedEntityData.DataValue<?>> metadata = nmsPlayer.getEntityData().packAll();
-                    List<Pair<EquipmentSlot, ItemStack>> equipment;
+                    if (farPlayersEnabled) {
+                        List<SynchedEntityData.DataValue<?>> metadata = nmsPlayer.getEntityData().packAll();
+                        List<Pair<EquipmentSlot, ItemStack>> equipment;
 
-                    if (pollEquipment) {
-                        equipment = new ArrayList<>(6);
-                        for (EquipmentSlot slot : EquipmentSlot.values()) {
-                            ItemStack item = nmsPlayer.getItemBySlot(slot);
-                            equipment.add(Pair.of(slot, item.copy()));
+                        if (pollEquipment) {
+                            equipment = new ArrayList<>(6);
+                            for (EquipmentSlot slot : EquipmentSlot.values()) {
+                                ItemStack item = nmsPlayer.getItemBySlot(slot);
+                                equipment.add(Pair.of(slot, item.copy()));
+                            }
+                            this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
+                        } else {
+                            equipment = this.farPlayerCacheService.getEquipment(player.getUniqueId());
+                            if (equipment == null) {
+                                equipment = Collections.emptyList();
+                            }
                         }
-                        this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
-                    } else {
-                        equipment = this.farPlayerCacheService.getEquipment(player.getUniqueId());
-                        if (equipment == null) {
-                            equipment = Collections.emptyList();
-                        }
+
+                        this.farPlayerCacheService.updateState(player.getUniqueId(), new FarPlayerState(
+                            player.getEntityId(),
+                            player.getUniqueId(),
+                            player.getWorld().getUID(),
+                            loc.getX(),
+                            loc.getY(),
+                            loc.getZ(),
+                            loc.getYaw(),
+                            loc.getPitch(),
+                            player.getEyeLocation().getYaw(),
+                            equipment,
+                            metadata
+                        ));
                     }
-
-                    this.farPlayerCacheService.updateState(player.getUniqueId(), new FarPlayerState(
-                        player.getEntityId(),
-                        player.getUniqueId(),
-                        player.getWorld().getUID(),
-                        loc.getX(),
-                        loc.getY(),
-                        loc.getZ(),
-                        loc.getYaw(),
-                        loc.getPitch(),
-                        player.getEyeLocation().getYaw(),
-                        equipment,
-                        metadata
-                    ));
 
                     this.fakeChunkOrchestratorService.tickPlayer(player, maxTimePerPlayerNanos);
                 } catch (Throwable throwable) {

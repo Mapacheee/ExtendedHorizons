@@ -52,6 +52,8 @@ fake-chunks:
     period-ticks: 1
 
   far-players:
+    # Enables/disables far-player tracking.
+    enabled: true
     # Update interval for far-player movement packets.
     move-ticks: 4
     # Update interval for far-player equipment/metadata packets.

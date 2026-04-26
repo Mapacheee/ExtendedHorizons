@@ -119,14 +119,18 @@ public final class FakeChunkOrchestratorService {
         this.syncClientCenter(channel, snapshot.chunkX(), snapshot.chunkZ());
         this.syncClientRadius(channel, session, snapshot.targetDistance());
 
-        this.farPlayerTrackingService.track(
-            snapshot.viewerId(),
-            snapshot.worldId(),
-            ChunkKeyCodec.pack(snapshot.chunkX(), snapshot.chunkZ()),
-            session,
-            channel,
-            snapshot.targetDistance()
-        );
+        if (this.configContainer.get().farPlayersEnabled()) {
+            this.farPlayerTrackingService.track(
+                snapshot.viewerId(),
+                snapshot.worldId(),
+                ChunkKeyCodec.pack(snapshot.chunkX(), snapshot.chunkZ()),
+                session,
+                channel,
+                snapshot.targetDistance()
+            );
+        } else {
+            this.farPlayerTrackingService.clearTracked(channel, session);
+        }
 
         this.dispatchService.processQueue(snapshot.world(), channel, session, snapshot.deadlineNanos());
         this.channelInjectionService.flush(channel);

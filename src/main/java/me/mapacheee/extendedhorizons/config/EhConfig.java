@@ -175,6 +175,14 @@ public record EhConfig(
         return Math.max(1, this.fakeChunks.farPlayers().moveTicks());
     }
 
+    public boolean farPlayersEnabled() {
+        if (this.fakeChunks == null || this.fakeChunks.farPlayers() == null) {
+            return true;
+        }
+        Boolean enabled = this.fakeChunks.farPlayers().enabled();
+        return enabled == null || enabled;
+    }
+
     public int farPlayerEquipTicks() {
         if (this.fakeChunks == null || this.fakeChunks.farPlayers() == null) {
             return 15;
@@ -283,6 +291,7 @@ public record EhConfig(
 
     @ConfigSerializable
     public record FarPlayersConfig(
+        Boolean enabled,
         @Setting("move-ticks") int moveTicks,
         @Setting("equip-ticks") int equipTicks
     ) {}
