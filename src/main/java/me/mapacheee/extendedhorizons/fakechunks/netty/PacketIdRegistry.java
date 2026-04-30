@@ -1,8 +1,14 @@
 package me.mapacheee.extendedhorizons.fakechunks.netty;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
 import io.netty.util.AttributeKey;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -10,9 +16,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class PacketIdRegistry {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(PacketIdRegistry.class);
     private static final int UNRESOLVED = -1;
     private static final AtomicInteger LEVEL_CHUNK_WITH_LIGHT_ID = new AtomicInteger(UNRESOLVED);
+    private static final AtomicInteger CHUNK_CACHE_RADIUS_ID = new AtomicInteger(UNRESOLVED);
     private static final AttributeKey<Boolean> PENDING_LEVEL_CHUNK_PROBE = AttributeKey.valueOf("eh_pending_level_chunk_probe");
+    private static final AttributeKey<Boolean> PENDING_RADIUS_PROBE = AttributeKey.valueOf("eh_pending_radius_probe");
+    private static volatile boolean encoderResolveAttempted;
 
     private PacketIdRegistry() {}
 
@@ -28,7 +38,9 @@ public final class PacketIdRegistry {
         if (packetId < 0) {
             return;
         }
-        LEVEL_CHUNK_WITH_LIGHT_ID.compareAndSet(UNRESOLVED, packetId);
+        if (LEVEL_CHUNK_WITH_LIGHT_ID.compareAndSet(UNRESOLVED, packetId)) {
+            LOGGER.info("EH resolved chunk packet id: {}", packetId);
+        }
     }
 
     public static void markPendingLevelChunkProbe(Channel channel) {
@@ -49,6 +61,160 @@ public final class PacketIdRegistry {
         }
         return false;
     }
+    public static boolean hasChunkCacheRadiusId() {
+        return CHUNK_CACHE_RADIUS_ID.get() != UNRESOLVED;
+    }
+
+    public static int getChunkCacheRadiusId() {
+        return CHUNK_CACHE_RADIUS_ID.get();
+    }
+
+    public static void resolveChunkCacheRadiusId(int packetId) {
+        if (packetId < 0) {
+            return;
+        }
+        if (CHUNK_CACHE_RADIUS_ID.compareAndSet(UNRESOLVED, packetId)) {
+            LOGGER.info("EH resolved radius packet id: {}", packetId);
+        }
+    }
+
+    public static void markPendingRadiusProbe(Channel channel) {
+        if (channel == null || hasChunkCacheRadiusId()) {
+            return;
+        }
+        channel.attr(PENDING_RADIUS_PROBE).set(Boolean.TRUE);
+    }
+
+    public static boolean consumePendingRadiusProbe(Channel channel) {
+        if (channel == null) {
+            return false;
+        }
+        Boolean pending = channel.attr(PENDING_RADIUS_PROBE).get();
+        if (Boolean.TRUE.equals(pending)) {
+            channel.attr(PENDING_RADIUS_PROBE).set(Boolean.FALSE);
+            return true;
+        }
+        return false;
+    }
+
+    public static void resolveFromEncoder(Channel channel) {
+        if ((hasLevelChunkWithLightId() && hasChunkCacheRadiusId()) || encoderResolveAttempted || channel == null) {
+            return;
+        }
+        try {
+            ChannelHandler encoder = channel.pipeline().get("encoder");
+            if (encoder == null) {
+                return;
+            }
+            Object protocolInfo = findProtocolInfo(encoder);
+            if (protocolInfo == null) {
+                return;
+            }
+            
+            int chunkPacketId = lookupPacketId(protocolInfo, ClientboundLevelChunkWithLightPacket.class);
+            if (chunkPacketId >= 0) {
+                resolveLevelChunkWithLightId(chunkPacketId);
+            }
+            
+            int radiusPacketId = lookupPacketId(protocolInfo, net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket.class);
+            if (radiusPacketId >= 0) {
+                resolveChunkCacheRadiusId(radiusPacketId);
+            }
+            
+            if (hasLevelChunkWithLightId() && hasChunkCacheRadiusId()) {
+                encoderResolveAttempted = true;
+            }
+        } catch (Throwable throwable) {
+            LOGGER.error("EH encoder resolve: unexpected error", throwable);
+        }
+    }
+
+    private static Object findProtocolInfo(Object encoder) {
+        for (Field field : encoder.getClass().getDeclaredFields()) {
+            try {
+                field.setAccessible(true);
+                Object value = field.get(encoder);
+                if (value == null) {
+                    continue;
+                }
+                if (hasPacketIdLookup(value)) {
+                    return value;
+                }
+                for (Field innerField : value.getClass().getDeclaredFields()) {
+                    try {
+                        innerField.setAccessible(true);
+                        Object innerValue = innerField.get(value);
+                        if (innerValue != null && hasPacketIdLookup(innerValue)) {
+                            return innerValue;
+                        }
+                    } catch (Throwable throwable) {
+                        LOGGER.debug("EH encoder resolve: failed to read inner field {}.{}", value.getClass().getSimpleName(), innerField.getName(), throwable);
+                    }
+                }
+            } catch (Throwable throwable) {
+                LOGGER.debug("EH encoder resolve: failed to read encoder field {}", field.getName(), throwable);
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasPacketIdLookup(Object obj) {
+        for (Method method : obj.getClass().getMethods()) {
+            String name = method.getName();
+            if ((name.equals("packetId") || name.equals("id"))
+                && method.getParameterCount() == 1
+                && method.getReturnType() == int.class) {
+                return true;
+            }
+        }
+        for (Method method : obj.getClass().getDeclaredMethods()) {
+            String name = method.getName();
+            if ((name.equals("packetId") || name.equals("id"))
+                && method.getParameterCount() == 1
+                && method.getReturnType() == int.class) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int lookupPacketId(Object protocolInfo, Class<?> packetClass) {
+        String[] methodNames = {"packetId", "id", "getId"};
+        for (String methodName : methodNames) {
+            Method method = findMethod(protocolInfo.getClass(), methodName);
+            if (method == null) {
+                continue;
+            }
+            Class<?> paramType = method.getParameterTypes()[0];
+            if (paramType != Class.class) {
+                continue;
+            }
+            try {
+                method.setAccessible(true);
+                Object result = method.invoke(protocolInfo, packetClass);
+                if (result instanceof Number num) {
+                    return num.intValue();
+                }
+            } catch (Throwable throwable) {
+                LOGGER.debug("EH encoder resolve: method {}.{}() failed", protocolInfo.getClass().getSimpleName(), methodName, throwable);
+            }
+        }
+        return -1;
+    }
+
+    private static Method findMethod(Class<?> clazz, String name) {
+        for (Method method : clazz.getMethods()) {
+            if (method.getName().equals(name) && method.getParameterCount() == 1
+                && (method.getReturnType() == int.class || Number.class.isAssignableFrom(method.getReturnType()))) {
+                return method;
+            }
+        }
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (method.getName().equals(name) && method.getParameterCount() == 1
+                && (method.getReturnType() == int.class || Number.class.isAssignableFrom(method.getReturnType()))) {
+                return method;
+            }
+        }
+        return null;
+    }
 }
-
-

@@ -32,6 +32,7 @@ public final class ChannelInjectionService {
             }
             if (channel.pipeline().get(EH_HANDLER) instanceof EhPacketHandler handler) {
                 handler.setSession(session);
+                PacketIdRegistry.resolveFromEncoder(channel);
                 return;
             }
             if (channel.pipeline().get("packet_handler") == null) {
@@ -40,6 +41,7 @@ public final class ChannelInjectionService {
             EhPacketHandler handler = new EhPacketHandler();
             handler.setSession(session);
             channel.pipeline().addBefore("packet_handler", EH_HANDLER, handler);
+            PacketIdRegistry.resolveFromEncoder(channel);
         };
         this.runOnEventLoop(channel, action);
     }
