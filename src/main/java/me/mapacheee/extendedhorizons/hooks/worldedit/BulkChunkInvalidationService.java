@@ -4,15 +4,22 @@ import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
+import io.netty.channel.Channel;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkDispatchService;
+import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -25,6 +32,8 @@ public final class BulkChunkInvalidationService {
     private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
     private final LightPayloadCacheService lightPayloadCacheService;
     private final SessionRegistry sessionRegistry;
+    private final ChannelInjectionService channelInjectionService;
+    private final ChunkDispatchService dispatchService;
     private final ConcurrentHashMap<UUID, Set<Long>> pendingInvalidations = new ConcurrentHashMap<>();
 
     private volatile ScheduledTask processorTask;
@@ -34,12 +43,16 @@ public final class BulkChunkInvalidationService {
         ChunkBuildCacheService cacheService,
         AntiXrayPayloadCacheService antiXrayPayloadCacheService,
         LightPayloadCacheService lightPayloadCacheService,
-        SessionRegistry sessionRegistry
+        SessionRegistry sessionRegistry,
+        ChannelInjectionService channelInjectionService,
+        ChunkDispatchService dispatchService
     ) {
         this.cacheService = cacheService;
         this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
         this.lightPayloadCacheService = lightPayloadCacheService;
         this.sessionRegistry = sessionRegistry;
+        this.channelInjectionService = channelInjectionService;
+        this.dispatchService = dispatchService;
     }
 
     @OnEnable
@@ -89,10 +102,34 @@ public final class BulkChunkInvalidationService {
             }
 
             this.sessionRegistry.forEachSession(session -> {
-                if (worldId.equals(session.worldId())) {
-                    for (Long chunkKey : keys) {
-                        session.invalidateChunk(chunkKey);
+                if (!worldId.equals(session.worldId())) {
+                    return;
+                }
+                List<Long> unloadKeys = null;
+                for (Long chunkKey : keys) {
+                    boolean wasLoaded = session.invalidateChunk(chunkKey);
+                    if (wasLoaded) {
+                        if (unloadKeys == null) {
+                            unloadKeys = new ArrayList<>();
+                        }
+                        unloadKeys.add(chunkKey);
                     }
+                }
+                if (unloadKeys != null && !unloadKeys.isEmpty()) {
+                    Player player = Bukkit.getPlayer(session.playerId());
+                    if (player == null) {
+                        return;
+                    }
+                    Channel channel = this.channelInjectionService.resolveChannel(player);
+                    if (channel == null || !channel.isActive()) {
+                        return;
+                    }
+                    List<Long> toUnload = unloadKeys;
+                    this.channelInjectionService.executeOnEventLoop(channel, () -> {
+                        for (long key : toUnload) {
+                            this.dispatchService.sendUnload(channel, session, key);
+                        }
+                    });
                 }
             });
         }

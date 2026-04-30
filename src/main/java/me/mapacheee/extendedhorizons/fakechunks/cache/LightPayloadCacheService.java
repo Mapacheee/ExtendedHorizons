@@ -26,8 +26,8 @@ public final class LightPayloadCacheService {
     }
 
     public synchronized void rebuild() {
-        int ttlSeconds = java.lang.Math.max(1, this.configContainer.get().cacheTtlSeconds());
-        int maxEntries = java.lang.Math.max(128, this.configContainer.get().cacheMaxEntries() / 2);
+        int ttlSeconds = Math.max(1, this.configContainer.get().cacheTtlSeconds());
+        int maxEntries = Math.max(128, this.configContainer.get().cacheMaxEntries() / 2);
 
         this.cache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
@@ -65,7 +65,6 @@ public final class LightPayloadCacheService {
         this.cache.invalidateAll();
     }
 
-    private record LightChunkKey(UUID worldId, long chunkKey) {
-    }
+    private record LightChunkKey(UUID worldId, long chunkKey) {}
 }
 

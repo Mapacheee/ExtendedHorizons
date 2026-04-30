@@ -318,10 +318,16 @@ public final class PlayerSession {
             return false;
         }
         ChunkState state = this.getState(chunkX, chunkZ);
-        if (state.lifecycle() == ChunkLifecycle.SERVER_LOADED) {
-            state.set(chunkX, chunkZ, ChunkLifecycle.EH_LOADED);
+        ChunkLifecycle lc = state.lifecycle();
+        if (lc == ChunkLifecycle.EH_LOADED) {
+            return true;
         }
-        return true;
+        if (lc == ChunkLifecycle.SERVER_LOADED) {
+            state.set(chunkX, chunkZ, ChunkLifecycle.UNLOADED);
+            this.iterationIndex = 0;
+            return true;
+        }
+        return false;
     }
 
     public Long pollNextChunkKey() {
@@ -374,13 +380,21 @@ public final class PlayerSession {
         }
     }
 
-    public void invalidateChunk(long chunkKey) {
+    public boolean invalidateChunk(long chunkKey) {
         ChunkState state = this.getStateByKey(chunkKey);
         ChunkLifecycle lc = state.lifecycle();
         if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED) {
+            boolean wasLoaded = (lc == ChunkLifecycle.EH_LOADED);
+            if (lc == ChunkLifecycle.EH_QUEUED) {
+                int cx = ChunkKeyCodec.x(chunkKey);
+                int cz = ChunkKeyCodec.z(chunkKey);
+                this.purgeQueuedChunk(cx, cz);
+            }
             state.reset();
             this.iterationIndex = 0;
+            return wasLoaded;
         }
+        return false;
     }
 
     public long[] loadedBvChunkKeys() {
@@ -515,7 +529,12 @@ public final class PlayerSession {
     }
 
     private ChunkState getStateByKey(long chunkKey) {
-        return this.getState(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey));
+        int chunkX = ChunkKeyCodec.x(chunkKey);
+        int chunkZ = ChunkKeyCodec.z(chunkKey);
+        if (this.chunkStates.length == 0 || !this.canStore(chunkX, chunkZ)) {
+            return DUMMY_STATE;
+        }
+        return this.getState(chunkX, chunkZ);
     }
 
     private ChunkState getState(int chunkX, int chunkZ) {

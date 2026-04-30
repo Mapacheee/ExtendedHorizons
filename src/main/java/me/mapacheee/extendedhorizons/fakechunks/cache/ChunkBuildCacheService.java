@@ -91,8 +91,11 @@ public final class ChunkBuildCacheService {
         }
         this.buildEntryCache.put(key, started);
         started.whenComplete((payload, throwable) -> {
+            this.buildEntryCache.invalidate(key);
             if (throwable != null || payload == null || !payload.isReadable()) {
-                this.buildEntryCache.invalidate(key);
+                return;
+            }
+            if (Boolean.TRUE.equals(this.bypassCache.getIfPresent(key))) {
                 return;
             }
             this.serializedCache.put(key, payload.retainedDuplicate());
