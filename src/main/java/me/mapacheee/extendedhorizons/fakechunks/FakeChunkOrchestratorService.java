@@ -18,6 +18,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 
+import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.UUID;
 import me.mapacheee.lib.caffeine.cache.Cache;
@@ -31,6 +32,11 @@ public final class FakeChunkOrchestratorService {
 
     private static final Duration PERMISSION_CACHE_TTL = Duration.ofSeconds(5);
     private static final long PERMISSION_CACHE_MAX_SIZE = 4096L;
+    private static final int MIN_DISTANCE = 2;
+    private static final long MIN_TIME_NANOS = 250_000L;
+    private static final int DEFAULT_VIEW_DISTANCE = 10;
+    private static final String PERMISSION_BYPASS = "extendedhorizons.bypass";
+    private static final String PERMISSION_PREFIX = "extendedhorizons.max.";
 
     private final Container<EhConfig> configContainer;
     private static final Logger LOGGER = LoggerFactory.getLogger(FakeChunkOrchestratorService.class);
@@ -64,10 +70,12 @@ public final class FakeChunkOrchestratorService {
             return;
         }
 
-        PlayerSession session = this.sessionRegistry.ensureFor(player, false);
         World world = player.getWorld();
         String worldName = world.getName();
+
+        PlayerSession session = this.sessionRegistry.ensureFor(player, false);
         Channel channel = this.channelInjectionService.resolveChannel(player);
+
         if (!this.configContainer.get().fakeChunksEnabledForWorld(worldName)) {
             this.clearSessionState(channel, session);
             return;
@@ -84,6 +92,13 @@ public final class FakeChunkOrchestratorService {
         int targetDistance = this.resolveClientDistance(player, worldName);
         int serverDistance = this.resolveServerDistance(player);
 
+        long deadlineNanos;
+        if (maxTimePerPlayerNanos > 0) {
+            deadlineNanos = System.nanoTime() + Math.min(maxTimePerPlayerNanos, MIN_TIME_NANOS);
+        } else {
+            deadlineNanos = System.nanoTime() + MIN_TIME_NANOS;
+        }
+
         TickSnapshot snapshot = new TickSnapshot(
             world,
             world.getUID(),
@@ -93,7 +108,7 @@ public final class FakeChunkOrchestratorService {
             loc.getYaw(),
             targetDistance,
             serverDistance,
-            System.nanoTime() + Math.max(250_000L, maxTimePerPlayerNanos)
+            deadlineNanos
         );
         this.channelInjectionService.executeOnEventLoop(channel, () -> this.processOnNetty(channel, session, snapshot));
     }
@@ -164,7 +179,7 @@ public final class FakeChunkOrchestratorService {
     }
 
     private int resolveServerDistance(Player player) {
-        int globalDistance = Math.max(2, Bukkit.getViewDistance());
+        int globalDistance = Math.max(MIN_DISTANCE, Bukkit.getViewDistance());
         int playerDistance;
         try {
             playerDistance = player.getViewDistance();
@@ -173,12 +188,16 @@ public final class FakeChunkOrchestratorService {
             playerDistance = globalDistance;
         }
         if (playerDistance > 0) {
-            return Math.clamp(playerDistance, 2, globalDistance);
+            return Math.clamp(playerDistance, MIN_DISTANCE, globalDistance);
         }
         return globalDistance;
     }
 
     private int resolveClientDistance(Player player, String worldName) {
+        if (worldName == null) {
+            return DEFAULT_VIEW_DISTANCE;
+        }
+
         int worldDistance = this.configContainer.get().targetViewDistance(worldName);
         PermissionCacheEntry permissionSnapshot = this.resolvePermissionSnapshot(player);
         int permissionCap = permissionSnapshot.permissionCap();
@@ -203,7 +222,7 @@ public final class FakeChunkOrchestratorService {
             base = worldDistance;
         }
 
-        return Math.max(2, Math.min(base, effectiveCap));
+        return Math.max(MIN_DISTANCE, Math.min(base, effectiveCap));
     }
 
     private PermissionCacheEntry resolvePermissionSnapshot(Player player) {
@@ -214,7 +233,7 @@ public final class FakeChunkOrchestratorService {
         }
 
         int permissionCap = resolvePermissionCap(player);
-        boolean hasBypass = player.hasPermission("extendedhorizons.bypass");
+        boolean hasBypass = player.hasPermission(PERMISSION_BYPASS);
         PermissionCacheEntry updated = new PermissionCacheEntry(permissionCap, hasBypass);
         this.permissionCache.put(playerId, updated);
         return updated;
@@ -222,22 +241,9 @@ public final class FakeChunkOrchestratorService {
 
     private static int resolvePermissionCap(Player player) {
         int maxFound = -1;
-        for (var perm : player.getEffectivePermissions()) {
-            if (!perm.getValue()) {
-                continue;
-            }
-            String name = perm.getPermission();
-            if (!name.startsWith("extendedhorizons.max.")) {
-                continue;
-            }
-            String suffix = name.substring("extendedhorizons.max.".length());
-            try {
-                int value = Integer.parseInt(suffix);
-                if (value > maxFound) {
-                    maxFound = value;
-                }
-            } catch (NumberFormatException throwable) {
-                LOGGER.error("Error on parse permission", throwable);
+        for (int i = 100; i >= 1; i--) {
+            if (player.hasPermission(PERMISSION_PREFIX + i)) {
+                return i;
             }
         }
         return maxFound;
@@ -254,13 +260,16 @@ public final class FakeChunkOrchestratorService {
         this.permissionCache.invalidateAll();
     }
 
-    private void clearSessionState(Channel channel, PlayerSession session) {
+    private void clearSessionState(@Nullable Channel channel, @Nullable PlayerSession session) {
         if (channel == null || session == null) {
             return;
         }
         this.farPlayerTrackingService.clearTracked(channel, session);
         this.unloadSessionChunks(channel, session);
-        this.channelInjectionService.writeBypass(channel, new ClientboundSetChunkCacheRadiusPacket(session.serverViewDistance()));
+        int radius = session.serverViewDistance();
+        if (radius > 0) {
+            this.channelInjectionService.writeBypass(channel, new ClientboundSetChunkCacheRadiusPacket(radius));
+        }
         session.unloadEhChunks();
         session.clearDispatchState();
     }
