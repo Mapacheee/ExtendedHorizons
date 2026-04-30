@@ -13,23 +13,30 @@ import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.PaperFarPlaye
 @WinterBootPlugin
 public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
-    private static ExtendedHorizonsPlugin instance;
+    private static volatile ExtendedHorizonsPlugin instance;
+    private static volatile boolean loading = false;
 
     public static ExtendedHorizonsPlugin getInstance() {
         return instance;
     }
 
     public static <T> T getService(Class<T> type) {
-        if (instance == null) {
+        ExtendedHorizonsPlugin current = instance;
+        if (current == null || loading) {
             throw new IllegalStateException("ExtendedHorizons plugin is not loaded yet");
         }
-        return instance.getInjector().getInstance(type);
+        return current.getInjector().getInstance(type);
     }
 
     @Override
     public void onPluginLoad() {
-        super.onPluginLoad();
-        instance = this;
+        loading = true;
+        try {
+            super.onPluginLoad();
+            instance = this;
+        } finally {
+            loading = false;
+        }
     }
 
     @Override
