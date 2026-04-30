@@ -14,6 +14,7 @@ import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -103,15 +104,21 @@ public final class FarPlayerTrackingService {
             newlyRetained.add(state.uuid());
             if (!alreadyTracked) {
                 int farEntityId = this.allocateFarEntityId(usedFarEntityIds, state.uuid(), state.entityId());
+                if (farEntityId == -1) {
+                    continue;
+                }
                 this.spawn(channel, trackedFarPlayers, usedFarEntityIds, state, farEntityId);
             } else {
                 this.moveAndSync(channel, trackedEntityId, state, syncMove, syncEquip);
             }
         }
 
-        for (Map.Entry<UUID, Integer> entry : trackedFarPlayers.entrySet()) {
-            if (!newlyRetained.contains(entry.getKey()) && this.despawn(channel, entry.getValue())) {
-                trackedFarPlayers.remove(entry.getKey(), entry.getValue());
+        Iterator<Map.Entry<UUID, Integer>> iterator = trackedFarPlayers.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Integer> entry = iterator.next();
+            if (!newlyRetained.contains(entry.getKey())) {
+                this.despawn(channel, entry.getValue());
+                iterator.remove();
                 usedFarEntityIds.remove(entry.getValue());
             }
         }
@@ -164,10 +171,9 @@ public final class FarPlayerTrackingService {
         UUID uuid,
         int entityId
     ) {
-        if (this.despawn(channel, entityId)) {
-            trackedFarPlayers.remove(uuid, entityId);
-            usedFarEntityIds.remove(entityId);
-        }
+        this.despawn(channel, entityId);
+        trackedFarPlayers.remove(uuid, entityId);
+        usedFarEntityIds.remove(entityId);
     }
 
     private boolean despawn(Channel channel, int entityId) {
@@ -178,10 +184,14 @@ public final class FarPlayerTrackingService {
         if (channel == null || session == null) {
             return;
         }
-        for (Map.Entry<UUID, Integer> entry : session.trackedFarPlayers().entrySet()) {
-            if (this.despawn(channel, entry.getValue())) {
-                session.trackedFarPlayers().remove(entry.getKey(), entry.getValue());
+        Map<UUID, Integer> tracked = session.trackedFarPlayers();
+        if (!tracked.isEmpty()) {
+            if (channel.isActive()) {
+                for (int entityId : tracked.values()) {
+                    this.despawn(channel, entityId);
+                }
             }
+            tracked.clear();
         }
         session.trackingBuffer().clear();
     }
@@ -197,7 +207,7 @@ public final class FarPlayerTrackingService {
                 candidate = FAR_ENTITY_ID_RANGE_START;
             }
         }
-        return realEntityId;
+        return -1;
     }
 
 

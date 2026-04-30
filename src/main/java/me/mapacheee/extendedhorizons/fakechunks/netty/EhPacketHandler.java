@@ -4,6 +4,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.buffer.ByteBuf;
 import it.unimi.dsi.fastutil.ints.IntList;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkPosAccess;
@@ -13,10 +14,15 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
+import net.minecraft.network.protocol.BundlePacket;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.ChunkPos;
+import java.util.UUID;
+import java.util.List;
+import java.util.ArrayList;
 
 public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
@@ -27,10 +33,54 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         if (msg instanceof ClientboundLevelChunkWithLightPacket) {
             PacketIdRegistry.markPendingLevelChunkProbe(ctx.channel());
         }
+        if (msg instanceof net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket) {
+            PacketIdRegistry.markPendingRadiusProbe(ctx.channel());
+        }
+        PlayerSession trackingSession = this.session;
+        if (trackingSession != null) {
+            this.captureEntityTracking(ctx, msg, trackingSession);
+        }
         if (this.handle(msg)) {
             ReferenceCountUtil.release(msg);
             promise.setSuccess();
             return;
+        }
+
+        if (msg instanceof ByteBuf buf && this.isPreEncodedRadiusPacket(buf)) {
+            PlayerSession session = this.session;
+            if (session != null && session.enabled()) {
+                session.lastAdvertisedDistance(-1);
+                ReferenceCountUtil.release(msg);
+                promise.setSuccess();
+                return;
+            }
+        }
+        if (msg instanceof BundlePacket<?> bundle) {
+            PlayerSession session = this.session;
+            if (session != null && session.enabled()) {
+                boolean hasRadius = false;
+                for (Object sub : bundle.subPackets()) {
+                    if (sub instanceof ClientboundSetChunkCacheRadiusPacket) {
+                        hasRadius = true;
+                        break;
+                    }
+                }
+                if (hasRadius) {
+                    session.lastAdvertisedDistance(-1);
+                    List<Packet<?>> filtered = new ArrayList<>();
+                    for (Object sub : bundle.subPackets()) {
+                        if (!(sub instanceof ClientboundSetChunkCacheRadiusPacket)) {
+                            filtered.add((Packet<?>) sub);
+                        }
+                    }
+                    ReferenceCountUtil.release(msg);
+                    for (Packet<?> p : filtered) {
+                        ctx.write(p);
+                    }
+                    promise.setSuccess();
+                    return;
+                }
+            }
         }
         if (msg instanceof EhBypassPacket(Object payload)) {
             msg = payload;
@@ -38,12 +88,54 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         super.write(ctx, msg, promise);
     }
 
+    private boolean isPreEncodedRadiusPacket(ByteBuf buf) {
+        if (!PacketIdRegistry.hasChunkCacheRadiusId() || !buf.isReadable()) {
+            return false;
+        }
+        int readerIndex = buf.readerIndex();
+        try {
+            int firstVarInt = readVarInt(buf);
+            int targetId = PacketIdRegistry.getChunkCacheRadiusId();
+            
+            if (firstVarInt == targetId) {
+                return true;
+            }
+            
+            if (firstVarInt == 2 && buf.isReadable()) {
+                int secondVarInt = readVarInt(buf);
+                if (secondVarInt == targetId && buf.readableBytes() == 1) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            buf.readerIndex(readerIndex);
+        }
+        return false;
+    }
+
+    private static int readVarInt(ByteBuf buf) {
+        int value = 0;
+        int position = 0;
+        while (position < 5) {
+            if (!buf.isReadable()) {
+                throw new IndexOutOfBoundsException();
+            }
+            int currentByte = buf.readByte() & 0xFF;
+            value |= (currentByte & 0x7F) << (position * 7);
+            if ((currentByte & 0x80) == 0) {
+                return value;
+            }
+            position++;
+        }
+        throw new IllegalArgumentException("VarInt too big");
+    }
+
     private boolean handle(Object input) {
         PlayerSession session = this.session;
         if (session == null) {
             return false;
         }
-        this.captureEntityTracking(input, session);
         if (!session.enabled()) {
             return false;
         }
@@ -80,11 +172,16 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         };
     }
 
-    private void captureEntityTracking(Object input, PlayerSession session) {
+    private void captureEntityTracking(ChannelHandlerContext ctx, Object input, PlayerSession session) {
         switch (input) {
             case ClientboundAddEntityPacket packet -> {
                 if (packet.getType() == EntityType.PLAYER) {
                     session.addServerTrackedEntity(packet.getId());
+                    UUID targetUuid = packet.getUUID();
+                    Integer farEntityId = session.trackedFarPlayers().remove(targetUuid);
+                    if (farEntityId != null) {
+                        ctx.write(new ClientboundRemoveEntitiesPacket(farEntityId));
+                    }
                 }
             }
             case ClientboundRemoveEntitiesPacket packet -> {

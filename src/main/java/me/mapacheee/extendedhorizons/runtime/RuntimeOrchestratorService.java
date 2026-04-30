@@ -139,7 +139,7 @@ public final class RuntimeOrchestratorService {
                             loc.getZ(),
                             loc.getYaw(),
                             loc.getPitch(),
-                            player.getEyeLocation().getYaw(),
+                            nmsPlayer.yHeadRot,
                             equipment,
                             metadata
                         ));
