@@ -19,6 +19,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public final class FarPlayerCacheService {
 
+    private static final int REGION_SIZE_BITS = 5;
+    private static final int REGION_SIZE = 1 << REGION_SIZE_BITS;
+
     private final Map<UUID, FarPlayerState> states = new ConcurrentHashMap<>();
     private final Map<UUID, Map<Long, Set<UUID>>> spatialIndex = new ConcurrentHashMap<>();
     private final Map<UUID, Long> playerLastRegion = new ConcurrentHashMap<>();
@@ -26,7 +29,7 @@ public final class FarPlayerCacheService {
     private final Map<UUID, List<Pair<EquipmentSlot, ItemStack>>> equipmentCache = new ConcurrentHashMap<>();
 
     private long getRegionKey(int chunkX, int chunkZ) {
-        return ChunkKeyCodec.pack(chunkX >> 5, chunkZ >> 5);
+        return ChunkKeyCodec.pack(chunkX >> REGION_SIZE_BITS, chunkZ >> REGION_SIZE_BITS);
     }
 
     public void updateState(UUID playerId, FarPlayerState state) {
@@ -102,10 +105,10 @@ public final class FarPlayerCacheService {
         int minChunkZ = chunkZ - radiusChunks;
         int maxChunkZ = chunkZ + radiusChunks;
 
-        int minRegionX = minChunkX >> 5;
-        int maxRegionX = maxChunkX >> 5;
-        int minRegionZ = minChunkZ >> 5;
-        int maxRegionZ = maxChunkZ >> 5;
+        int minRegionX = minChunkX >> REGION_SIZE_BITS;
+        int maxRegionX = maxChunkX >> REGION_SIZE_BITS;
+        int minRegionZ = minChunkZ >> REGION_SIZE_BITS;
+        int maxRegionZ = maxChunkZ >> REGION_SIZE_BITS;
 
         List<FarPlayerState> nearby = new ArrayList<>();
         for (int rx = minRegionX; rx <= maxRegionX; rx++) {
