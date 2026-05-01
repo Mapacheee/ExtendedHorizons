@@ -66,6 +66,12 @@ fake-chunks:
     max-entries: 1500
     # Cache bypass window after real interaction invalidation.
     bypass-after-real-interaction-ms: 3000
+    # Max entries in permission cache (player distance permissions).
+    permission-cache-entries: 4096
+    # Permission cache TTL in seconds.
+    permission-cache-ttl-seconds: 5
+    # Max entries in far player cache (player states and equipment).
+    far-player-cache-entries: 500
 
 # Per-world overrides.
 world-settings:

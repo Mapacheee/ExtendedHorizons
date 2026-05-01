@@ -1,9 +1,14 @@
 package me.mapacheee.extendedhorizons.fakechunks.farplayers.cache;
 
+import com.google.inject.Inject;
 import com.mojang.datafixers.util.Pair;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
+import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
+import me.mapacheee.lib.caffeine.cache.Cache;
+import me.mapacheee.lib.caffeine.cache.Caffeine;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 
@@ -21,23 +26,41 @@ public final class FarPlayerCacheService {
 
     private static final int REGION_SIZE_BITS = 5;
     private static final int REGION_SIZE = 1 << REGION_SIZE_BITS;
+    private static final int DEFAULT_MAX_ENTRIES = 500;
 
-    private final Map<UUID, FarPlayerState> states = new ConcurrentHashMap<>();
+    private final Container<EhConfig> configContainer;
+    private volatile Cache<UUID, FarPlayerState> statesCache;
+    private volatile Cache<UUID, List<Pair<EquipmentSlot, ItemStack>>> equipmentCache;
     private final Map<UUID, Map<Long, Set<UUID>>> spatialIndex = new ConcurrentHashMap<>();
     private final Map<UUID, Long> playerLastRegion = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> playerLastWorld = new ConcurrentHashMap<>();
-    private final Map<UUID, List<Pair<EquipmentSlot, ItemStack>>> equipmentCache = new ConcurrentHashMap<>();
+
+    @Inject
+    public FarPlayerCacheService(Container<EhConfig> configContainer) {
+        this.configContainer = configContainer;
+        this.rebuild();
+    }
+
+    public void rebuild() {
+        int maxEntries = this.configContainer.get().farPlayerCacheEntries();
+        this.statesCache = Caffeine.newBuilder()
+            .maximumSize(maxEntries)
+            .build();
+        this.equipmentCache = Caffeine.newBuilder()
+            .maximumSize(maxEntries)
+            .build();
+    }
 
     private long getRegionKey(int chunkX, int chunkZ) {
         return ChunkKeyCodec.pack(chunkX >> REGION_SIZE_BITS, chunkZ >> REGION_SIZE_BITS);
     }
 
     public void updateState(UUID playerId, FarPlayerState state) {
-        this.states.put(playerId, state);
+        this.statesCache.put(playerId, state);
 
         UUID worldId = state.worldId();
-        int chunkX = (int) Math.floor(state.x()) >> 4;
-        int chunkZ = (int) Math.floor(state.z()) >> 4;
+        int chunkX = (int) (state.x() / REGION_SIZE);
+        int chunkZ = (int) (state.z() / REGION_SIZE);
         long regionKey = getRegionKey(chunkX, chunkZ);
 
         UUID prevWorld = this.playerLastWorld.get(playerId);
@@ -79,16 +102,16 @@ public final class FarPlayerCacheService {
     }
 
     public List<Pair<EquipmentSlot, ItemStack>> getEquipment(UUID playerId) {
-        return this.equipmentCache.get(playerId);
+        return this.equipmentCache.getIfPresent(playerId);
     }
 
     public FarPlayerState getState(UUID playerId) {
-        return this.states.get(playerId);
+        return this.statesCache.getIfPresent(playerId);
     }
 
     public void removePlayer(UUID playerId) {
-        this.states.remove(playerId);
-        this.equipmentCache.remove(playerId);
+        this.statesCache.invalidate(playerId);
+        this.equipmentCache.invalidate(playerId);
         UUID worldId = this.playerLastWorld.remove(playerId);
         Long regionKey = this.playerLastRegion.remove(playerId);
         removeFromSpatialIndex(playerId, worldId, regionKey);
@@ -116,7 +139,7 @@ public final class FarPlayerCacheService {
                 Set<UUID> playerIds = regions.get(ChunkKeyCodec.pack(rx, rz));
                 if (playerIds != null) {
                     for (UUID pid : playerIds) {
-                        FarPlayerState state = this.states.get(pid);
+                        FarPlayerState state = this.statesCache.getIfPresent(pid);
                         if (state != null) {
                             nearby.add(state);
                         }

@@ -161,6 +161,30 @@ public record EhConfig(
         return Math.max(250L, this.fakeChunks.cache().bypassAfterRealInteractionMs());
     }
 
+    public int permissionCacheEntries() {
+        if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
+            return 4096;
+        }
+        int configured = this.fakeChunks.cache().permissionCacheEntries();
+        return configured > 0 ? configured : 4096;
+    }
+
+    public int permissionCacheTtlSeconds() {
+        if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
+            return 5;
+        }
+        int configured = this.fakeChunks.cache().permissionCacheTtlSeconds();
+        return Math.max(1, configured);
+    }
+
+    public int farPlayerCacheEntries() {
+        if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
+            return 500;
+        }
+        int configured = this.fakeChunks.cache().farPlayerCacheEntries();
+        return Math.max(64, configured);
+    }
+
     public int runtimePeriodTicks() {
         if (this.fakeChunks == null || this.fakeChunks.runtime() == null) {
             return 1;
@@ -255,7 +279,10 @@ public record EhConfig(
     public record CacheConfig(
         @Setting("ttl-seconds") int ttlSeconds,
         @Setting("max-entries") int maxEntries,
-        @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs
+        @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs,
+        @Setting("permission-cache-entries") int permissionCacheEntries,
+        @Setting("permission-cache-ttl-seconds") int permissionCacheTtlSeconds,
+        @Setting("far-player-cache-entries") int farPlayerCacheEntries
     ) {}
 
     @ConfigSerializable

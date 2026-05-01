@@ -30,8 +30,8 @@ import org.slf4j.LoggerFactory;
 @Service
 public final class FakeChunkOrchestratorService {
 
-    private static final Duration PERMISSION_CACHE_TTL = Duration.ofSeconds(5);
-    private static final long PERMISSION_CACHE_MAX_SIZE = 4096L;
+    private static final Duration DEFAULT_PERMISSION_TTL = Duration.ofSeconds(5);
+    private static final long DEFAULT_PERMISSION_MAX_SIZE = 4096L;
     private static final int MIN_DISTANCE = 2;
     private static final long MIN_TIME_NANOS = 250_000L;
     private static final int DEFAULT_VIEW_DISTANCE = 10;
@@ -44,7 +44,7 @@ public final class FakeChunkOrchestratorService {
     private final ChunkDispatchService dispatchService;
     private final ChannelInjectionService channelInjectionService;
     private final FarPlayerTrackingService farPlayerTrackingService;
-    private final Cache<UUID, PermissionCacheEntry> permissionCache;
+    private Cache<UUID, PermissionCacheEntry> permissionCache;
 
     @Inject
     public FakeChunkOrchestratorService(
@@ -59,9 +59,17 @@ public final class FakeChunkOrchestratorService {
         this.dispatchService = dispatchService;
         this.channelInjectionService = channelInjectionService;
         this.farPlayerTrackingService = farPlayerTrackingService;
+        this.rebuildPermissionCache();
+    }
+
+    public void rebuildPermissionCache() {
+        EhConfig config = this.configContainer.get();
+        long maxSize = config.permissionCacheEntries();
+        int ttlSeconds = config.permissionCacheTtlSeconds();
+        Duration ttl = ttlSeconds > 0 ? Duration.ofSeconds(ttlSeconds) : DEFAULT_PERMISSION_TTL;
         this.permissionCache = Caffeine.newBuilder()
-            .maximumSize(PERMISSION_CACHE_MAX_SIZE)
-            .expireAfterWrite(PERMISSION_CACHE_TTL)
+            .maximumSize(maxSize)
+            .expireAfterWrite(ttl)
             .build();
     }
 
