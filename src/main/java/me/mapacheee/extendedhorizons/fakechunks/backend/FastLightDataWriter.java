@@ -14,6 +14,9 @@ import java.util.List;
 
 final class FastLightDataWriter {
 
+    private static final int NO_SKY_HEADER_BYTES = 3;
+    private static final int DEFAULT_SECTION_COUNT = 16;
+
     private static final MethodHandle GET_STORAGE_VISIBLE = createStorageVisibleHandle();
 
     private static MethodHandle createStorageVisibleHandle() {
@@ -98,7 +101,7 @@ final class FastLightDataWriter {
     private static int estimateNoSkyLightSize(byte[][] blockLight) {
         NoSkyMasks masks = buildNoSkyMasks(blockLight, null);
 
-        int size = 3;
+        int size = NO_SKY_HEADER_BYTES;
         size += estimateBitSet(masks.notBlockEmpty().toLongArray());
         size += estimateBitSet(masks.blockEmpty().toLongArray());
         size += varIntSize(masks.blockDataCount()) + masks.blockDataBytes();
@@ -106,12 +109,13 @@ final class FastLightDataWriter {
     }
 
     private static NoSkyMasks buildNoSkyMasks(byte[][] blockLight, List<byte[]> blockDataOut) {
-        BitSet notBlockEmpty = new BitSet();
-        BitSet blockEmpty = new BitSet();
+        int sectionCount = blockLight.length;
+        BitSet notBlockEmpty = new BitSet(sectionCount);
+        BitSet blockEmpty = new BitSet(sectionCount);
         int blockDataCount = 0;
         int blockDataBytes = 0;
 
-        for (int indexY = 0; indexY < blockLight.length; indexY++) {
+        for (int indexY = 0; indexY < sectionCount; indexY++) {
             byte[] block = blockLight[indexY];
             if (block == null) {
                 blockEmpty.set(indexY);
@@ -129,15 +133,16 @@ final class FastLightDataWriter {
     }
 
     private static LightMasks buildMasks(byte[][] blockLight, byte[][] skyLight) {
-        List<byte[]> skyData = new ArrayList<>(skyLight.length);
-        BitSet notSkyEmpty = new BitSet();
-        BitSet skyEmpty = new BitSet();
+        int sectionCount = blockLight.length;
+        List<byte[]> skyData = new ArrayList<>(Math.min(sectionCount, DEFAULT_SECTION_COUNT));
+        BitSet notSkyEmpty = new BitSet(sectionCount);
+        BitSet skyEmpty = new BitSet(sectionCount);
 
-        List<byte[]> blockData = new ArrayList<>(blockLight.length);
-        BitSet notBlockEmpty = new BitSet();
-        BitSet blockEmpty = new BitSet();
+        List<byte[]> blockData = new ArrayList<>(Math.min(sectionCount, DEFAULT_SECTION_COUNT));
+        BitSet notBlockEmpty = new BitSet(sectionCount);
+        BitSet blockEmpty = new BitSet(sectionCount);
 
-        for (int indexY = 0; indexY < blockLight.length; indexY++) {
+        for (int indexY = 0; indexY < sectionCount; indexY++) {
             byte[] sky = skyLight[indexY];
             if (sky == null) {
                 skyEmpty.set(indexY);
