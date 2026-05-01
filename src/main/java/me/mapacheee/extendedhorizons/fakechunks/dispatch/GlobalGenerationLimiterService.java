@@ -14,15 +14,14 @@ public final class GlobalGenerationLimiterService {
     }
 
     public boolean tryAcquire() {
-        while (true) {
-            int current = this.remaining.get();
+        int current;
+        do {
+            current = this.remaining.get();
             if (current <= 0) {
                 return false;
             }
-            if (this.remaining.compareAndSet(current, current - 1)) {
-                return true;
-            }
-        }
+        } while (!this.remaining.compareAndSet(current, current - 1));
+        return true;
     }
 }
 
