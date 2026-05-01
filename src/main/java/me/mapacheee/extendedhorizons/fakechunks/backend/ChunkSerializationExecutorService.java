@@ -17,8 +17,11 @@ import java.util.function.Supplier;
 @Service
 public final class ChunkSerializationExecutorService {
 
+    private static final String THREAD_PREFIX = "EH-ChunkSerializer-";
+
     private final Container<EhConfig> configContainer;
     private volatile ExecutorService executor;
+    private volatile boolean shutdown = false;
 
     @Inject
     public ChunkSerializationExecutorService(Container<EhConfig> configContainer) {
@@ -31,7 +34,7 @@ public final class ChunkSerializationExecutorService {
         if (supplier == null) {
             return CompletableFuture.completedFuture(null);
         }
-        if (current == null || current.isShutdown()) {
+        if (current == null || this.shutdown) {
             try {
                 return CompletableFuture.completedFuture(supplier.get());
             } catch (Throwable throwable) {
@@ -57,7 +60,8 @@ public final class ChunkSerializationExecutorService {
         this.shutdownExecutor();
     }
 
-    private void shutdownExecutor() {
+    private synchronized void shutdownExecutor() {
+        this.shutdown = true;
         ExecutorService current = this.executor;
         this.executor = null;
         if (current != null) {
@@ -71,7 +75,7 @@ public final class ChunkSerializationExecutorService {
 
         @Override
         public Thread newThread(@NotNull Runnable runnable) {
-            Thread thread = new Thread(runnable, "EH-ChunkSerializer-" + this.counter.incrementAndGet());
+            Thread thread = new Thread(runnable, THREAD_PREFIX + this.counter.incrementAndGet());
             thread.setDaemon(true);
             return thread;
         }

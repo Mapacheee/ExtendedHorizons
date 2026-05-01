@@ -38,6 +38,15 @@ import java.util.concurrent.CompletableFuture;
 @Service
 public final class PaperChunkBackend implements ChunkBackend {
 
+    private static final int PACKET_HEADER_SIZE = 12;
+    private static final int SECTION_BUFFER_PADDING = 512;
+    private static final int SECTION_BUFFER_MIN = 64;
+    private static final int BIOME_BUFFER_SIZE = 64;
+    private static final int MIN_PACKET_SIZE = 2048;
+    private static final int LIGHT_ESTIMATE_VANILLA = 2048;
+    private static final int CHUNK_ESTIMATE_FAST = 1024;
+    private static final int CHUNK_ESTIMATE_VANILLA = 2048;
+
     private static final MethodHandle GET_NON_EMPTY_BLOCK_COUNT = createNonEmptyBlockCountHandle();
 
     private static MethodHandle createNonEmptyBlockCountHandle() {
@@ -89,6 +98,8 @@ public final class PaperChunkBackend implements ChunkBackend {
         }
 
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
+        int serializationWorkers = this.configContainer.get().serializationWorkers();
+        boolean useAsyncSerialization = serializationWorkers > 0;
         java.util.function.Consumer<Chunk> task = (asyncChunk) -> {
             try {
                 ServerLevel level = ((CraftWorld) world).getHandle();
@@ -101,10 +112,9 @@ public final class PaperChunkBackend implements ChunkBackend {
                 UUID worldId = world.getUID();
                 long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
 
-                boolean offloadSerialization = this.configContainer.get().serializationWorkers() > 0
-                    && antiXrayProcessor == null;
+                boolean offloadSerialization = useAsyncSerialization && antiXrayProcessor == null;
                 CompletableFuture<ByteBuf> serializationFuture;
-                if (antiXrayProcessor != null && this.configContainer.get().serializationWorkers() > 0) {
+                if (antiXrayProcessor != null && useAsyncSerialization) {
                     long snapshotStart = System.nanoTime();
                     AntiXrayChunkSnapshot snapshot = this.captureAntiXraySnapshot(resolvedChunk, antiXrayProcessor, worldId, chunkKey);
                     this.metricsService.recordAntiXraySnapshot(System.nanoTime() - snapshotStart);
@@ -112,52 +122,23 @@ public final class PaperChunkBackend implements ChunkBackend {
                         future.complete(null);
                         return;
                     }
-                    try {
-                        serializationFuture = this.serializationExecutorService
-                            .submit(() -> {
-                                long asyncStart = System.nanoTime();
-                                ByteBuf payload = this.serializeAntiXraySnapshot(chunkX, chunkZ, snapshot);
-                                this.metricsService.recordAntiXrayAsync(System.nanoTime() - asyncStart);
-                                if (payload == null) {
-                                    this.metricsService.recordAntiXrayFallback();
-                                }
-                                return payload;
-                            });
-                    } catch (Throwable throwable) {
+                    serializationFuture = this.trySubmitAsync(() -> {
+                        long asyncStart = System.nanoTime();
+                        ByteBuf payload = this.serializeAntiXraySnapshot(chunkX, chunkZ, snapshot);
+                        this.metricsService.recordAntiXrayAsync(System.nanoTime() - asyncStart);
+                        if (payload == null) {
+                            this.metricsService.recordAntiXrayFallback();
+                        }
+                        return payload;
+                    }, () -> {
                         this.metricsService.recordAntiXrayFallback();
                         snapshot.release();
-                        ByteBuf packetData = this.serializeLevelChunkWithLight(
-                            level,
-                            resolvedChunk,
-                            chunkX,
-                            chunkZ,
-                            worldId,
-                            chunkKey,
-                            antiXrayProcessor);
-                        serializationFuture = CompletableFuture.completedFuture(packetData);
-                    }
+                        return this.serializeLevelChunkWithLight(level, resolvedChunk, chunkX, chunkZ, worldId, chunkKey, antiXrayProcessor);
+                    });
                 } else if (offloadSerialization) {
-                    try {
-                        serializationFuture = this.serializationExecutorService.submit(() -> this.serializeLevelChunkWithLight(
-                            level,
-                            resolvedChunk,
-                            chunkX,
-                            chunkZ,
-                            worldId,
-                            chunkKey,
-                            null));
-                    } catch (Throwable throwable) {
-                        ByteBuf fallback = this.serializeLevelChunkWithLight(
-                            level,
-                            resolvedChunk,
-                            chunkX,
-                            chunkZ,
-                            worldId,
-                            chunkKey,
-                            null);
-                        future.complete(fallback);
-                        return;
-                    }
+                    serializationFuture = this.trySubmitAsync(
+                        () -> this.serializeLevelChunkWithLight(level, resolvedChunk, chunkX, chunkZ, worldId, chunkKey, null),
+                        () -> this.serializeLevelChunkWithLight(level, resolvedChunk, chunkX, chunkZ, worldId, chunkKey, null));
                 } else {
                     ByteBuf packetData = this.serializeLevelChunkWithLight(
                         level,
@@ -219,6 +200,17 @@ public final class PaperChunkBackend implements ChunkBackend {
             return levelChunk;
         }
         return null;
+    }
+
+    private CompletableFuture<ByteBuf> trySubmitAsync(
+        java.util.function.Supplier<ByteBuf> asyncTask,
+        java.util.function.Supplier<ByteBuf> fallbackTask
+    ) {
+        try {
+            return this.serializationExecutorService.submit(asyncTask);
+        } catch (Throwable throwable) {
+            return CompletableFuture.completedFuture(fallbackTask.get());
+        }
     }
 
     private void runInChunkContext(
@@ -357,18 +349,17 @@ public final class PaperChunkBackend implements ChunkBackend {
     }
 
     private int estimatePacketSize(LevelChunk chunk, AntiXrayProcessor antiXrayProcessor, boolean useFast) {
-        int headerEstimate = 12;
-        int chunkEstimate;
+      int chunkEstimate;
         if (useFast && antiXrayProcessor != null) {
-            chunkEstimate = this.estimateSectionBufferSize(chunk) + 1024;
+            chunkEstimate = this.estimateSectionBufferSize(chunk) + CHUNK_ESTIMATE_FAST;
         } else if (useFast) {
             chunkEstimate = FastChunkDataWriter.estimateChunkDataSize(chunk);
         } else {
-            chunkEstimate = this.estimateSectionBufferSize(chunk) + 2048;
+            chunkEstimate = this.estimateSectionBufferSize(chunk) + CHUNK_ESTIMATE_VANILLA;
         }
 
-        int lightEstimate = useFast ? FastLightDataWriter.estimateLightDataSize(chunk) : 2048;
-        return Math.max(2048, headerEstimate + chunkEstimate + lightEstimate);
+        int lightEstimate = useFast ? FastLightDataWriter.estimateLightDataSize(chunk) : LIGHT_ESTIMATE_VANILLA;
+        return Math.max(MIN_PACKET_SIZE, PACKET_HEADER_SIZE + chunkEstimate + lightEstimate);
     }
 
     private int estimateSectionBufferSize(LevelChunk chunk) {
@@ -376,7 +367,7 @@ public final class PaperChunkBackend implements ChunkBackend {
         for (LevelChunkSection section : chunk.getSections()) {
             size += Math.max(0, section.getSerializedSize());
         }
-        return size + 512;
+        return size + SECTION_BUFFER_PADDING;
     }
 
     private void writeFastLightWithCache(FriendlyByteBuf out, LevelChunk chunk, UUID worldId, long chunkKey) {
@@ -471,7 +462,7 @@ public final class PaperChunkBackend implements ChunkBackend {
 
     private ByteBuf serializeAntiXraySnapshot(int chunkX, int chunkZ, AntiXrayChunkSnapshot snapshot) {
         AntiXraySectionSnapshot[] sections = snapshot.sections();
-        int sectionCapacity = Math.max(512, this.estimateSectionSnapshotSize(sections));
+        int sectionCapacity = Math.max(SECTION_BUFFER_PADDING, this.estimateSectionSnapshotSize(sections));
         ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(sectionCapacity, Integer.MAX_VALUE);
         try {
             FriendlyByteBuf sectionOut = new FriendlyByteBuf(sectionBuffer);
@@ -493,13 +484,13 @@ public final class PaperChunkBackend implements ChunkBackend {
 
             int sectionBytes = sectionBuffer.readableBytes();
 
-            int estimated = 12
+            int estimated = PACKET_HEADER_SIZE
                 + snapshot.heightmaps().readableBytes()
                 + VarInt.getByteSize(sectionBytes)
                 + sectionBytes
                 + 1
                 + snapshot.light().readableBytes();
-            ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(Math.max(2048, estimated), Integer.MAX_VALUE);
+            ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(Math.max(MIN_PACKET_SIZE, estimated), Integer.MAX_VALUE);
             FriendlyByteBuf out = new FriendlyByteBuf(raw);
             try {
                 VarInt.write(out, PacketIdRegistry.getLevelChunkWithLightId());
