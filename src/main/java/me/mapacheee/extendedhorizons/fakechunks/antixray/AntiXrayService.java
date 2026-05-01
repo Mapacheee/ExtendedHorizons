@@ -10,14 +10,14 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.util.CraftMagicNumbers;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public final class AntiXrayService {
+
+    private static final String MINECRAFT_PREFIX = "MINECRAFT:";
+    private static final int MAX_CACHED_PROFILES = 32;
 
     private final Container<EhConfig> configContainer;
     private final Map<UUID, CachedProfile> cachedProfiles = new ConcurrentHashMap<>();
@@ -89,7 +89,7 @@ public final class AntiXrayService {
         if (hiddenBlocks == null || hiddenBlocks.isEmpty()) {
             return new int[0];
         }
-        List<Integer> states = new ArrayList<>();
+        LinkedHashSet<Integer> states = new LinkedHashSet<>();
         for (String key : hiddenBlocks) {
             if (key == null || key.isBlank()) {
                 continue;
@@ -106,19 +106,18 @@ public final class AntiXrayService {
                 states.add(Block.BLOCK_STATE_REGISTRY.getId(state));
             }
         }
-        return states.stream().mapToInt(Integer::intValue).distinct().sorted().toArray();
+        return states.stream().mapToInt(Integer::intValue).toArray();
     }
 
     private Material parseMaterial(String key) {
-        String normalized = key.toUpperCase(java.util.Locale.ROOT);
-        if (normalized.startsWith("MINECRAFT:")) {
-            normalized = normalized.substring("MINECRAFT:".length());
+        String normalized = key.toUpperCase(Locale.ROOT);
+        if (normalized.startsWith(MINECRAFT_PREFIX)) {
+            normalized = normalized.substring(MINECRAFT_PREFIX.length());
         }
         return Material.matchMaterial(normalized, false);
     }
 
-    private record CachedProfile(EhConfig config, List<String> hiddenBlocks, AntiXrayProcessor processor) {
-    }
+    private record CachedProfile(EhConfig config, List<String> hiddenBlocks, AntiXrayProcessor processor) { }
 
     public void invalidateAllProfiles() {
         this.cachedProfiles.clear();
