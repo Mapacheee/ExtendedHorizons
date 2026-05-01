@@ -25,16 +25,16 @@ fake-chunks:
     burst-bytes: 768000
 
   # Max newly queued fake chunks per player processing cycle.
-  max-send-per-cycle: 3
+  max-send-per-cycle: 2
 
   # Global limit of new chunk generations per tick (protects TPS under load).
-  max-global-generations-per-tick: 6
+  max-global-generations-per-tick: 4
 
   # Max in-flight chunk builds per player.
-  max-inflight-per-player: 5
+  max-inflight-per-player: 3
 
   # Hard queue cap per player.
-  chunk-queue-size: 16
+  chunk-queue-size: 24
 
   # If true, missing chunks can be generated. If false, only already-available chunks are used.
   generate-missing-chunks: false
@@ -55,23 +55,23 @@ fake-chunks:
     # Enables/disables far-player tracking.
     enabled: true
     # Update interval for far-player movement packets.
-    move-ticks: 4
+    move-ticks: 6
     # Update interval for far-player equipment/metadata packets.
-    equip-ticks: 20
+    equip-ticks: 30
 
   cache:
     # Serialized fake chunk cache TTL.
-    ttl-seconds: 15
+    ttl-seconds: 10
     # Max cache entries.
-    max-entries: 1500
+    max-entries: 400
     # Cache bypass window after real interaction invalidation.
     bypass-after-real-interaction-ms: 3000
     # Max entries in permission cache (player distance permissions).
-    permission-cache-entries: 4096
+    permission-cache-entries: 1024
     # Permission cache TTL in seconds.
     permission-cache-ttl-seconds: 5
     # Max entries in far player cache (player states and equipment).
-    far-player-cache-entries: 500
+    far-player-cache-entries: 150
 
 # Per-world overrides.
 world-settings:
