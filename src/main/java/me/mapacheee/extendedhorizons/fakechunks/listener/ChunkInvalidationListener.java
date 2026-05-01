@@ -24,6 +24,8 @@ import java.util.UUID;
 @ListenerComponent
 public final class ChunkInvalidationListener implements Listener {
 
+    private static final int CHUNK_SHIFT = 4;
+
     private final ChunkBuildCacheService cacheService;
     private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
     private final LightPayloadCacheService lightPayloadCacheService;
@@ -55,12 +57,14 @@ public final class ChunkInvalidationListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
-        this.invalidate(event.getBlockPlaced());
+       Block placed = event.getBlockPlaced();
+        this.invalidate(placed);
     }
 
     private void invalidate(Block block) {
-        int chunkX = block.getX() >> 4;
-        int chunkZ = block.getZ() >> 4;
+        block.getWorld();
+        int chunkX = block.getX() >> CHUNK_SHIFT;
+        int chunkZ = block.getZ() >> CHUNK_SHIFT;
         long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
         UUID worldId = block.getWorld().getUID();
         this.cacheService.invalidate(worldId, chunkKey);
