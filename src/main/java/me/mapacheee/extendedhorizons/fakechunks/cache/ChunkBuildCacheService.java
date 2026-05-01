@@ -11,21 +11,21 @@ import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 
 import java.time.Duration;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 @Service
 public final class ChunkBuildCacheService {
+
+    private static final long UNAVAILABLE_TTL_MS = 30_000L;
 
     private final Container<EhConfig> configContainer;
 
     private volatile Cache<ChunkKey, ByteBuf> serializedCache;
     private volatile Cache<ChunkKey, CompletableFuture<ByteBuf>> buildEntryCache;
     private volatile Cache<ChunkKey, Boolean> bypassCache;
-    private final Map<ChunkKey, Long> unavailableUntilMs = new ConcurrentHashMap<>();
+    private volatile Cache<ChunkKey, Long> unavailableUntilMs;
 
     @Inject
     public ChunkBuildCacheService(Container<EhConfig> configContainer) {
@@ -33,26 +33,36 @@ public final class ChunkBuildCacheService {
         this.rebuildCaches();
     }
 
-    public synchronized void rebuildCaches() {
+    public void rebuildCaches() {
         int ttlSeconds = this.configContainer.get().cacheTtlSeconds();
         int maxEntries = this.configContainer.get().cacheMaxEntries();
         long bypassMs = this.configContainer.get().cacheBypassAfterRealInteractionMs();
 
-        this.serializedCache = Caffeine.newBuilder()
+        Cache<ChunkKey, ByteBuf> newSerializedCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
             .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
             .removalListener((ChunkKey key, ByteBuf value, RemovalCause cause) -> ReferenceCountUtil.release(value))
             .build();
 
-        this.buildEntryCache = Caffeine.newBuilder()
+        Cache<ChunkKey, CompletableFuture<ByteBuf>> newBuildEntryCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
             .expireAfterAccess(Duration.ofSeconds(ttlSeconds))
             .build();
 
-        this.bypassCache = Caffeine.newBuilder()
+        Cache<ChunkKey, Boolean> newBypassCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
             .expireAfterWrite(Duration.ofMillis(bypassMs))
             .build();
+
+        Cache<ChunkKey, Long> newUnavailableCache = Caffeine.newBuilder()
+            .maximumSize(maxEntries)
+            .expireAfterWrite(Duration.ofMillis(UNAVAILABLE_TTL_MS))
+            .build();
+
+        this.serializedCache = newSerializedCache;
+        this.buildEntryCache = newBuildEntryCache;
+        this.bypassCache = newBypassCache;
+        this.unavailableUntilMs = newUnavailableCache;
     }
 
     public ByteBuf getSerialized(UUID worldId, long chunkKey) {
@@ -111,7 +121,7 @@ public final class ChunkBuildCacheService {
         this.serializedCache.invalidate(key);
         this.buildEntryCache.invalidate(key);
         this.bypassCache.put(key, Boolean.TRUE);
-        this.unavailableUntilMs.remove(key);
+        this.unavailableUntilMs.invalidate(key);
     }
 
     public boolean shouldBypass(UUID worldId, long chunkKey) {
@@ -133,24 +143,18 @@ public final class ChunkBuildCacheService {
         if (worldId == null) {
             return false;
         }
-        ChunkKey key = new ChunkKey(worldId, chunkKey);
-        Long until = this.unavailableUntilMs.get(key);
+        Long until = this.unavailableUntilMs.getIfPresent(new ChunkKey(worldId, chunkKey));
         if (until == null) {
             return false;
         }
-        long now = System.currentTimeMillis();
-        if (until <= now) {
-            this.unavailableUntilMs.remove(key);
-            return false;
-        }
-        return true;
+        return System.currentTimeMillis() < until;
     }
 
     public void invalidateAll() {
         this.serializedCache.invalidateAll();
         this.buildEntryCache.invalidateAll();
         this.bypassCache.invalidateAll();
-        this.unavailableUntilMs.clear();
+        this.unavailableUntilMs.invalidateAll();
     }
 
     public record ChunkKey(UUID worldId, long chunkKey) {
