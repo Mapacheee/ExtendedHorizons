@@ -29,6 +29,7 @@ import net.minecraft.world.item.ItemStack;
 import com.mojang.datafixers.util.Pair;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -37,6 +38,9 @@ public final class RuntimeOrchestratorService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeOrchestratorService.class);
     private static final int TICK_LENGTH_DIVISOR = 2;
+    private static final int EQUIPMENT_SLOT_COUNT = EquipmentSlot.values().length;
+    private static final int MAX_PLAYERS_PER_TICK = 200;
+    private static final long NANOS_PER_TICK = 50_000_000L;
 
     private final Container<EhConfig> configContainer;
     private final SessionRegistry sessionRegistry;
@@ -86,38 +90,42 @@ public final class RuntimeOrchestratorService {
         if (plugin == null || !plugin.isEnabled()) {
             return;
         }
-        List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
-        if (players.isEmpty()) {
+        List<Player> playerList = new ArrayList<>(Bukkit.getOnlinePlayers());
+        if (playerList.isEmpty()) {
             return;
         }
-        Collections.shuffle(players);
+        Collections.shuffle(playerList);
 
         int nettyThreadCount = Math.max(1, SystemPropertyUtil.getInt(
             "io.netty.eventLoopThreads", NettyRuntime.availableProcessors() * 2));
         EhConfig config = this.configContainer.get();
         this.generationLimiterService.reset(config.maxGlobalGenerationsPerTick());
         long periodTicks = Math.max(1L, config.runtimePeriodTicks());
-        long nanosPerServerTick = 50_000_000L * periodTicks;
+        long nanosPerServerTick = NANOS_PER_TICK * periodTicks;
         long tickLengthNanos = nanosPerServerTick / TICK_LENGTH_DIVISOR;
-        long maxTimePerPlayerNanos = (nettyThreadCount * tickLengthNanos) / Math.max(nettyThreadCount, players.size());
+
+        int playerCount = Math.min(playerList.size(), MAX_PLAYERS_PER_TICK);
+        long maxTimePerPlayerNanos = (nettyThreadCount * tickLengthNanos) / Math.max(1, playerCount);
 
         this.orchestratorTick = (this.orchestratorTick + 1) & Integer.MAX_VALUE;
         boolean farPlayersEnabled = config.farPlayersEnabled();
         boolean pollEquipment = farPlayersEnabled && Math.floorMod(this.orchestratorTick, config.farPlayerEquipTicks()) == 0;
 
-        for (Player player : players) {
-            this.sessionRegistry.ensureFor(player, false);
+        for (Player player : playerList) {
+          player.getWorld();
+          this.sessionRegistry.ensureFor(player, false);
             FoliaTaskUtil.runForPlayer(player, plugin, () -> {
                 try {
-                    Location loc = player.getLocation();
-                    ServerPlayer nmsPlayer = ((CraftPlayer) player).getHandle();
+                  Location loc = player.getLocation();
+                  player.getWorld();
+                  ServerPlayer nmsPlayer = ((CraftPlayer) player).getHandle();
 
                     if (farPlayersEnabled) {
                         List<SynchedEntityData.DataValue<?>> metadata = nmsPlayer.getEntityData().packAll();
                         List<Pair<EquipmentSlot, ItemStack>> equipment;
 
                         if (pollEquipment) {
-                            equipment = new ArrayList<>(6);
+                            equipment = new ArrayList<>(EQUIPMENT_SLOT_COUNT);
                             for (EquipmentSlot slot : EquipmentSlot.values()) {
                                 ItemStack item = nmsPlayer.getItemBySlot(slot);
                                 equipment.add(Pair.of(slot, item.copy()));
