@@ -16,6 +16,9 @@ import java.util.UUID;
 @Service
 public final class LightPayloadCacheService {
 
+    private static final int MAX_ENTRIES_DIVISOR = 2;
+    private static final int MIN_CACHE_ENTRIES = 128;
+
     private final Container<EhConfig> configContainer;
     private volatile Cache<LightChunkKey, ByteBuf> cache;
 
@@ -25,9 +28,9 @@ public final class LightPayloadCacheService {
         this.rebuild();
     }
 
-    public synchronized void rebuild() {
+    public void rebuild() {
         int ttlSeconds = Math.max(1, this.configContainer.get().cacheTtlSeconds());
-        int maxEntries = Math.max(128, this.configContainer.get().cacheMaxEntries() / 2);
+        int maxEntries = Math.max(MIN_CACHE_ENTRIES, this.configContainer.get().cacheMaxEntries() / MAX_ENTRIES_DIVISOR);
 
         this.cache = Caffeine.newBuilder()
             .maximumSize(maxEntries)

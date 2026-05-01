@@ -21,6 +21,10 @@ import java.util.UUID;
 public final class AntiXrayPayloadCacheService {
 
     private static final int FORMAT_VERSION = 1;
+    private static final int MAX_ENTRIES_DIVISOR = 2;
+    private static final int PROFILE_HASH_DIVISOR = 4;
+    private static final int MIN_CACHE_ENTRIES = 128;
+    private static final int MIN_PROFILE_ENTRIES = 64;
 
     private final Container<EhConfig> configContainer;
     private volatile Cache<AntiXrayPayloadKey, ByteBuf> cache;
@@ -32,10 +36,10 @@ public final class AntiXrayPayloadCacheService {
         this.rebuild();
     }
 
-    public synchronized void rebuild() {
+    public void rebuild() {
         int ttlSeconds = Math.max(1, this.configContainer.get().cacheTtlSeconds());
-        int maxEntries = Math.max(128, this.configContainer.get().cacheMaxEntries() / 2);
-        int profileHashMaxEntries = Math.max(64, maxEntries / 4);
+        int maxEntries = Math.max(MIN_CACHE_ENTRIES, this.configContainer.get().cacheMaxEntries() / MAX_ENTRIES_DIVISOR);
+        int profileHashMaxEntries = Math.max(MIN_PROFILE_ENTRIES, maxEntries / PROFILE_HASH_DIVISOR);
 
         this.cache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
