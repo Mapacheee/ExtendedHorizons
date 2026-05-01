@@ -11,7 +11,9 @@ import java.util.stream.IntStream;
 public final class ChunkPlannerService {
 
     public static final int MAX_CHUNK_DISTANCE = 128;
-    private static final long[][] RADIUS_ITERATION_LIST = new long[MAX_CHUNK_DISTANCE + 3][];
+    private static final int MAX_RADIUS_INDEX = MAX_CHUNK_DISTANCE + 2;
+    private static final int EDGE_BUFFER = 2;
+    private static final long[][] RADIUS_ITERATION_LIST = new long[MAX_RADIUS_INDEX + 1][];
 
     static {
         for (int radius = 0; radius < RADIUS_ITERATION_LIST.length; radius++) {
@@ -31,22 +33,21 @@ public final class ChunkPlannerService {
     }
 
     public static long[] radiusIterationList(int radius) {
-        int index = Math.clamp(radius, 0, MAX_CHUNK_DISTANCE + 2);
+        int index = Math.clamp(radius, 0, MAX_RADIUS_INDEX);
         return RADIUS_ITERATION_LIST[index];
     }
 
     public static boolean isWithinRange(int posX, int posZ, int viewDistance) {
         int absX = Math.abs(posX);
         int absZ = Math.abs(posZ);
-        int squareDistance = Math.max(absX, absZ);
-        if (squareDistance > viewDistance + 1) {
+        int outerBound = Math.max(absX, absZ);
+        if (outerBound > viewDistance + 1) {
             return false;
         }
-        long distX = Math.max(0, absX - 2);
-        long distZ = Math.max(0, absZ - 2);
-        long distSq = distX * distX + distZ * distZ;
-        int viewSq = viewDistance * viewDistance;
-        return distSq < viewSq;
+        long effectiveX = Math.max(0, absX - EDGE_BUFFER);
+        long effectiveZ = Math.max(0, absZ - EDGE_BUFFER);
+        long distSq = effectiveX * effectiveX + effectiveZ * effectiveZ;
+        return distSq < (long) viewDistance * viewDistance;
     }
 }
 
