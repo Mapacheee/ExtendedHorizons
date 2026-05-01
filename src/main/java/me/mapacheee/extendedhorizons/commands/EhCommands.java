@@ -24,7 +24,6 @@ import org.incendo.cloud.context.CommandInput;
 import org.incendo.cloud.paper.util.sender.Source;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @CommandComponent
 public class EhCommands {
@@ -48,13 +47,16 @@ public class EhCommands {
     @Inject
     private MessagesFacade messages;
 
+    private static final int MIN_DISTANCE = 2;
+
     @Suggestions("online-players")
     public List<String> suggestOnlinePlayers(CommandContext<?> ctx, CommandInput input) {
-        String token = input.lastRemainingToken().toLowerCase();
-        return Bukkit.getOnlinePlayers().stream()
+      var online = Bukkit.getOnlinePlayers();
+      String token = input.lastRemainingToken().toLowerCase();
+        return online.stream()
             .map(Player::getName)
             .filter(name -> name.toLowerCase().startsWith(token))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     @Command("eh reload")
@@ -79,7 +81,7 @@ public class EhCommands {
         if (!(source.source() instanceof Player sender)) {
             return;
         }
-        int clamped = Math.clamp(distance, 2, ChunkPlannerService.MAX_CHUNK_DISTANCE);
+        int clamped = Math.clamp(distance, MIN_DISTANCE, ChunkPlannerService.MAX_CHUNK_DISTANCE);
         PlayerSession session = this.sessionRegistry.ensureFor(sender, false);
         session.playerOverrideDistance(clamped);
         source.source().sendMessage(this.messages.setmeSuccess(clamped));
@@ -96,7 +98,7 @@ public class EhCommands {
         if (target == null) {
             return;
         }
-        int clamped = Math.clamp(distance, 2, ChunkPlannerService.MAX_CHUNK_DISTANCE);
+        int clamped = Math.clamp(distance, MIN_DISTANCE, ChunkPlannerService.MAX_CHUNK_DISTANCE);
         PlayerSession session = this.sessionRegistry.ensureFor(target, false);
         session.playerOverrideDistance(clamped);
         source.source().sendMessage(this.messages.setSuccess(target.getName(), clamped));
