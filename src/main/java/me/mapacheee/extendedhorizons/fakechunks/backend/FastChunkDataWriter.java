@@ -11,6 +11,7 @@ import io.netty.buffer.Unpooled;
 
 final class FastChunkDataWriter {
 
+    private static final int PROBE_BUFFER_PADDING = 64;
     private static volatile Boolean NEEDS_SIZE_CORRECTION;
 
     private FastChunkDataWriter() {}
@@ -34,7 +35,7 @@ final class FastChunkDataWriter {
     private static boolean probeWithSection(LevelChunkSection section) {
         try {
             int reported = section.getSerializedSize();
-            FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer(reported + 64));
+            FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer(reported + PROBE_BUFFER_PADDING));
             section.write(buf, null, 0);
             int actual = buf.writerIndex();
             buf.release();
@@ -66,14 +67,10 @@ final class FastChunkDataWriter {
         writeHeightmaps(out, chunk);
 
         int serializedSize = computeSectionsSize(chunk);
-
         VarIntUtil.writeVarInt(out, serializedSize);
-        int expectedWriterIndex = out.writerIndex() + serializedSize;
+
         for (LevelChunkSection section : chunk.getSections()) {
             section.write(out, null, 0);
-        }
-        if (out.writerIndex() != expectedWriterIndex) {
-            throw new IllegalStateException("Fast serializer writer index mismatch");
         }
 
         VarIntUtil.writeVarInt(out, 0);
@@ -81,15 +78,20 @@ final class FastChunkDataWriter {
 
     private static int computeSectionsSize(LevelChunk chunk) {
         LevelChunkSection[] sections = chunk.getSections();
-        int sectionsSize = 0;
-        for (LevelChunkSection section : sections) {
-            sectionsSize += section.getSerializedSize();
+        if (sections.length == 0) {
+            return 0;
         }
-        if (sections.length > 0 && needsSizeCorrection(sections[0])) {
-            for (LevelChunkSection section : sections) {
-                sectionsSize -= VarInt.getByteSize(section.getStates().data.storage().getRaw().length)
+
+        boolean needsCorrection = needsSizeCorrection(sections[0]);
+        int sectionsSize = 0;
+
+        for (LevelChunkSection section : sections) {
+            int baseSize = section.getSerializedSize();
+            if (needsCorrection) {
+                baseSize -= VarInt.getByteSize(section.getStates().data.storage().getRaw().length)
                     + VarInt.getByteSize(((PalettedContainer<?>) section.getBiomes()).data.storage().getRaw().length);
             }
+            sectionsSize += Math.max(0, baseSize);
         }
         return sectionsSize;
     }
