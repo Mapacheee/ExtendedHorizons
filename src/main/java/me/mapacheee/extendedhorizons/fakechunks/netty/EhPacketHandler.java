@@ -26,6 +26,7 @@ import java.util.ArrayList;
 
 public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
+    private static final int VARINT_MAX_BYTES = 5;
     private volatile PlayerSession session;
 
     @Override
@@ -59,20 +60,16 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             PlayerSession session = this.session;
             if (session != null && session.enabled()) {
                 boolean hasRadius = false;
-                for (Object sub : bundle.subPackets()) {
+                List<Packet<?>> filtered = new ArrayList<>();
+                for (Packet<?> sub : bundle.subPackets()) {
                     if (sub instanceof ClientboundSetChunkCacheRadiusPacket) {
                         hasRadius = true;
-                        break;
+                    } else {
+                        filtered.add(sub);
                     }
                 }
                 if (hasRadius) {
                     session.lastAdvertisedDistance(-1);
-                    List<Packet<?>> filtered = new ArrayList<>();
-                    for (Object sub : bundle.subPackets()) {
-                        if (!(sub instanceof ClientboundSetChunkCacheRadiusPacket)) {
-                            filtered.add((Packet<?>) sub);
-                        }
-                    }
                     ReferenceCountUtil.release(msg);
                     for (Packet<?> p : filtered) {
                         ctx.write(p);
@@ -96,11 +93,11 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         try {
             int firstVarInt = readVarInt(buf);
             int targetId = PacketIdRegistry.getChunkCacheRadiusId();
-            
+
             if (firstVarInt == targetId) {
                 return true;
             }
-            
+
             if (firstVarInt == 2 && buf.isReadable()) {
                 int secondVarInt = readVarInt(buf);
                 if (secondVarInt == targetId && buf.readableBytes() == 1) {
@@ -117,7 +114,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
     private static int readVarInt(ByteBuf buf) {
         int value = 0;
         int position = 0;
-        while (position < 5) {
+        while (position < VARINT_MAX_BYTES) {
             if (!buf.isReadable()) {
                 throw new IndexOutOfBoundsException();
             }

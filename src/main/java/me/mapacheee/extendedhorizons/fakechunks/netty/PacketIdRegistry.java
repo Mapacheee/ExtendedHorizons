@@ -18,6 +18,8 @@ public final class PacketIdRegistry {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PacketIdRegistry.class);
     private static final int UNRESOLVED = -1;
+    private static final String[] PACKET_ID_METHODS = {"packetId", "id", "getId"};
+
     private static final AtomicInteger LEVEL_CHUNK_WITH_LIGHT_ID = new AtomicInteger(UNRESOLVED);
     private static final AtomicInteger CHUNK_CACHE_RADIUS_ID = new AtomicInteger(UNRESOLVED);
     private static final AttributeKey<Boolean> PENDING_LEVEL_CHUNK_PROBE = AttributeKey.valueOf("eh_pending_level_chunk_probe");
@@ -159,28 +161,29 @@ public final class PacketIdRegistry {
     }
 
     private static boolean hasPacketIdLookup(Object obj) {
-        for (Method method : obj.getClass().getMethods()) {
-            String name = method.getName();
-            if ((name.equals("packetId") || name.equals("id"))
-                && method.getParameterCount() == 1
-                && method.getReturnType() == int.class) {
+        Class<?> clazz = obj.getClass();
+        for (Method method : clazz.getMethods()) {
+            if (isPacketIdMethod(method)) {
                 return true;
             }
         }
-        for (Method method : obj.getClass().getDeclaredMethods()) {
-            String name = method.getName();
-            if ((name.equals("packetId") || name.equals("id"))
-                && method.getParameterCount() == 1
-                && method.getReturnType() == int.class) {
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (isPacketIdMethod(method)) {
                 return true;
             }
         }
         return false;
     }
 
+    private static boolean isPacketIdMethod(Method method) {
+        String name = method.getName();
+        return (name.equals("packetId") || name.equals("id"))
+            && method.getParameterCount() == 1
+            && method.getReturnType() == int.class;
+    }
+
     private static int lookupPacketId(Object protocolInfo, Class<?> packetClass) {
-        String[] methodNames = {"packetId", "id", "getId"};
-        for (String methodName : methodNames) {
+        for (String methodName : PACKET_ID_METHODS) {
             Method method = findMethod(protocolInfo.getClass(), methodName);
             if (method == null) {
                 continue;
@@ -205,16 +208,20 @@ public final class PacketIdRegistry {
     private static Method findMethod(Class<?> clazz, String name) {
         for (Method method : clazz.getMethods()) {
             if (method.getName().equals(name) && method.getParameterCount() == 1
-                && (method.getReturnType() == int.class || Number.class.isAssignableFrom(method.getReturnType()))) {
+                && isValidReturnType(method.getReturnType())) {
                 return method;
             }
         }
         for (Method method : clazz.getDeclaredMethods()) {
             if (method.getName().equals(name) && method.getParameterCount() == 1
-                && (method.getReturnType() == int.class || Number.class.isAssignableFrom(method.getReturnType()))) {
+                && isValidReturnType(method.getReturnType())) {
                 return method;
             }
         }
         return null;
+    }
+
+    private static boolean isValidReturnType(Class<?> returnType) {
+        return returnType == int.class || Number.class.isAssignableFrom(returnType);
     }
 }
