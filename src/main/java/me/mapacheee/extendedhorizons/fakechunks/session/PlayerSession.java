@@ -256,7 +256,11 @@ public final class PlayerSession {
         int prevX = ChunkKeyCodec.x(previous);
         int prevZ = ChunkKeyCodec.z(previous);
         if (distanceSquared(prevX, prevZ, chunkX, chunkZ) > this.distance * this.distance) {
-            this.unloadEhChunks();
+            for (ChunkState state : this.chunkStates) {
+                state.reset();
+            }
+            this.clearChunkQueue();
+            this.iterationIndex = 0;
             this.enabled = false;
             this.hasMovementDirection = false;
             return;

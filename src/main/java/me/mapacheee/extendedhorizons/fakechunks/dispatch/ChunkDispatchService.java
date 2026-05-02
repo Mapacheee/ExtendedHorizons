@@ -66,11 +66,15 @@ public final class ChunkDispatchService {
             config.bandwidthBurstBytes()
         );
         int chunksPerTick = config.maxSendPerCycle();
-        int maxPending = Math.min(config.chunkQueueSize(), config.maxInflightPerPlayer());
-        int pending = this.drainCompletedEntries(world, channel, session);
+        int maxInflight = config.maxInflightPerPlayer();
+        int maxQueueSize = config.chunkQueueSize();
+        int inFlight = this.drainCompletedEntries(world, channel, session);
 
         while (true) {
-            if (pending >= maxPending) {
+            if (inFlight >= maxInflight) {
+                break;
+            }
+            if (session.chunkQueue().size() >= maxQueueSize) {
                 break;
             }
             if (!this.generationLimiterService.tryAcquire()) {
@@ -84,7 +88,7 @@ public final class ChunkDispatchService {
             int chunkZ = ChunkKeyCodec.z(chunkKey);
             CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
             session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
-            pending++;
+            inFlight++;
             if (--chunksPerTick <= 0) {
                 break;
             }
@@ -92,15 +96,15 @@ public final class ChunkDispatchService {
     }
 
     private int drainCompletedEntries(World world, Channel channel, PlayerSession session) {
-        AtomicInteger pending = new AtomicInteger(0);
+        AtomicInteger inFlight = new AtomicInteger(0);
         session.chunkQueue().removeIf(entry -> {
             boolean processed = this.checkQueueEntry(world, channel, session, entry);
-            if (!processed) {
-                pending.incrementAndGet();
+            if (!processed && !entry.buildFuture().isDone()) {
+                inFlight.incrementAndGet();
             }
             return processed;
         });
-        return pending.get();
+        return inFlight.get();
     }
 
     public void sendUnload(Channel channel, PlayerSession session, long chunkKey) {
