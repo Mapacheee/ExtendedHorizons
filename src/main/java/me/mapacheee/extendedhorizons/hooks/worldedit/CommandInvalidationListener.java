@@ -30,8 +30,9 @@ public final class CommandInvalidationListener implements Listener {
         "//flora", "//naturalize", "//line", "//curve",
         "//paste", "//rotate", "//flip",
         "//drain", "//fixwater", "//fixlava", "//snow", "//thaw",
-        "//green", "//forest",
-        "/worldedit:set", "/worldedit:replace", "/worldedit:paste"
+        "//green", "//forest", "//undo", "//redo", "//cut", "//clear",
+        "/undo", "/redo",
+        "/worldedit:set", "/worldedit:replace", "/worldedit:paste", "/worldedit:undo", "/worldedit:redo"
     );
 
     private final BulkChunkInvalidationService bulkChunkInvalidationService;
