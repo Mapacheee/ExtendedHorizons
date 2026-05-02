@@ -170,6 +170,12 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
     }
 
     private void captureEntityTracking(ChannelHandlerContext ctx, Object input, PlayerSession session) {
+        if (input instanceof BundlePacket<?> bundle) {
+            for (Packet<?> packet : bundle.subPackets()) {
+                this.captureEntityTracking(ctx, packet, session);
+            }
+            return;
+        }
         switch (input) {
             case ClientboundAddEntityPacket packet -> {
                 if (packet.getType() == EntityType.PLAYER) {
