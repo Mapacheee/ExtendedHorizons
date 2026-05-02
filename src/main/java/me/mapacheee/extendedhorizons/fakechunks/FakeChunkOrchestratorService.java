@@ -31,9 +31,8 @@ import org.slf4j.LoggerFactory;
 public final class FakeChunkOrchestratorService {
 
     private static final Duration DEFAULT_PERMISSION_TTL = Duration.ofSeconds(5);
-    private static final long DEFAULT_PERMISSION_MAX_SIZE = 4096L;
+    private static final long DEFAULT_PERMISSION_MAX_SIZE = 512L;
     private static final int MIN_DISTANCE = 2;
-    private static final long MIN_TIME_NANOS = 250_000L;
     private static final int DEFAULT_VIEW_DISTANCE = 10;
     private static final String PERMISSION_BYPASS = "extendedhorizons.bypass";
     private static final String PERMISSION_PREFIX = "extendedhorizons.max.";
@@ -73,7 +72,7 @@ public final class FakeChunkOrchestratorService {
             .build();
     }
 
-    public void tickPlayer(Player player, long maxTimePerPlayerNanos) {
+    public void tickPlayer(Player player) {
         if (player == null || !player.isOnline()) {
             return;
         }
@@ -100,13 +99,6 @@ public final class FakeChunkOrchestratorService {
         int targetDistance = this.resolveClientDistance(player, worldName);
         int serverDistance = this.resolveServerDistance(player);
 
-        long deadlineNanos;
-        if (maxTimePerPlayerNanos > 0) {
-            deadlineNanos = System.nanoTime() + Math.min(maxTimePerPlayerNanos, MIN_TIME_NANOS);
-        } else {
-            deadlineNanos = System.nanoTime() + MIN_TIME_NANOS;
-        }
-
         TickSnapshot snapshot = new TickSnapshot(
             world,
             world.getUID(),
@@ -115,8 +107,7 @@ public final class FakeChunkOrchestratorService {
             chunkZ,
             loc.getYaw(),
             targetDistance,
-            serverDistance,
-            deadlineNanos
+            serverDistance
         );
         this.channelInjectionService.executeOnEventLoop(channel, () -> this.processOnNetty(channel, session, snapshot));
     }
@@ -155,7 +146,7 @@ public final class FakeChunkOrchestratorService {
             this.farPlayerTrackingService.clearTracked(channel, session);
         }
 
-        this.dispatchService.processQueue(snapshot.world(), channel, session, snapshot.deadlineNanos());
+        this.dispatchService.processQueue(snapshot.world(), channel, session);
         this.channelInjectionService.flush(channel);
     }
 
@@ -296,8 +287,7 @@ public final class FakeChunkOrchestratorService {
         int chunkZ,
         float yaw,
         int targetDistance,
-        int serverDistance,
-        long deadlineNanos
+        int serverDistance
     ) {}
 
     private record PermissionCacheEntry(int permissionCap, boolean hasBypass) {}

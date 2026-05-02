@@ -34,6 +34,7 @@ public final class ChunkDispatchService {
     private final ChunkBuildMetricsService metricsService;
     private final ChunkBackend chunkBackend;
     private final ChannelInjectionService channelInjectionService;
+    private final GlobalGenerationLimiterService generationLimiterService;
 
     @Inject
     public ChunkDispatchService(
@@ -42,7 +43,8 @@ public final class ChunkDispatchService {
         AntiXrayPayloadCacheService antiXrayPayloadCacheService,
         ChunkBuildMetricsService metricsService,
         ChunkBackend chunkBackend,
-        ChannelInjectionService channelInjectionService
+        ChannelInjectionService channelInjectionService,
+        GlobalGenerationLimiterService generationLimiterService
     ) {
         this.configContainer = configContainer;
         this.cacheService = cacheService;
@@ -50,9 +52,10 @@ public final class ChunkDispatchService {
         this.metricsService = metricsService;
         this.chunkBackend = chunkBackend;
         this.channelInjectionService = channelInjectionService;
+        this.generationLimiterService = generationLimiterService;
     }
 
-    public void processQueue(World world, Channel channel, PlayerSession session, long deadlineNanos) {
+    public void processQueue(World world, Channel channel, PlayerSession session) {
         if (world == null || channel == null || session == null) {
             return;
         }
@@ -63,21 +66,20 @@ public final class ChunkDispatchService {
             config.bandwidthBurstBytes()
         );
         int chunksPerTick = config.maxSendPerCycle();
-        int chunkQueueSize = config.chunkQueueSize();
-        int maxInflight = config.maxInflightPerPlayer();
-        int maxPending = Math.min(chunkQueueSize, maxInflight);
+        int maxPending = Math.min(config.chunkQueueSize(), config.maxInflightPerPlayer());
         int pending = this.drainCompletedEntries(world, channel, session);
 
-        do {
+        while (true) {
             if (pending >= maxPending) {
                 break;
             }
-
+            if (!this.generationLimiterService.tryAcquire()) {
+                break;
+            }
             Long chunkKey = session.pollNextChunkKey();
             if (chunkKey == null) {
                 break;
             }
-
             int chunkX = ChunkKeyCodec.x(chunkKey);
             int chunkZ = ChunkKeyCodec.z(chunkKey);
             CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
@@ -86,7 +88,7 @@ public final class ChunkDispatchService {
             if (--chunksPerTick <= 0) {
                 break;
             }
-        } while (System.nanoTime() < deadlineNanos);
+        }
     }
 
     private int drainCompletedEntries(World world, Channel channel, PlayerSession session) {

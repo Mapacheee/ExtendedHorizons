@@ -10,7 +10,6 @@ import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayProcessor;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.dispatch.GlobalGenerationLimiterService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
@@ -62,7 +61,6 @@ public final class PaperChunkBackend implements ChunkBackend {
     private final AntiXrayService antiXrayService;
     private final ChunkSerializationExecutorService serializationExecutorService;
     private final LightPayloadCacheService lightPayloadCacheService;
-    private final GlobalGenerationLimiterService generationLimiterService;
     private final ChunkBuildMetricsService metricsService;
     private final Container<EhConfig> configContainer;
 
@@ -72,14 +70,12 @@ public final class PaperChunkBackend implements ChunkBackend {
         AntiXrayService antiXrayService,
         ChunkSerializationExecutorService serializationExecutorService,
         LightPayloadCacheService lightPayloadCacheService,
-        GlobalGenerationLimiterService generationLimiterService,
         ChunkBuildMetricsService metricsService
     ) {
         this.configContainer = configContainer;
         this.antiXrayService = antiXrayService;
         this.serializationExecutorService = serializationExecutorService;
         this.lightPayloadCacheService = lightPayloadCacheService;
-        this.generationLimiterService = generationLimiterService;
         this.metricsService = metricsService;
     }
 
@@ -163,10 +159,6 @@ public final class PaperChunkBackend implements ChunkBackend {
         };
 
         if (generateMissingChunks) {
-            if (!world.isChunkLoaded(chunkX, chunkZ) && !this.generationLimiterService.tryAcquire()) {
-                future.completeExceptionally(new IllegalStateException("Global generation budget exhausted"));
-                return future;
-            }
             world.getChunkAtAsync(chunkX, chunkZ, true)
                 .thenAccept(asyncChunk -> this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(asyncChunk), future))
                 .exceptionally(throwable -> {
