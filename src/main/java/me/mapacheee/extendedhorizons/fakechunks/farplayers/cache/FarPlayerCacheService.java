@@ -12,6 +12,7 @@ import me.mapacheee.lib.caffeine.cache.Caffeine;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -25,8 +26,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class FarPlayerCacheService {
 
     private static final int REGION_SIZE_BITS = 5;
-    private static final int REGION_SIZE = 1 << REGION_SIZE_BITS;
+    private static final int BLOCK_TO_CHUNK_SHIFT = 4;
     private static final int DEFAULT_MAX_ENTRIES = 500;
+    private static final int DEFAULT_TTL_SECONDS = 30;
 
     private final Container<EhConfig> configContainer;
     private volatile Cache<UUID, FarPlayerState> statesCache;
@@ -43,11 +45,14 @@ public final class FarPlayerCacheService {
 
     public void rebuild() {
         int maxEntries = this.configContainer.get().farPlayerCacheEntries();
+        Duration ttl = Duration.ofSeconds(DEFAULT_TTL_SECONDS);
         this.statesCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
+            .expireAfterWrite(ttl)
             .build();
         this.equipmentCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
+            .expireAfterWrite(ttl)
             .build();
     }
 
@@ -59,8 +64,8 @@ public final class FarPlayerCacheService {
         this.statesCache.put(playerId, state);
 
         UUID worldId = state.worldId();
-        int chunkX = (int) (state.x() / REGION_SIZE);
-        int chunkZ = (int) (state.z() / REGION_SIZE);
+        int chunkX = (int) Math.floor(state.x()) >> BLOCK_TO_CHUNK_SHIFT;
+        int chunkZ = (int) Math.floor(state.z()) >> BLOCK_TO_CHUNK_SHIFT;
         long regionKey = getRegionKey(chunkX, chunkZ);
 
         UUID prevWorld = this.playerLastWorld.get(playerId);

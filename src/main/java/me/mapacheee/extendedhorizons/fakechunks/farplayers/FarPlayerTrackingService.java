@@ -27,7 +27,6 @@ public final class FarPlayerTrackingService {
     private static final int FAR_ENTITY_ID_ALLOCATION_ATTEMPTS = 10_000;
     private static final double FAR_RADIUS_PADDING = 0.35d;
     private static final int CHUNK_SHIFT = 4;
-    private static final double CHUNK_SIZE = 1 << CHUNK_SHIFT;
 
     private final Container<EhConfig> configContainer;
     private final FarPlayerCacheService cacheService;
@@ -90,8 +89,8 @@ public final class FarPlayerTrackingService {
                 continue;
             }
 
-            int stateChunkX = (int) (state.x() / CHUNK_SIZE);
-            int stateChunkZ = (int) (state.z() / CHUNK_SIZE);
+            int stateChunkX = (int) Math.floor(state.x()) >> CHUNK_SHIFT;
+            int stateChunkZ = (int) Math.floor(state.z()) >> CHUNK_SHIFT;
             int relChunkX = stateChunkX - viewerChunkX;
             int relChunkZ = stateChunkZ - viewerChunkZ;
             double distSq = (double) relChunkX * relChunkX + (double) relChunkZ * relChunkZ;
