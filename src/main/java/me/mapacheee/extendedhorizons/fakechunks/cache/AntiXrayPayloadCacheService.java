@@ -118,6 +118,11 @@ public final class AntiXrayPayloadCacheService {
         this.cache.asMap().keySet().removeIf(key -> key.worldId().equals(worldId) && key.chunkKey() == chunkKey);
     }
 
+    public void cleanUp() {
+        this.cache.cleanUp();
+        this.profileHashCache.cleanUp();
+    }
+
     public void invalidateAll() {
         this.cache.invalidateAll();
         this.profileHashCache.invalidateAll();

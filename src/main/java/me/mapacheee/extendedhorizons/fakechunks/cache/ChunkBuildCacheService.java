@@ -46,7 +46,13 @@ public final class ChunkBuildCacheService {
 
         Cache<ChunkKey, CompletableFuture<ByteBuf>> newBuildEntryCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
-            .expireAfterAccess(Duration.ofSeconds(ttlSeconds))
+            .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
+            .removalListener((ChunkKey key, CompletableFuture<ByteBuf> value, RemovalCause cause) -> {
+                if (value != null && value.isDone() && !value.isCompletedExceptionally()) {
+                    ByteBuf buf = value.getNow(null);
+                    ReferenceCountUtil.release(buf);
+                }
+            })
             .build();
 
         Cache<ChunkKey, Boolean> newBypassCache = Caffeine.newBuilder()
@@ -148,6 +154,13 @@ public final class ChunkBuildCacheService {
             return false;
         }
         return System.currentTimeMillis() < until;
+    }
+
+    public void cleanUp() {
+        this.serializedCache.cleanUp();
+        this.buildEntryCache.cleanUp();
+        this.bypassCache.cleanUp();
+        this.unavailableUntilMs.cleanUp();
     }
 
     public void invalidateAll() {

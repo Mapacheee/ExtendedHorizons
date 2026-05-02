@@ -9,6 +9,9 @@ import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.GlobalGenerationLimiterService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
@@ -35,7 +38,7 @@ public final class RuntimeOrchestratorService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeOrchestratorService.class);
     private static final int EQUIPMENT_SLOT_COUNT = EquipmentSlot.values().length;
-    private static final int MAX_PLAYERS_PER_TICK = 200;
+    private static final int CACHE_CLEANUP_INTERVAL = 200;
 
     private final Container<EhConfig> configContainer;
     private final SessionRegistry sessionRegistry;
@@ -43,6 +46,9 @@ public final class RuntimeOrchestratorService {
     private final GlobalGenerationLimiterService generationLimiterService;
     private final FarPlayerCacheService farPlayerCacheService;
     private final ChunkBuildMetricsService chunkBuildMetricsService;
+    private final ChunkBuildCacheService chunkBuildCacheService;
+    private final LightPayloadCacheService lightPayloadCacheService;
+    private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
 
     private volatile ScheduledTask runtimeTask;
     private int orchestratorTick;
@@ -54,7 +60,10 @@ public final class RuntimeOrchestratorService {
         FakeChunkOrchestratorService fakeChunkOrchestratorService,
         GlobalGenerationLimiterService generationLimiterService,
         FarPlayerCacheService farPlayerCacheService,
-        ChunkBuildMetricsService chunkBuildMetricsService
+        ChunkBuildMetricsService chunkBuildMetricsService,
+        ChunkBuildCacheService chunkBuildCacheService,
+        LightPayloadCacheService lightPayloadCacheService,
+        AntiXrayPayloadCacheService antiXrayPayloadCacheService
     ) {
         this.configContainer = configContainer;
         this.sessionRegistry = sessionRegistry;
@@ -62,6 +71,9 @@ public final class RuntimeOrchestratorService {
         this.generationLimiterService = generationLimiterService;
         this.farPlayerCacheService = farPlayerCacheService;
         this.chunkBuildMetricsService = chunkBuildMetricsService;
+        this.chunkBuildCacheService = chunkBuildCacheService;
+        this.lightPayloadCacheService = lightPayloadCacheService;
+        this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
     }
 
     @OnEnable
@@ -93,8 +105,6 @@ public final class RuntimeOrchestratorService {
 
         EhConfig config = this.configContainer.get();
         this.generationLimiterService.reset(config.maxGlobalGenerationsPerTick());
-
-        int playerCount = Math.min(playerList.size(), MAX_PLAYERS_PER_TICK);
 
         this.orchestratorTick = (this.orchestratorTick + 1) & Integer.MAX_VALUE;
         boolean farPlayersEnabled = config.farPlayersEnabled();
@@ -146,6 +156,12 @@ public final class RuntimeOrchestratorService {
                     LOGGER.error("Error while ticking fake chunks for {}", player.getName(), throwable);
                 }
             });
+        }
+
+        if (Math.floorMod(this.orchestratorTick, CACHE_CLEANUP_INTERVAL) == 0) {
+            this.chunkBuildCacheService.cleanUp();
+            this.lightPayloadCacheService.cleanUp();
+            this.antiXrayPayloadCacheService.cleanUp();
         }
 
         if (config.debugEnabled() && Math.floorMod(this.orchestratorTick, 200) == 0) {

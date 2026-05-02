@@ -64,6 +64,10 @@ public final class LightPayloadCacheService {
         this.cache.invalidate(new LightChunkKey(worldId, chunkKey));
     }
 
+    public void cleanUp() {
+        this.cache.cleanUp();
+    }
+
     public void invalidateAll() {
         this.cache.invalidateAll();
     }
