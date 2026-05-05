@@ -191,6 +191,10 @@ public final class PaperChunkBackend implements ChunkBackend {
         if (access instanceof LevelChunk levelChunk) {
             return levelChunk;
         }
+        access = craftChunk.getHandle(ChunkStatus.LIGHT);
+        if (access instanceof LevelChunk levelChunk) {
+            return levelChunk;
+        }
         return null;
     }
 
