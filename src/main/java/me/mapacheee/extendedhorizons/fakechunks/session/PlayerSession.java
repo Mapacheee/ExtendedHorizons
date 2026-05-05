@@ -4,9 +4,11 @@ import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkSendQueueEntry;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -53,6 +55,7 @@ public final class PlayerSession {
     private volatile double moveDirZ;
     private volatile boolean hasMovementDirection;
     private volatile long lastChunkCrossNanos;
+    private final List<Long> pendingUnloads = new ArrayList<>();
 
     public PlayerSession(UUID playerId, UUID worldId) {
         this.playerId = playerId;
@@ -247,7 +250,6 @@ public final class PlayerSession {
             return;
         }
         this.chunkKey = newKey;
-        this.iterationIndex = 0;
 
         if (!this.enabled || this.chunkStates.length == 0) {
             return;
@@ -257,6 +259,9 @@ public final class PlayerSession {
         int prevZ = ChunkKeyCodec.z(previous);
         if (distanceSquared(prevX, prevZ, chunkX, chunkZ) > this.distance * this.distance) {
             for (ChunkState state : this.chunkStates) {
+                if (state.lifecycle() == ChunkLifecycle.EH_LOADED) {
+                    this.pendingUnloads.add(ChunkKeyCodec.pack(state.chunkX(), state.chunkZ()));
+                }
                 state.reset();
             }
             this.clearChunkQueue();
@@ -280,6 +285,7 @@ public final class PlayerSession {
             this.iterationIndex = 0;
         }
 
+        boolean cleanedAny = false;
         for (ChunkState state : this.chunkStates) {
             if (!state.hasCoords()) {
                 continue;
@@ -292,10 +298,26 @@ public final class PlayerSession {
             if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
                 this.purgeQueuedChunk(stateX, stateZ);
             }
+            if (state.lifecycle() == ChunkLifecycle.EH_LOADED) {
+                this.pendingUnloads.add(ChunkKeyCodec.pack(stateX, stateZ));
+            }
             if (state.lifecycle() != ChunkLifecycle.SERVER_LOADED) {
                 state.reset();
+                cleanedAny = true;
             }
         }
+        if (cleanedAny) {
+            this.iterationIndex = 0;
+        }
+    }
+
+    public List<Long> drainPendingUnloads() {
+        if (this.pendingUnloads.isEmpty()) {
+            return List.of();
+        }
+        List<Long> result = new ArrayList<>(this.pendingUnloads);
+        this.pendingUnloads.clear();
+        return result;
     }
 
     public void serverChunkAdd(int chunkX, int chunkZ) {

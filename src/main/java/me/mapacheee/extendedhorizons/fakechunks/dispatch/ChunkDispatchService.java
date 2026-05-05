@@ -244,10 +244,9 @@ public final class ChunkDispatchService {
             ReferenceCountUtil.release(payload);
             return false;
         }
+        session.onChunkSent(chunkKey);
         writePromise.addListener(future -> {
-            if (future.isSuccess()) {
-                session.onChunkSent(chunkKey);
-            } else {
+            if (!future.isSuccess()) {
                 session.onChunkBuildFailed(chunkKey);
             }
         });

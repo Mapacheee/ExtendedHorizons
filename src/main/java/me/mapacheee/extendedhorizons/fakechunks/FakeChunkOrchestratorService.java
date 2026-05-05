@@ -116,6 +116,9 @@ public final class FakeChunkOrchestratorService {
         session.setWorld(snapshot.worldId());
         session.serverViewDistance(snapshot.serverDistance());
         session.moveTo(snapshot.chunkX(), snapshot.chunkZ(), snapshot.yaw());
+        for (long key : session.drainPendingUnloads()) {
+            this.dispatchService.sendUnload(channel, session, key);
+        }
 
         if (!session.initiated()) {
             session.initiated(true);
