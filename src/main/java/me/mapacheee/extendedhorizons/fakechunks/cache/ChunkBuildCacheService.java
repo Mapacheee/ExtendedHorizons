@@ -163,6 +163,10 @@ public final class ChunkBuildCacheService {
         this.unavailableUntilMs.cleanUp();
     }
 
+    public long getEstimatedSize() {
+        return this.serializedCache.estimatedSize();
+    }
+
     public void invalidateAll() {
         this.serializedCache.invalidateAll();
         this.buildEntryCache.invalidateAll();
