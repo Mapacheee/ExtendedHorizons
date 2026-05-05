@@ -350,7 +350,6 @@ public final class PlayerSession {
         }
         if (lc == ChunkLifecycle.SERVER_LOADED) {
             state.set(chunkX, chunkZ, ChunkLifecycle.UNLOADED);
-            this.iterationIndex = 0;
             return true;
         }
         return false;
