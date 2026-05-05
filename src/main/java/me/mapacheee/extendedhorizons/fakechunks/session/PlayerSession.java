@@ -22,9 +22,9 @@ public final class PlayerSession {
 
     private static final long[] EMPTY_LONG_ARRAY = new long[0];
     private static final ChunkState DUMMY_STATE = new ChunkState();
-    private static final double DIRECTION_CHANGE_THRESHOLD = 0.7d;
-    private static final double DIRECTION_WEIGHT = 0.25d;
-    private static final long FAST_MOVEMENT_NANOS = 750_000_000L;
+    private static final double DIRECTION_CHANGE_THRESHOLD = 0.8d;
+    private static final double DIRECTION_WEIGHT = 0.3d;
+    private static final long FAST_MOVEMENT_NANOS = 400_000_000L;
     private static final long BUILD_FAILED_RETRY_NANOS = 1_000_000_000L;
     private final UUID playerId;
     private volatile UUID worldId;
