@@ -18,8 +18,6 @@ import java.util.function.Supplier;
 @Service
 public final class ChunkBuildCacheService {
 
-    private static final long UNAVAILABLE_TTL_MS = 30_000L;
-
     private final Container<EhConfig> configContainer;
 
     private volatile Cache<ChunkKey, ByteBuf> serializedCache;
@@ -60,9 +58,10 @@ public final class ChunkBuildCacheService {
             .expireAfterWrite(Duration.ofMillis(bypassMs))
             .build();
 
+        long unavailableTtlMs = Math.max(1_000L, this.configContainer.get().unavailableRetryMs() * 2L);
         Cache<ChunkKey, Long> newUnavailableCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
-            .expireAfterWrite(Duration.ofMillis(UNAVAILABLE_TTL_MS))
+            .expireAfterWrite(Duration.ofMillis(unavailableTtlMs))
             .build();
 
         this.serializedCache = newSerializedCache;

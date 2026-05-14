@@ -5,7 +5,11 @@ import io.netty.util.ReferenceCountUtil;
 
 import java.util.concurrent.CompletableFuture;
 
-public record ChunkSendQueueEntry(long chunkKey, CompletableFuture<ByteBuf> buildFuture) {
+public record ChunkSendQueueEntry(long chunkKey, CompletableFuture<ByteBuf> buildFuture, long queuedAtNanos) {
+
+    public ChunkSendQueueEntry(long chunkKey, CompletableFuture<ByteBuf> buildFuture) {
+        this(chunkKey, buildFuture, System.nanoTime());
+    }
 
     public void releaseFuture() {
         this.buildFuture.thenAccept(buf -> {
@@ -15,4 +19,3 @@ public record ChunkSendQueueEntry(long chunkKey, CompletableFuture<ByteBuf> buil
         });
     }
 }
-

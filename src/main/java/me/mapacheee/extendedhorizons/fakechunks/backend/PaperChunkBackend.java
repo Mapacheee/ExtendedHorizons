@@ -11,6 +11,8 @@ import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
 import net.minecraft.network.FriendlyByteBuf;
@@ -37,6 +39,7 @@ import java.util.concurrent.CompletableFuture;
 @Service
 public final class PaperChunkBackend implements ChunkBackend {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(PaperChunkBackend.class);
     private static final int PACKET_HEADER_SIZE = 12;
     private static final int SECTION_BUFFER_PADDING = 512;
     private static final int SECTION_BUFFER_MIN = 64;
@@ -46,6 +49,12 @@ public final class PaperChunkBackend implements ChunkBackend {
     private static final int CHUNK_ESTIMATE_FAST = 1024;
     private static final int CHUNK_ESTIMATE_VANILLA = 2048;
 
+    private static final ChunkStatus[] CHUNK_STATUS_PRIORITY = {
+        ChunkStatus.FULL,
+        ChunkStatus.INITIALIZE_LIGHT,
+        ChunkStatus.FEATURES,
+        ChunkStatus.LIGHT
+    };
     private static final MethodHandle GET_NON_EMPTY_BLOCK_COUNT = createNonEmptyBlockCountHandle();
 
     private static MethodHandle createNonEmptyBlockCountHandle() {
@@ -115,7 +124,11 @@ public final class PaperChunkBackend implements ChunkBackend {
                     AntiXrayChunkSnapshot snapshot = this.captureAntiXraySnapshot(resolvedChunk, antiXrayProcessor, worldId, chunkKey);
                     this.metricsService.recordAntiXraySnapshot(System.nanoTime() - snapshotStart);
                     if (snapshot == null) {
-                        future.complete(null);
+                        // Snapshot failed (e.g. no initialized light). Fall back to main serializer
+                        // which handles unlit chunks with synthetic light instead of failing the build.
+                        ByteBuf fallback = this.serializeLevelChunkWithLight(
+                            level, resolvedChunk, chunkX, chunkZ, worldId, chunkKey, antiXrayProcessor);
+                        future.complete(fallback);
                         return;
                     }
                     serializationFuture = this.trySubmitAsync(() -> {
@@ -187,13 +200,11 @@ public final class PaperChunkBackend implements ChunkBackend {
         if (!(asyncChunk instanceof CraftChunk craftChunk)) {
             return null;
         }
-        var access = craftChunk.getHandle(ChunkStatus.FULL);
-        if (access instanceof LevelChunk levelChunk) {
-            return levelChunk;
-        }
-        access = craftChunk.getHandle(ChunkStatus.LIGHT);
-        if (access instanceof LevelChunk levelChunk) {
-            return levelChunk;
+        for (var status : CHUNK_STATUS_PRIORITY) {
+            var access = craftChunk.getHandle(status);
+            if (access instanceof LevelChunk levelChunk) {
+                return levelChunk;
+            }
         }
         return null;
     }
@@ -235,7 +246,8 @@ public final class PaperChunkBackend implements ChunkBackend {
         EhConfig.SerializerMode serializerMode = this.configContainer.get().serializerMode();
         boolean preferFast = serializerMode == EhConfig.SerializerMode.FAST;
         boolean canUseFastChunkData = antiXrayProcessor != null || FastChunkDataWriter.canUseFastPath(chunk);
-        boolean useFast = preferFast && canUseFastChunkData;
+        boolean hasLight = FastLightDataWriter.hasInitialisedLight(chunk);
+        boolean useFast = preferFast && canUseFastChunkData && hasLight;
 
         int initialCapacity = this.estimatePacketSize(chunk, antiXrayProcessor, useFast);
         ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(initialCapacity, Integer.MAX_VALUE);
@@ -256,6 +268,41 @@ public final class PaperChunkBackend implements ChunkBackend {
                     this.writeFastLightWithCache(buf, chunk, worldId, chunkKey);
                     return raw;
                 } catch (Throwable throwable) {
+                    LOGGER.warn("Fast path failed for chunk [{}, {}]: {}", chunkX, chunkZ, throwable.getMessage(), throwable);
+                    buf.writerIndex(payloadStart);
+                }
+            }
+
+            if (!hasLight) {
+                int payloadStart = buf.writerIndex();
+                try {
+                    if (canUseFastChunkData && antiXrayProcessor == null) {
+                        FastChunkDataWriter.writeChunkData(buf, chunk);
+                    } else {
+                        @SuppressWarnings("deprecation")
+                        ClientboundLevelChunkPacketData chunkData = new ClientboundLevelChunkPacketData(chunk);
+                        RegistryFriendlyByteBuf registryBuf = new RegistryFriendlyByteBuf(raw, level.registryAccess());
+                        chunkData.write(registryBuf);
+                    }
+                    FastLightDataWriter.writeSyntheticFullBrightLight(buf, chunk);
+                    return raw;
+                } catch (Throwable throwable) {
+                    LOGGER.warn("Synthetic light path failed for chunk [{}, {}]: {}", chunkX, chunkZ, throwable.getMessage(), throwable);
+                    buf.writerIndex(payloadStart);
+                }
+            }
+
+            if (hasLight) {
+                int payloadStart = buf.writerIndex();
+                try {
+                    @SuppressWarnings("deprecation")
+                    ClientboundLevelChunkPacketData chunkData = new ClientboundLevelChunkPacketData(chunk);
+                    RegistryFriendlyByteBuf registryBuf = new RegistryFriendlyByteBuf(raw, level.registryAccess());
+                    chunkData.write(registryBuf);
+                    this.writeFastLightWithCache(buf, chunk, worldId, chunkKey);
+                    return raw;
+                } catch (Throwable throwable) {
+                    LOGGER.warn("Vanilla+fast light path failed for chunk [{}, {}]: {}", chunkX, chunkZ, throwable.getMessage(), throwable);
                     buf.writerIndex(payloadStart);
                 }
             }
@@ -263,6 +310,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             this.writeVanillaChunkAndLight(raw, buf, level, chunk, chunkX, chunkZ);
             return raw;
         } catch (Throwable throwable) {
+            LOGGER.warn("All serialization paths failed for chunk [{}, {}]: {}", chunkX, chunkZ, throwable.getMessage(), throwable);
             raw.release();
             return null;
         }
@@ -290,7 +338,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     }
 
     private static void writeHeightmaps(FriendlyByteBuf out, LevelChunk chunk) {
-        VarIntUtil.writeVarInt(out, 0);
+        out.writeByte(0x00);
     }
 
     private static void writeSection(
@@ -428,6 +476,15 @@ public final class PaperChunkBackend implements ChunkBackend {
             }
 
             if (light == null) {
+                if (!FastLightDataWriter.hasInitialisedLight(chunk)) {
+                    for (AntiXraySectionSnapshot snap : sectionSnapshots) {
+                        if (snap != null) {
+                            snap.release();
+                        }
+                    }
+                    heightmaps.release();
+                    return null;
+                }
                 light = PooledByteBufAllocator.DEFAULT.buffer(FastLightDataWriter.estimateLightDataSize(chunk), Integer.MAX_VALUE);
                 FriendlyByteBuf lightOut = new FriendlyByteBuf(light);
                 FastLightDataWriter.writeLightData(lightOut, chunk);

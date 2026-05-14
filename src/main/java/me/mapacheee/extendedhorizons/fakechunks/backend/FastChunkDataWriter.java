@@ -46,7 +46,7 @@ final class FastChunkDataWriter {
     }
 
     static boolean canUseFastPath(LevelChunk chunk) {
-        return chunk != null && chunk.getBlockEntities().isEmpty();
+        return chunk != null;
     }
 
     static int estimateChunkDataSize(LevelChunk chunk) {
@@ -97,7 +97,7 @@ final class FastChunkDataWriter {
     }
 
     private static void writeHeightmaps(FriendlyByteBuf out, LevelChunk chunk) {
-        VarIntUtil.writeVarInt(out, 0);
+        out.writeByte(0x00);
     }
 
     private static int varIntSize(int value) {

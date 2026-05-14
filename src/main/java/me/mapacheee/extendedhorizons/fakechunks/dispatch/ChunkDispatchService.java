@@ -7,6 +7,8 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelPromise;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCountUtil;
+import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
@@ -14,12 +16,13 @@ import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheServic
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
-import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,6 +30,9 @@ import java.util.concurrent.CompletableFuture;
 
 @Service
 public final class ChunkDispatchService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ChunkDispatchService.class);
+    private static final long BUILD_TIMEOUT_NANOS = 5_000_000_000L;
 
     private final Container<EhConfig> configContainer;
     private final ChunkBuildCacheService cacheService;
@@ -196,6 +202,16 @@ public final class ChunkDispatchService {
     private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry) {
         CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
         if (!buildFuture.isDone()) {
+            if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
+                // The chunk has been queued for too long without completing.
+                // This often happens when WorldPainter chunks trigger heavy sync
+                // tasks on the region thread (e.g., heightmap recalculation).
+                // We drop the entry to free up queue space and allow retries later.
+                session.onChunkBuildFailed(entry.chunkKey());
+                this.cacheService.markUnavailable(world.getUID(), entry.chunkKey());
+                entry.releaseFuture();
+                return true;
+            }
             return false;
         }
         if (buildFuture.isCompletedExceptionally()) {
@@ -209,12 +225,23 @@ public final class ChunkDispatchService {
             entry.releaseFuture();
             return true;
         }
+        if (!this.isChunkStillInRange(session, entry.chunkKey())) {
+            session.onChunkBuildFailed(entry.chunkKey());
+            entry.releaseFuture();
+            return true;
+        }
         if (!channel.isWritable()) {
             return false;
         }
         long payloadBytes = payload.readableBytes();
-        if (channel.bytesBeforeUnwritable() > 0 && channel.bytesBeforeUnwritable() < payloadBytes) {
-            return false;
+        try {
+            long beforeUnwritable = channel.bytesBeforeUnwritable();
+            if (beforeUnwritable > 0 && beforeUnwritable < payloadBytes) {
+                return false;
+            }
+        } catch (AbstractMethodError ignored) {
+            // ProtocolLib's NettyChannelProxy does not implement bytesBeforeUnwritable().
+            // Fall through and rely on isWritable() for backpressure.
         }
         if (!session.tryConsumeBandwidth(payloadBytes)) {
             return false;
@@ -257,5 +284,14 @@ public final class ChunkDispatchService {
         return session != null
                 && worldId.equals(session.worldId())
                 && session.epoch() == epoch;
+    }
+
+    private boolean isChunkStillInRange(PlayerSession session, long chunkKey) {
+        int chunkX = ChunkKeyCodec.x(chunkKey);
+        int chunkZ = ChunkKeyCodec.z(chunkKey);
+        long centerKey = session.chunkKey();
+        int centerX = ChunkKeyCodec.x(centerKey);
+        int centerZ = ChunkKeyCodec.z(centerKey);
+        return ChunkPlannerService.isWithinRange(chunkX - centerX, chunkZ - centerZ, session.distance());
     }
 }

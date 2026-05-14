@@ -49,6 +49,73 @@ final class FastLightDataWriter {
         return size;
     }
 
+    static boolean hasInitialisedLight(LevelChunk chunk) {
+        SWMRNibbleArray[] blockNibbles = chunk.starlight$getBlockNibbles();
+        if (blockNibbles != null) {
+            for (SWMRNibbleArray layer : blockNibbles) {
+                if (layer != null && layer.isInitialisedVisible()) {
+                    return true;
+                }
+            }
+        }
+        SWMRNibbleArray[] skyNibbles = chunk.starlight$getSkyNibbles();
+        if (skyNibbles != null) {
+            for (SWMRNibbleArray layer : skyNibbles) {
+                if (layer != null && layer.isInitialisedVisible()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    static void writeSyntheticFullBrightLight(FriendlyByteBuf out, LevelChunk chunk) {
+        SWMRNibbleArray[] blockNibbles = chunk.starlight$getBlockNibbles();
+        boolean hasSky = chunk.starlight$getSkyNibbles() != null;
+        int sectionCount = blockNibbles != null ? blockNibbles.length : chunk.getSectionsCount() + 2;
+
+        byte[] fullBright = new byte[2048];
+        java.util.Arrays.fill(fullBright, (byte) 0xFF);
+
+        if (hasSky) {
+            BitSet notSkyEmpty = new BitSet(sectionCount);
+            notSkyEmpty.set(0, sectionCount);
+            BitSet notBlockEmpty = new BitSet(sectionCount);
+            BitSet skyEmpty = new BitSet(sectionCount);
+            BitSet blockEmpty = new BitSet(sectionCount);
+            blockEmpty.set(0, sectionCount);
+
+            writeBitSet(out, notSkyEmpty.toLongArray());
+            writeBitSet(out, notBlockEmpty.toLongArray());
+            writeBitSet(out, skyEmpty.toLongArray());
+            writeBitSet(out, blockEmpty.toLongArray());
+
+            VarIntUtil.writeVarInt(out, sectionCount);
+            for (int i = 0; i < sectionCount; i++) {
+                FriendlyByteBuf.writeByteArray(out, fullBright);
+            }
+            out.writeByte(0);
+        } else {
+            BitSet notSkyEmpty = new BitSet(sectionCount);
+            BitSet notBlockEmpty = new BitSet(sectionCount);
+            notBlockEmpty.set(0, sectionCount);
+            BitSet skyEmpty = new BitSet(sectionCount);
+            skyEmpty.set(0, sectionCount);
+            BitSet blockEmpty = new BitSet(sectionCount);
+
+            writeBitSet(out, notSkyEmpty.toLongArray());
+            writeBitSet(out, notBlockEmpty.toLongArray());
+            writeBitSet(out, skyEmpty.toLongArray());
+            writeBitSet(out, blockEmpty.toLongArray());
+
+            out.writeByte(0);
+            VarIntUtil.writeVarInt(out, sectionCount);
+            for (int i = 0; i < sectionCount; i++) {
+                FriendlyByteBuf.writeByteArray(out, fullBright);
+            }
+        }
+    }
+
     static void writeLightData(FriendlyByteBuf out, LevelChunk chunk) {
         byte[][] blockLight = java.util.Objects.requireNonNull(convertStarlightToBytes(chunk.starlight$getBlockNibbles(), false));
         byte[][] skyLight = convertStarlightToBytes(chunk.starlight$getSkyNibbles(), true);
