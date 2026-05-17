@@ -106,45 +106,53 @@ public final class PaperChunkBackend implements ChunkBackend {
             LOGGER.debug("Packet ID not resolved, cannot build chunk [{}, {}]", chunkX, chunkZ);
             return CompletableFuture.completedFuture(null);
         }
-        if (this.configContainer.get().diskReaderEnabled()) {
-            ByteBuf diskPayload = DiskChunkReader.readAndSerialize(world, chunkX, chunkZ);
-            if (diskPayload != null) {
-                if (this.configContainer.get().debugEnabled()) {
-                    LOGGER.info("EH disk payload ok for chunk [{}, {}]", chunkX, chunkZ);
-                }
-                return CompletableFuture.completedFuture(diskPayload);
-            }
-            if (this.configContainer.get().debugEnabled()) {
-                LOGGER.info("EH disk payload null for chunk [{}, {}], falling back", chunkX, chunkZ);
-            }
-        }
-
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
         Consumer<Chunk> task = createChunkTask(world, chunkX, chunkZ, future);
 
-        if (generateMissingChunks) {
-            world.getChunkAtAsync(chunkX, chunkZ, true)
-                .thenAccept(asyncChunk -> this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(asyncChunk), future))
-                .exceptionally(throwable -> {
-                    future.complete(null);
-                    return null;
+        Runnable fallbackLoad = () -> {
+            if (generateMissingChunks) {
+                world.getChunkAtAsync(chunkX, chunkZ, true)
+                    .thenAccept(asyncChunk -> this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(asyncChunk), future))
+                    .exceptionally(throwable -> {
+                        future.complete(null);
+                        return null;
+                    });
+            } else {
+                world.getChunkAtAsync(chunkX, chunkZ, false)
+                    .thenAccept((chunk) -> {
+                        if (chunk == null) {
+                            if (this.configContainer.get().debugEnabled()) {
+                                LOGGER.info("EH getChunkAtAsync returned null for chunk [{}, {}]", chunkX, chunkZ);
+                            }
+                            future.complete(null);
+                            return;
+                        }
+                        this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(chunk), future);
+                    })
+                    .exceptionally(throwable -> {
+                        future.complete(null);
+                        return null;
+                    });
+            }
+        };
+
+        if (this.configContainer.get().diskReaderEnabled()) {
+            this.serializationExecutorService.submit(() -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ))
+                .whenComplete((diskPayload, throwable) -> {
+                    if (diskPayload != null) {
+                        if (this.configContainer.get().debugEnabled()) {
+                            LOGGER.info("EH disk payload ok for chunk [{}, {}]", chunkX, chunkZ);
+                        }
+                        future.complete(diskPayload);
+                    } else {
+                        if (this.configContainer.get().debugEnabled()) {
+                            LOGGER.info("EH disk payload null for chunk [{}, {}], falling back", chunkX, chunkZ);
+                        }
+                        fallbackLoad.run();
+                    }
                 });
         } else {
-            world.getChunkAtAsync(chunkX, chunkZ, false)
-                .thenAccept((chunk) -> {
-                    if (chunk == null) {
-                        if (this.configContainer.get().debugEnabled()) {
-                            LOGGER.info("EH getChunkAtAsync returned null for chunk [{}, {}]", chunkX, chunkZ);
-                        }
-                        future.complete(null);
-                        return;
-                    }
-                    this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(chunk), future);
-                })
-                .exceptionally(throwable -> {
-                    future.complete(null);
-                    return null;
-                });
+            fallbackLoad.run();
         }
 
         return future;

@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import net.minecraft.SharedConstants;
+import net.minecraft.core.Holder;
 import net.minecraft.nbt.ByteArrayTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -12,6 +13,8 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.VarInt;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
@@ -92,12 +95,12 @@ public final class DiskChunkSerializer {
             int sectionIndex = y - minSectionY;
             if (sectionIndex >= 0 && sectionIndex < sectionsCount) {
                 try {
-                    PalettedContainer<net.minecraft.world.level.block.state.BlockState> blocks =
+                    PalettedContainer<BlockState> blocks =
                             sectionTag.get("block_states") instanceof CompoundTag blockTag
                             ? factory.blockStatesContainerCodec().parse(NbtOps.INSTANCE, blockTag).getOrThrow()
                             : factory.createForBlockStates();
 
-                    PalettedContainer<net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>> biomes =
+                    PalettedContainer<Holder<Biome>> biomes =
                             sectionTag.get("biomes") instanceof CompoundTag biomeTag
                             ? factory.biomeContainerRWCodec().parse(NbtOps.INSTANCE, biomeTag).getOrThrow()
                             : factory.createForBiomes();
