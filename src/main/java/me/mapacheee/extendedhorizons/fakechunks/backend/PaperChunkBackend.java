@@ -31,7 +31,6 @@ import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftChunk;
 import org.bukkit.craftbukkit.CraftWorld;
-import me.mapacheee.extendedhorizons.fakechunks.disk.BlockPaletteResolver;
 import me.mapacheee.extendedhorizons.fakechunks.disk.DiskChunkReader;
 
 import java.lang.invoke.MethodHandle;
@@ -90,7 +89,6 @@ public final class PaperChunkBackend implements ChunkBackend {
         this.serializationExecutorService = serializationExecutorService;
         this.lightPayloadCacheService = lightPayloadCacheService;
         this.metricsService = metricsService;
-        BlockPaletteResolver.scheduleBuildAsync();
     }
 
     @Override
@@ -108,7 +106,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             LOGGER.debug("Packet ID not resolved, cannot build chunk [{}, {}]", chunkX, chunkZ);
             return CompletableFuture.completedFuture(null);
         }
-        if (this.configContainer.get().diskReaderEnabled() && BlockPaletteResolver.isInitialized()) {
+        if (this.configContainer.get().diskReaderEnabled()) {
             ByteBuf diskPayload = DiskChunkReader.readAndSerialize(world, chunkX, chunkZ);
             if (diskPayload != null) {
                 if (this.configContainer.get().debugEnabled()) {
