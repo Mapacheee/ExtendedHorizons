@@ -5,6 +5,8 @@ import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import java.util.function.Supplier;
+import java.util.function.Consumer;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayProcessor;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
@@ -29,6 +31,8 @@ import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftChunk;
 import org.bukkit.craftbukkit.CraftWorld;
+import me.mapacheee.extendedhorizons.fakechunks.disk.BlockPaletteResolver;
+import me.mapacheee.extendedhorizons.fakechunks.disk.DiskChunkReader;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -86,6 +90,7 @@ public final class PaperChunkBackend implements ChunkBackend {
         this.serializationExecutorService = serializationExecutorService;
         this.lightPayloadCacheService = lightPayloadCacheService;
         this.metricsService = metricsService;
+        BlockPaletteResolver.scheduleBuildAsync();
     }
 
     @Override
@@ -96,20 +101,81 @@ public final class PaperChunkBackend implements ChunkBackend {
         boolean generateMissingChunks,
         ChunkScheduler scheduler) {
         if (world == null || scheduler == null) {
+            LOGGER.debug("buildChunkPayload called with null world or scheduler for chunk [{}, {}]", chunkX, chunkZ);
             return CompletableFuture.completedFuture(null);
         }
         if (!PacketIdRegistry.hasLevelChunkWithLightId()) {
+            LOGGER.debug("Packet ID not resolved, cannot build chunk [{}, {}]", chunkX, chunkZ);
             return CompletableFuture.completedFuture(null);
+        }
+        if (this.configContainer.get().diskReaderEnabled() && BlockPaletteResolver.isInitialized()) {
+            ByteBuf diskPayload = DiskChunkReader.readAndSerialize(world, chunkX, chunkZ);
+            if (diskPayload != null) {
+                if (this.configContainer.get().debugEnabled()) {
+                    LOGGER.info("EH disk payload ok for chunk [{}, {}]", chunkX, chunkZ);
+                }
+                return CompletableFuture.completedFuture(diskPayload);
+            }
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH disk payload null for chunk [{}, {}], falling back", chunkX, chunkZ);
+            }
         }
 
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
+        Consumer<Chunk> task = createChunkTask(world, chunkX, chunkZ, future);
+
+        if (generateMissingChunks) {
+            world.getChunkAtAsync(chunkX, chunkZ, true)
+                .thenAccept(asyncChunk -> this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(asyncChunk), future))
+                .exceptionally(throwable -> {
+                    future.complete(null);
+                    return null;
+                });
+        } else {
+            world.getChunkAtAsync(chunkX, chunkZ, false)
+                .thenAccept((chunk) -> {
+                    if (chunk == null) {
+                        if (this.configContainer.get().debugEnabled()) {
+                            LOGGER.info("EH getChunkAtAsync returned null for chunk [{}, {}]", chunkX, chunkZ);
+                        }
+                        future.complete(null);
+                        return;
+                    }
+                    this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(chunk), future);
+                })
+                .exceptionally(throwable -> {
+                    future.complete(null);
+                    return null;
+                });
+        }
+
+        return future;
+    }
+
+    private LevelChunk resolveLevelChunk(Chunk asyncChunk) {
+        if (!(asyncChunk instanceof CraftChunk craftChunk)) {
+            return null;
+        }
+        for (var status : CHUNK_STATUS_PRIORITY) {
+            var access = craftChunk.getHandle(status);
+            if (access instanceof LevelChunk levelChunk) {
+                return levelChunk;
+            }
+        }
+        return null;
+    }
+
+    private Consumer<Chunk> createChunkTask(World world, int chunkX, int chunkZ, CompletableFuture<ByteBuf> future) {
         int serializationWorkers = this.configContainer.get().serializationWorkers();
         boolean useAsyncSerialization = serializationWorkers > 0;
-        java.util.function.Consumer<Chunk> task = (asyncChunk) -> {
+        return (asyncChunk) -> {
             try {
                 ServerLevel level = ((CraftWorld) world).getHandle();
                 LevelChunk resolvedChunk = this.resolveLevelChunk(asyncChunk);
                 if (resolvedChunk == null) {
+                    if (this.configContainer.get().debugEnabled()) {
+                        LOGGER.info("EH resolveLevelChunk failed for chunk [{}, {}]", chunkX, chunkZ);
+                    }
                     future.complete(null);
                     return;
                 }
@@ -124,8 +190,6 @@ public final class PaperChunkBackend implements ChunkBackend {
                     AntiXrayChunkSnapshot snapshot = this.captureAntiXraySnapshot(resolvedChunk, antiXrayProcessor, worldId, chunkKey);
                     this.metricsService.recordAntiXraySnapshot(System.nanoTime() - snapshotStart);
                     if (snapshot == null) {
-                        // Snapshot failed (e.g. no initialized light). Fall back to main serializer
-                        // which handles unlit chunks with synthetic light instead of failing the build.
                         ByteBuf fallback = this.serializeLevelChunkWithLight(
                             level, resolvedChunk, chunkX, chunkZ, worldId, chunkKey, antiXrayProcessor);
                         future.complete(fallback);
@@ -157,6 +221,9 @@ public final class PaperChunkBackend implements ChunkBackend {
                         worldId,
                         chunkKey,
                         antiXrayProcessor);
+                    if (packetData == null && this.configContainer.get().debugEnabled()) {
+                        LOGGER.info("EH serializeLevelChunkWithLight returned null for chunk [{}, {}]", chunkX, chunkZ);
+                    }
                     serializationFuture = CompletableFuture.completedFuture(packetData);
                 }
                 serializationFuture.whenComplete((packetData, throwable) -> {
@@ -170,48 +237,11 @@ public final class PaperChunkBackend implements ChunkBackend {
                 future.complete(null);
             }
         };
-
-        if (generateMissingChunks) {
-            world.getChunkAtAsync(chunkX, chunkZ, true)
-                .thenAccept(asyncChunk -> this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(asyncChunk), future))
-                .exceptionally(throwable -> {
-                    future.complete(null);
-                    return null;
-                });
-        } else {
-            world.getChunkAtAsync(chunkX, chunkZ, false)
-                .thenAccept((chunk) -> {
-                    if (chunk == null) {
-                        future.complete(null);
-                        return;
-                    }
-                    this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(chunk), future);
-                })
-                .exceptionally(throwable -> {
-                    future.complete(null);
-                    return null;
-                });
-        }
-
-        return future;
-    }
-
-    private LevelChunk resolveLevelChunk(Chunk asyncChunk) {
-        if (!(asyncChunk instanceof CraftChunk craftChunk)) {
-            return null;
-        }
-        for (var status : CHUNK_STATUS_PRIORITY) {
-            var access = craftChunk.getHandle(status);
-            if (access instanceof LevelChunk levelChunk) {
-                return levelChunk;
-            }
-        }
-        return null;
     }
 
     private CompletableFuture<ByteBuf> trySubmitAsync(
-        java.util.function.Supplier<ByteBuf> asyncTask,
-        java.util.function.Supplier<ByteBuf> fallbackTask
+        Supplier<ByteBuf> asyncTask,
+        Supplier<ByteBuf> fallbackTask
     ) {
         try {
             return this.serializationExecutorService.submit(asyncTask);
@@ -338,7 +368,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     }
 
     private static void writeHeightmaps(FriendlyByteBuf out, LevelChunk chunk) {
-        out.writeByte(0x00);
+        HeightmapWriter.writeHeightmaps(out, chunk);
     }
 
     private static void writeSection(

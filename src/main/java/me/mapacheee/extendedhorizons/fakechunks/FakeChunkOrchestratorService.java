@@ -125,6 +125,14 @@ public final class FakeChunkOrchestratorService {
             session.setChunkPos(snapshot.chunkX(), snapshot.chunkZ());
         }
 
+        if (this.configContainer.get().debugEnabled()) {
+            LOGGER.info(
+                "EH tick player={} world={} center=({}, {}) targetDistance={} serverDistance={} enabled={} initiated={}",
+                snapshot.viewerId(), snapshot.world().getName(), snapshot.chunkX(), snapshot.chunkZ(),
+                snapshot.targetDistance(), snapshot.serverDistance(), session.enabled(), session.initiated()
+            );
+        }
+
         if (!this.preTick(session, snapshot.targetDistance(), snapshot.serverDistance())) {
             this.farPlayerTrackingService.clearTracked(channel, session);
             this.unloadSessionChunks(channel, session);
@@ -158,12 +166,21 @@ public final class FakeChunkOrchestratorService {
             if (session.enabled()) {
                 session.enabled(false);
             }
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info(
+                    "EH preTick disabled: targetDistance={} <= serverDistance={} (no fake chunks)",
+                    targetDistance, serverDistance
+                );
+            }
             return false;
         }
 
         if (!session.enabled() || session.distance() != targetDistance) {
             session.enabled(true);
             session.updateDistance(targetDistance);
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH preTick enabled: distance set to {}", targetDistance);
+            }
         }
         return true;
     }
@@ -295,5 +312,4 @@ public final class FakeChunkOrchestratorService {
 
     private record PermissionCacheEntry(int permissionCap, boolean hasBypass) {}
 }
-
 

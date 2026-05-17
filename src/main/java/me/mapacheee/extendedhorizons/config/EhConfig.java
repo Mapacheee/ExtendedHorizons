@@ -140,6 +140,14 @@ public record EhConfig(
         return this.fakeChunks.generateMissingChunks();
     }
 
+    public boolean diskReaderEnabled() {
+        if (this.fakeChunks == null) {
+            return false;
+        }
+        Boolean enabled = this.fakeChunks.diskReaderEnabled();
+        return enabled != null && enabled;
+    }
+
     public int cacheTtlSeconds() {
         if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
             return 15;
@@ -270,6 +278,7 @@ public record EhConfig(
         @Setting("generate-missing-chunks") boolean generateMissingChunks,
         @Setting("unavailable-retry-ms") long unavailableRetryMs,
         @Setting("anti-xray") AntiXrayConfig antiXray,
+        @Setting("disk-reader-enabled") Boolean diskReaderEnabled,
         CacheConfig cache,
         RuntimeConfig runtime,
         @Setting("far-players") FarPlayersConfig farPlayers

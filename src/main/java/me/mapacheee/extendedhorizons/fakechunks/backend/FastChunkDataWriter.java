@@ -54,12 +54,12 @@ final class FastChunkDataWriter {
             return 0;
         }
         int size = 0;
-        size += varIntSize(0);
+        size += HeightmapWriter.estimateHeightmapsSize(chunk);
 
         int sectionsSize = computeSectionsSize(chunk);
         size += varIntSize(sectionsSize) + sectionsSize;
 
-        size += 1;
+        size += varIntSize(0);
         return size;
     }
 
@@ -68,9 +68,15 @@ final class FastChunkDataWriter {
 
         int serializedSize = computeSectionsSize(chunk);
         VarIntUtil.writeVarInt(out, serializedSize);
+        int expectedWriterIndex = out.writerIndex() + serializedSize;
 
         for (LevelChunkSection section : chunk.getSections()) {
             section.write(out, null, 0);
+        }
+
+        if (out.writerIndex() != expectedWriterIndex) {
+            throw new IllegalStateException("Expected writer index to be at "
+                + expectedWriterIndex + ", got " + out.writerIndex());
         }
 
         VarIntUtil.writeVarInt(out, 0);
@@ -97,12 +103,10 @@ final class FastChunkDataWriter {
     }
 
     private static void writeHeightmaps(FriendlyByteBuf out, LevelChunk chunk) {
-        out.writeByte(0x00);
+        HeightmapWriter.writeHeightmaps(out, chunk);
     }
 
     private static int varIntSize(int value) {
         return VarInt.getByteSize(value);
     }
 }
-
-

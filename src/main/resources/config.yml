@@ -25,13 +25,13 @@ fake-chunks:
     burst-bytes: 768000
 
   # Max newly queued fake chunks per player processing cycle.
-  max-send-per-cycle: 2
+  max-send-per-cycle: 6
 
   # Global limit of new chunk generations per tick (protects TPS under load).
-  max-global-generations-per-tick: 4
+  max-global-generations-per-tick: 12
 
   # Max in-flight chunk builds per player.
-  max-inflight-per-player: 3
+  max-inflight-per-player: 9
 
   # Hard queue cap per player.
   chunk-queue-size: 24
@@ -42,6 +42,10 @@ fake-chunks:
   # Retry delay (ms) for chunks temporarily unavailable.
   unavailable-retry-ms: 150
 
+  # Use direct disk reader instead of Paper's chunk loading.
+  # WARNING: The disk reader is experimental and may produce incorrect chunk data.
+  # When false (default), Paper's normal getChunkAtAsync path is used.
+  disk-reader-enabled: false
 
   anti-xray:
     # Global anti-xray master switch. Per-world value can override this.

@@ -76,18 +76,37 @@ public final class ChunkDispatchService {
         int maxQueueSize = config.chunkQueueSize();
         int inFlight = this.drainCompletedEntries(world, channel, session);
 
+        if (config.debugEnabled()) {
+            LOGGER.info(
+                "EH dispatch: inFlight={} queueSize={} maxInflight={} maxQueueSize={} chunksPerTick={}",
+                inFlight, session.chunkQueue().size(), maxInflight, maxQueueSize, chunksPerTick
+            );
+        }
+
         while (true) {
             if (inFlight >= maxInflight) {
+                if (config.debugEnabled()) {
+                    LOGGER.info("EH dispatch stop: inFlight>=maxInflight");
+                }
                 break;
             }
             if (session.chunkQueue().size() >= maxQueueSize) {
+                if (config.debugEnabled()) {
+                    LOGGER.info("EH dispatch stop: queueSize>=maxQueueSize");
+                }
                 break;
             }
             if (!this.generationLimiterService.tryAcquire()) {
+                if (config.debugEnabled()) {
+                    LOGGER.info("EH dispatch stop: global generation limiter exhausted");
+                }
                 break;
             }
             Long chunkKey = session.pollNextChunkKey();
             if (chunkKey == null) {
+                if (config.debugEnabled()) {
+                    LOGGER.info("EH dispatch stop: no chunk candidates");
+                }
                 break;
             }
             int chunkX = ChunkKeyCodec.x(chunkKey);
@@ -96,6 +115,9 @@ public final class ChunkDispatchService {
             session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
             inFlight++;
             if (--chunksPerTick <= 0) {
+                if (config.debugEnabled()) {
+                    LOGGER.info("EH dispatch stop: chunksPerTick exhausted");
+                }
                 break;
             }
         }
@@ -138,6 +160,14 @@ public final class ChunkDispatchService {
             ? this.antiXrayPayloadCacheService.resolveProfileHash(world, config)
             : null;
 
+        if (config.debugEnabled()) {
+            LOGGER.info(
+                "EH buildChunk: chunk=({}, {}) antiXrayEnabled={} bypassCache={}",
+                chunkX, chunkZ, antiXrayEnabled,
+                antiXrayEnabled || this.cacheService.shouldBypass(expectedWorldId, chunkKey)
+            );
+        }
+
         if (antiXrayProfileHash != null) {
             ByteBuf antiXrayCached = this.antiXrayPayloadCacheService.get(
                 expectedWorldId,
@@ -153,6 +183,9 @@ public final class ChunkDispatchService {
         }
 
         if (this.cacheService.isTemporarilyUnavailable(expectedWorldId, chunkKey)) {
+            if (config.debugEnabled()) {
+                LOGGER.info("EH buildChunk skip: cache temporarily unavailable for {}", chunkKey);
+            }
             return CompletableFuture.completedFuture(null);
         }
 
@@ -160,6 +193,9 @@ public final class ChunkDispatchService {
         if (!bypass) {
             ByteBuf cached = this.cacheService.getSerialized(expectedWorldId, chunkKey);
             if (cached != null) {
+                if (config.debugEnabled()) {
+                    LOGGER.info("EH buildChunk cache hit for {}", chunkKey);
+                }
                 return CompletableFuture.completedFuture(cached);
             }
         }
@@ -184,6 +220,9 @@ public final class ChunkDispatchService {
         .whenComplete((payload, throwable) -> {
             if (payload == null && throwable == null) {
                 this.cacheService.markUnavailable(expectedWorldId, chunkKey);
+                if (config.debugEnabled()) {
+                    LOGGER.info("EH buildChunk failed: null payload for {}", chunkKey);
+                }
                 return;
             }
             if (throwable == null && antiXrayProfileHash != null) {
@@ -203,13 +242,12 @@ public final class ChunkDispatchService {
         CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
         if (!buildFuture.isDone()) {
             if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
-                // The chunk has been queued for too long without completing.
-                // This often happens when WorldPainter chunks trigger heavy sync
-                // tasks on the region thread (e.g., heightmap recalculation).
-                // We drop the entry to free up queue space and allow retries later.
                 session.onChunkBuildFailed(entry.chunkKey());
                 this.cacheService.markUnavailable(world.getUID(), entry.chunkKey());
                 entry.releaseFuture();
+                if (this.configContainer.get().debugEnabled()) {
+                    LOGGER.info("EH queue timeout: {}", entry.chunkKey());
+                }
                 return true;
             }
             return false;
@@ -217,33 +255,56 @@ public final class ChunkDispatchService {
         if (buildFuture.isCompletedExceptionally()) {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH queue exception: {}", entry.chunkKey());
+            }
             return true;
         }
         ByteBuf payload = buildFuture.getNow(null);
         if (payload == null) {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH queue null payload: {}", entry.chunkKey());
+            }
             return true;
         }
         if (!this.isChunkStillInRange(session, entry.chunkKey())) {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH queue out of range: {}", entry.chunkKey());
+            }
             return true;
         }
         if (!channel.isWritable()) {
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH queue backpressure: channel not writable");
+            }
             return false;
         }
         long payloadBytes = payload.readableBytes();
         try {
             long beforeUnwritable = channel.bytesBeforeUnwritable();
             if (beforeUnwritable > 0 && beforeUnwritable < payloadBytes) {
-                return false;
+                if (payloadBytes <= 65536) {
+                    if (this.configContainer.get().debugEnabled()) {
+                        LOGGER.info("EH queue backpressure: bytesBeforeUnwritable={} payloadBytes={}", beforeUnwritable, payloadBytes);
+                    }
+                    return false;
+                }
+                if (this.configContainer.get().debugEnabled()) {
+                    LOGGER.info("EH queue large payload bypass: bytesBeforeUnwritable={} payloadBytes={}", beforeUnwritable, payloadBytes);
+                }
             }
         } catch (AbstractMethodError ignored) {
             // ProtocolLib's NettyChannelProxy does not implement bytesBeforeUnwritable().
             // Fall through and rely on isWritable() for backpressure.
         }
         if (!session.tryConsumeBandwidth(payloadBytes)) {
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH queue bandwidth limit: payloadBytes={}", payloadBytes);
+            }
             return false;
         }
         ByteBuf toSend = payload.retainedDuplicate();
@@ -272,6 +333,9 @@ public final class ChunkDispatchService {
             return false;
         }
         session.onChunkSent(chunkKey);
+        if (this.configContainer.get().debugEnabled()) {
+            LOGGER.info("EH sent chunk {}", chunkKey);
+        }
         writePromise.addListener(future -> {
             if (!future.isSuccess()) {
                 session.onChunkBuildFailed(chunkKey);
