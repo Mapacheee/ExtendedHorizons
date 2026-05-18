@@ -457,6 +457,7 @@ public final class PlayerSession {
         this.resetBandwidthLimiter();
         this.enabled = false;
         this.iterationIndex = 0;
+        this.lastAdvertisedDistance = -1;
     }
 
     public void clearDispatchState() {
