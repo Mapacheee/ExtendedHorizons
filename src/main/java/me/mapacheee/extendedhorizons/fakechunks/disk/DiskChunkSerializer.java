@@ -127,17 +127,14 @@ public final class DiskChunkSerializer {
             }
         }
 
-        if (onlyAir) {
-            LOGGER.debug("Chunk [{}, {}] is all-air, skipping", chunkX, chunkZ);
-            return null;
-        }
-
         for (int i = 0; i < sectionsCount; i++) {
             if (sections[i] == null) {
                 sections[i] = new LevelChunkSection(
                         factory.createForBlockStates(),
                         factory.createForBiomes()
                 );
+            } else {
+                sections[i].recalcBlockCounts();
             }
         }
 

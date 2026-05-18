@@ -107,7 +107,7 @@ public record EhConfig(
 
     public int maxGlobalGenerationsPerTick() {
         if (this.fakeChunks == null) {
-            return 6;
+            return 50;
         }
         return Math.max(1, this.fakeChunks.maxGlobalGenerationsPerTick());
     }
