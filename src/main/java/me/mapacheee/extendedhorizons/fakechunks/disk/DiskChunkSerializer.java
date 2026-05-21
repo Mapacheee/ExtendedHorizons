@@ -60,7 +60,6 @@ public final class DiskChunkSerializer {
       return serializeFromTag(rootTag, level, chunkX, chunkZ, hasSkyLight);
     }
 
-    @SuppressWarnings("unchecked")
     private static ByteBuf serializeFromTag(
             CompoundTag rootTag, ServerLevel level,
             int chunkX, int chunkZ, boolean hasSkyLight
