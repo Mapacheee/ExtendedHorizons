@@ -7,7 +7,6 @@ import io.netty.util.ReferenceCountUtil;
 import io.netty.buffer.ByteBuf;
 import it.unimi.dsi.fastutil.ints.IntList;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
-import me.mapacheee.extendedhorizons.fakechunks.util.ChunkPosAccess;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
@@ -20,6 +19,7 @@ import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.ChunkPos;
+
 import java.util.UUID;
 import java.util.List;
 import java.util.ArrayList;
@@ -27,6 +27,20 @@ import java.util.ArrayList;
 public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
     private static final int VARINT_MAX_BYTES = 5;
+    private static final java.lang.reflect.Field CHUNK_POS_X;
+    private static final java.lang.reflect.Field CHUNK_POS_Z;
+
+    static {
+        try {
+            CHUNK_POS_X = ChunkPos.class.getDeclaredField("x");
+            CHUNK_POS_X.setAccessible(true);
+            CHUNK_POS_Z = ChunkPos.class.getDeclaredField("z");
+            CHUNK_POS_Z.setAccessible(true);
+        } catch (NoSuchFieldException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     private volatile PlayerSession session;
 
     @Override
@@ -144,8 +158,8 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             case ClientboundForgetLevelChunkPacket packet -> {
                 ChunkPos pos = packet.pos();
                 try {
-                    yield session.serverChunkRemove(ChunkPosAccess.x(pos), ChunkPosAccess.z(pos));
-                } catch (Throwable throwable) {
+                    yield session.serverChunkRemove(CHUNK_POS_X.getInt(pos), CHUNK_POS_Z.getInt(pos));
+                } catch (IllegalAccessException e) {
                     yield false;
                 }
             }
@@ -188,20 +202,15 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
                 }
             }
             case ClientboundRemoveEntitiesPacket packet -> {
-                for (int entityId : extractRemovedEntityIds(packet)) {
-                    session.removeServerTrackedEntity(entityId);
+                try {
+                    IntList ids = packet.getEntityIds();
+                    for (int i = 0, size = ids.size(); i < size; i++) {
+                        session.removeServerTrackedEntity(ids.getInt(i));
+                    }
+                } catch (Throwable ignored) {
                 }
             }
             default -> {}
-        }
-    }
-
-    private static int[] extractRemovedEntityIds(ClientboundRemoveEntitiesPacket packet) {
-        try {
-            IntList ids = packet.getEntityIds();
-            return ids.toIntArray();
-        } catch (Throwable ignored) {
-            return new int[0];
         }
     }
 
