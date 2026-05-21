@@ -250,6 +250,7 @@ public final class PlayerSession {
             return;
         }
         this.chunkKey = newKey;
+        this.iterationIndex = 0;
 
         if (!this.enabled || this.chunkStates.length == 0) {
             return;
@@ -350,6 +351,7 @@ public final class PlayerSession {
         }
         if (lc == ChunkLifecycle.SERVER_LOADED) {
             state.set(chunkX, chunkZ, ChunkLifecycle.UNLOADED);
+            this.iterationIndex = 0;
             return true;
         }
         return false;
@@ -379,7 +381,6 @@ public final class PlayerSession {
                 return ChunkKeyCodec.pack(chunkX, chunkZ);
             }
         }
-        this.iterationIndex = 0;
         return null;
     }
 
@@ -387,6 +388,7 @@ public final class PlayerSession {
         ChunkState state = this.getStateByKey(chunkKey);
         if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
             state.markBuildFailed();
+            this.iterationIndex = 0;
         }
     }
 
