@@ -37,7 +37,8 @@ import java.util.List;
 public final class RuntimeOrchestratorService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeOrchestratorService.class);
-    private static final int EQUIPMENT_SLOT_COUNT = EquipmentSlot.values().length;
+    private static final EquipmentSlot[] EQUIPMENT_SLOTS = EquipmentSlot.values();
+    private static final int EQUIPMENT_SLOT_COUNT = EQUIPMENT_SLOTS.length;
     private static final int CACHE_CLEANUP_INTERVAL = 200;
 
     private final Container<EhConfig> configContainer;
@@ -111,8 +112,6 @@ public final class RuntimeOrchestratorService {
         boolean pollEquipment = farPlayersEnabled && Math.floorMod(this.orchestratorTick, config.farPlayerEquipTicks()) == 0;
 
         for (Player player : playerList) {
-            player.getWorld();
-            this.sessionRegistry.ensureFor(player, false);
             FoliaTaskUtil.runForPlayer(player, plugin, () -> {
                 try {
                     Location loc = player.getLocation();
@@ -124,7 +123,7 @@ public final class RuntimeOrchestratorService {
 
                         if (pollEquipment) {
                             equipment = new ArrayList<>(EQUIPMENT_SLOT_COUNT);
-                            for (EquipmentSlot slot : EquipmentSlot.values()) {
+                            for (EquipmentSlot slot : EQUIPMENT_SLOTS) {
                                 ItemStack item = nmsPlayer.getItemBySlot(slot);
                                 equipment.add(Pair.of(slot, item.copy()));
                             }
