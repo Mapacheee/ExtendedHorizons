@@ -48,11 +48,11 @@ public final class FarPlayerTrackingService {
 
     public void track(
         UUID viewerId,
-        UUID worldId,
         long viewerChunkKey,
         PlayerSession session,
         Channel channel,
-        int targetDistance
+        int targetDistance,
+        Collection<FarPlayerState> candidates
     ) {
         int viewerChunkX = ChunkKeyCodec.x(viewerChunkKey);
         int viewerChunkZ = ChunkKeyCodec.z(viewerChunkKey);
@@ -65,9 +65,6 @@ public final class FarPlayerTrackingService {
         double farLimit = targetDistance + FAR_RADIUS_PADDING;
         double farLimitSq = farLimit * farLimit;
 
-        Collection<FarPlayerState> candidates = this.cacheService.getNearbyPlayers(
-            worldId, viewerChunkX, viewerChunkZ, targetDistance
-        );
         Map<UUID, Integer> trackedFarPlayers = session.trackedFarPlayers();
         Set<Integer> usedFarEntityIds = new HashSet<>(trackedFarPlayers.values());
 
