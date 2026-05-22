@@ -107,6 +107,23 @@ public final class FakeChunkOrchestratorService {
         int targetDistance = this.resolveClientDistance(player, worldName);
         int serverDistance = this.resolveServerDistance(player);
 
+        boolean chunkChanged = session.hasChunkChanged(chunkX, chunkZ);
+        boolean distanceChanged = (session.lastAdvertisedDistance() != targetDistance || session.distance() != targetDistance);
+        boolean farPlayersEnabled = this.configContainer.get().farPlayersEnabled();
+        int moveTicks = this.configContainer.get().farPlayerMoveTicks();
+        boolean isFarPlayerTick = farPlayersEnabled && session.enabled() && (Bukkit.getCurrentTick() % moveTicks == 0);
+        boolean needsQueueProcessing = !session.chunkQueue().isEmpty();
+
+        boolean shouldTick = !session.initiated()
+            || chunkChanged
+            || distanceChanged
+            || needsQueueProcessing
+            || isFarPlayerTick;
+
+        if (!shouldTick) {
+            return;
+        }
+
         List<FarPlayerState> visibleCandidates = new ArrayList<>();
         if (this.configContainer.get().farPlayersEnabled()) {
             Collection<FarPlayerState> candidates = this.farPlayerCacheService.getNearbyPlayers(
@@ -166,7 +183,7 @@ public final class FakeChunkOrchestratorService {
             return;
         }
 
-        this.syncClientCenter(channel, snapshot.chunkX(), snapshot.chunkZ());
+        this.syncClientCenter(channel, session, snapshot.chunkX(), snapshot.chunkZ());
         this.syncClientRadius(channel, session, snapshot.targetDistance());
 
         if (this.configContainer.get().farPlayersEnabled()) {
@@ -210,8 +227,13 @@ public final class FakeChunkOrchestratorService {
         return true;
     }
 
-    private void syncClientCenter(Channel channel, int chunkX, int chunkZ) {
+    private void syncClientCenter(Channel channel, PlayerSession session, int chunkX, int chunkZ) {
+        long key = ChunkKeyCodec.pack(chunkX, chunkZ);
+        if (session.lastAdvertisedChunkKey() == key) {
+            return;
+        }
         this.channelInjectionService.writeBypass(channel, new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
+        session.lastAdvertisedChunkKey(key);
     }
 
     private void syncClientRadius(Channel channel, PlayerSession session, int targetDistance) {

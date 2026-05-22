@@ -122,7 +122,18 @@ public final class RuntimeOrchestratorService {
                         if (player.getGameMode() == GameMode.SPECTATOR || player.hasMetadata("vanished")) {
                             this.farPlayerCacheService.removePlayer(player.getUniqueId());
                         } else {
-                            List<SynchedEntityData.DataValue<?>> metadata = nmsPlayer.getEntityData().packAll();
+                            List<SynchedEntityData.DataValue<?>> metadata;
+                            boolean pollMetadata = Math.floorMod(this.orchestratorTick, config.farPlayerMoveTicks()) == 0;
+                            if (pollMetadata) {
+                                metadata = nmsPlayer.getEntityData().packAll();
+                            } else {
+                                FarPlayerState oldState = this.farPlayerCacheService.getState(player.getUniqueId());
+                                if (oldState != null && oldState.metadata() != null) {
+                                    metadata = oldState.metadata();
+                                } else {
+                                    metadata = nmsPlayer.getEntityData().packAll();
+                                }
+                            }
                             List<Pair<EquipmentSlot, ItemStack>> equipment;
 
                             if (pollEquipment) {
