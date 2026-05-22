@@ -18,6 +18,7 @@ import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
@@ -118,36 +119,40 @@ public final class RuntimeOrchestratorService {
                     ServerPlayer nmsPlayer = ((CraftPlayer) player).getHandle();
 
                     if (farPlayersEnabled) {
-                        List<SynchedEntityData.DataValue<?>> metadata = nmsPlayer.getEntityData().packAll();
-                        List<Pair<EquipmentSlot, ItemStack>> equipment;
-
-                        if (pollEquipment) {
-                            equipment = new ArrayList<>(EQUIPMENT_SLOT_COUNT);
-                            for (EquipmentSlot slot : EQUIPMENT_SLOTS) {
-                                ItemStack item = nmsPlayer.getItemBySlot(slot);
-                                equipment.add(Pair.of(slot, item.copy()));
-                            }
-                            this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
+                        if (player.getGameMode() == GameMode.SPECTATOR || player.hasMetadata("vanished")) {
+                            this.farPlayerCacheService.removePlayer(player.getUniqueId());
                         } else {
-                            equipment = this.farPlayerCacheService.getEquipment(player.getUniqueId());
-                            if (equipment == null) {
-                                equipment = Collections.emptyList();
-                            }
-                        }
+                            List<SynchedEntityData.DataValue<?>> metadata = nmsPlayer.getEntityData().packAll();
+                            List<Pair<EquipmentSlot, ItemStack>> equipment;
 
-                        this.farPlayerCacheService.updateState(player.getUniqueId(), new FarPlayerState(
-                            player.getEntityId(),
-                            player.getUniqueId(),
-                            player.getWorld().getUID(),
-                            loc.getX(),
-                            loc.getY(),
-                            loc.getZ(),
-                            loc.getYaw(),
-                            loc.getPitch(),
-                            nmsPlayer.yHeadRot,
-                            equipment,
-                            metadata
-                        ));
+                            if (pollEquipment) {
+                                equipment = new ArrayList<>(EQUIPMENT_SLOT_COUNT);
+                                for (EquipmentSlot slot : EQUIPMENT_SLOTS) {
+                                    ItemStack item = nmsPlayer.getItemBySlot(slot);
+                                    equipment.add(Pair.of(slot, item.copy()));
+                                }
+                                this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
+                            } else {
+                                equipment = this.farPlayerCacheService.getEquipment(player.getUniqueId());
+                                if (equipment == null) {
+                                    equipment = Collections.emptyList();
+                                }
+                            }
+
+                            this.farPlayerCacheService.updateState(player.getUniqueId(), new FarPlayerState(
+                                player.getEntityId(),
+                                player.getUniqueId(),
+                                player.getWorld().getUID(),
+                                loc.getX(),
+                                loc.getY(),
+                                loc.getZ(),
+                                loc.getYaw(),
+                                loc.getPitch(),
+                                nmsPlayer.yHeadRot,
+                                equipment,
+                                metadata
+                            ));
+                        }
                     }
 
                     this.fakeChunkOrchestratorService.tickPlayer(player);
