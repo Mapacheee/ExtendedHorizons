@@ -10,6 +10,7 @@ import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
 import me.mapacheee.extendedhorizons.fakechunks.backend.PaperChunkBackend;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.disk.RegionFileReader;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.FarPlayerBackend;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.PaperFarPlayerBackend;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
@@ -88,6 +89,7 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
     @Override
     public void onPluginDisable() {
+        RegionFileReader.clearCache();
         instance = null;
         super.onPluginDisable();
     }

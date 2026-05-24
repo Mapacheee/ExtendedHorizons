@@ -23,5 +23,10 @@ public final class GlobalGenerationLimiterService {
         } while (!this.remaining.compareAndSet(current, current - 1));
         return true;
     }
+
+    public void release() {
+        this.remaining.incrementAndGet();
+    }
 }
+
 

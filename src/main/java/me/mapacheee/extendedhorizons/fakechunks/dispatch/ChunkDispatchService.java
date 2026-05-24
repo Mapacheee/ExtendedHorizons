@@ -104,6 +104,7 @@ public final class ChunkDispatchService {
             }
             Long chunkKey = session.pollNextChunkKey();
             if (chunkKey == null) {
+                this.generationLimiterService.release();
                 if (config.debugEnabled()) {
                     LOGGER.info("EH dispatch stop: no chunk candidates");
                 }
@@ -112,6 +113,9 @@ public final class ChunkDispatchService {
             int chunkX = ChunkKeyCodec.x(chunkKey);
             int chunkZ = ChunkKeyCodec.z(chunkKey);
             CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
+            if (buildFuture.isDone()) {
+                this.generationLimiterService.release();
+            }
             session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
             inFlight++;
             if (--chunksPerTick <= 0) {
