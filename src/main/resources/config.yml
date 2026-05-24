@@ -1,3 +1,14 @@
+#######################################################
+#             ExtendedHorizons V3                     #
+#                by Mapacheee!                        #
+#                                                     #
+#           Star the project repository!              #
+#    https://github.com/Mapacheee/ExtendedHorizons    #
+#                                                     #
+#           Get support in our Discord!               #
+#          https://discord.gg/yA3vD2S8Zj              #
+#######################################################
+
 # Global debug options.
 debug:
   # Enables extra internal behavior toggles (not runtime spam logs).
@@ -12,7 +23,7 @@ fake-chunks:
   serializer-mode: FAST
 
   # Number of serializer workers.
-  # 0 = inline, 1..16 = async pool threads (used for non anti-xray serialization).
+  # 0 = inline, 1-16 = async pool threads (used for non anti-xray serialization).
   serialization-workers: 1
 
   bandwidth:
@@ -43,9 +54,10 @@ fake-chunks:
   unavailable-retry-ms: 150
 
   # Use direct disk reader instead of Paper's chunk loading.
-  # WARNING: The disk reader is experimental and may produce incorrect chunk data.
-  # When false (default), Paper's normal getChunkAtAsync path is used.
-  disk-reader-enabled: false
+  # This method is faster, but requires server in at least 1.21.2 or higher.
+  # If you are running a lower version, set false this option.
+  # When false, Paper's normal getChunkAtAsync path is used.
+  disk-reader-enabled: true
 
   anti-xray:
     # Global anti-xray master switch. Per-world value can override this.
@@ -116,4 +128,3 @@ world-settings:
         - minecraft:nether_gold_ore
         - minecraft:nether_quartz_ore
         - minecraft:ancient_debris
-
