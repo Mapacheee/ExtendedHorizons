@@ -96,12 +96,16 @@ public final class DiskChunkSerializer {
                 try {
                     PalettedContainer<BlockState> blocks =
                             sectionTag.get("block_states") instanceof CompoundTag blockTag
-                            ? factory.blockStatesContainerCodec().parse(NbtOps.INSTANCE, blockTag).getOrThrow()
+                            ? factory.blockStatesContainerCodec().parse(NbtOps.INSTANCE, blockTag)
+                                    .resultOrPartial(err -> LOGGER.debug("Partial block parse in chunk [{}, {}]: {}", chunkX, chunkZ, err))
+                                    .orElseGet(factory::createForBlockStates)
                             : factory.createForBlockStates();
 
                     PalettedContainer<Holder<Biome>> biomes =
                             sectionTag.get("biomes") instanceof CompoundTag biomeTag
-                            ? factory.biomeContainerRWCodec().parse(NbtOps.INSTANCE, biomeTag).getOrThrow()
+                            ? factory.biomeContainerRWCodec().parse(NbtOps.INSTANCE, biomeTag)
+                                    .resultOrPartial(err -> LOGGER.debug("Partial biome parse in chunk [{}, {}]: {}", chunkX, chunkZ, err))
+                                    .orElseGet(factory::createForBiomes)
                             : factory.createForBiomes();
 
                     LevelChunkSection section = new LevelChunkSection(blocks, biomes);
