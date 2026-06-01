@@ -5,6 +5,7 @@ import io.netty.buffer.PooledByteBufAllocator;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.ByteArrayTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -35,6 +36,16 @@ public final class DiskChunkSerializer {
 
     private static final int PROTOCOL_MC296121 = 770;
     private static final int MIN_PACKET_SIZE = 4096;
+
+    /**
+     * True on servers that don't have 'minecraft:chain' in their block registry (≤1.21.1).
+     * On those versions the block was called 'minecraft:iron_chain'. World data from newer
+     * versions (where it was renamed to 'chain') needs to be remapped before parsing.
+     */
+    private static final boolean REMAP_CHAIN_TO_IRON_CHAIN =
+            BuiltInRegistries.BLOCK.keySet().stream()
+                    .noneMatch(key -> "minecraft:chain".equals(key.toString()));
+
     private DiskChunkSerializer() {}
 
     public static ByteBuf serialize(
@@ -94,12 +105,15 @@ public final class DiskChunkSerializer {
             int sectionIndex = y - minSectionY;
             if (sectionIndex >= 0 && sectionIndex < sectionsCount) {
                 try {
-                    PalettedContainer<BlockState> blocks =
-                            sectionTag.get("block_states") instanceof CompoundTag blockTag
-                            ? factory.blockStatesContainerCodec().parse(NbtOps.INSTANCE, blockTag)
-                                    .resultOrPartial(err -> LOGGER.debug("Partial block parse in chunk [{}, {}]: {}", chunkX, chunkZ, err))
-                                    .orElseGet(factory::createForBlockStates)
-                            : factory.createForBlockStates();
+                    PalettedContainer<BlockState> blocks;
+                    if (sectionTag.get("block_states") instanceof CompoundTag blockTag) {
+                        if (REMAP_CHAIN_TO_IRON_CHAIN) remapChainInPalette(blockTag);
+                        blocks = factory.blockStatesContainerCodec().parse(NbtOps.INSTANCE, blockTag)
+                                .resultOrPartial(err -> LOGGER.debug("Partial block parse in chunk [{}, {}]: {}", chunkX, chunkZ, err))
+                                .orElseGet(factory::createForBlockStates);
+                    } else {
+                        blocks = factory.createForBlockStates();
+                    }
 
                     PalettedContainer<Holder<Biome>> biomes =
                             sectionTag.get("biomes") instanceof CompoundTag biomeTag
@@ -246,5 +260,28 @@ public final class DiskChunkSerializer {
     private static void writeByteArrayList(ByteBuf buf, List<byte[]> list) {
         VarInt.write(buf, list.size());
         for (byte[] arr : list) FriendlyByteBuf.writeByteArray(buf, arr);
+    }
+
+    /**
+     * Walks the palette inside a block_states CompoundTag and replaces any entry
+     * whose "Name" is "minecraft:chain" with "minecraft:iron_chain".
+     *
+     * This handles world data that was saved on a newer server version (where the
+     * chain block was renamed from iron_chain to chain) and is now being read on
+     * an older server that only knows the iron_chain name.
+     */
+    private static void remapChainInPalette(CompoundTag blockStatesTag) {
+        var paletteOpt = blockStatesTag.getList("palette");
+        if (paletteOpt.isEmpty()) return;
+        ListTag palette = paletteOpt.get();
+        for (int i = 0; i < palette.size(); i++) {
+            var entryOpt = palette.getCompound(i);
+            if (entryOpt.isEmpty()) continue;
+            CompoundTag entry = entryOpt.get();
+            var nameOpt = entry.getString("Name");
+            if (nameOpt.isPresent() && "minecraft:chain".equals(nameOpt.get())) {
+                entry.putString("Name", "minecraft:iron_chain");
+            }
+        }
     }
 }
