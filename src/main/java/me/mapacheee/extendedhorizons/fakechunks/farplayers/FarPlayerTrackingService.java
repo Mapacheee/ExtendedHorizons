@@ -13,7 +13,6 @@ import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -66,7 +65,9 @@ public final class FarPlayerTrackingService {
         double farLimitSq = farLimit * farLimit;
 
         Map<UUID, Integer> trackedFarPlayers = session.trackedFarPlayers();
-        Set<Integer> usedFarEntityIds = new HashSet<>(trackedFarPlayers.values());
+        Set<Integer> usedFarEntityIds = session.usedFarEntityIdBuffer();
+        usedFarEntityIds.clear();
+        usedFarEntityIds.addAll(trackedFarPlayers.values());
 
         Set<UUID> newlyRetained = session.trackingBuffer();
         newlyRetained.clear();
@@ -192,10 +193,12 @@ public final class FarPlayerTrackingService {
             tracked.clear();
         }
         session.trackingBuffer().clear();
+        session.usedFarEntityIdBuffer().clear();
     }
 
     private int allocateFarEntityId(Set<Integer> usedFarEntityIds, UUID targetUuid, int realEntityId) {
-        int candidate = FAR_ENTITY_ID_RANGE_START + Math.floorMod(targetUuid.hashCode(), FAR_ENTITY_ID_RANGE_END - FAR_ENTITY_ID_RANGE_START);
+        int idRange = FAR_ENTITY_ID_RANGE_END - FAR_ENTITY_ID_RANGE_START;
+        int candidate = FAR_ENTITY_ID_RANGE_START + Math.floorMod(targetUuid.hashCode(), idRange);
         for (int attempts = 0; attempts < FAR_ENTITY_ID_ALLOCATION_ATTEMPTS; attempts++) {
             if (candidate != realEntityId && !usedFarEntityIds.contains(candidate)) {
                 return candidate;

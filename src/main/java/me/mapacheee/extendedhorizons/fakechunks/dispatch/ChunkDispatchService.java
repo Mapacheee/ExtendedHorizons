@@ -66,6 +66,7 @@ public final class ChunkDispatchService {
             return;
         }
         EhConfig config = this.configContainer.get();
+        boolean debug = config.debugEnabled();
         session.configureBandwidthLimiter(
             config.bandwidthEnabled(),
             config.bandwidthBytesPerSecond(),
@@ -74,9 +75,9 @@ public final class ChunkDispatchService {
         int chunksPerTick = config.maxSendPerCycle();
         int maxInflight = config.maxInflightPerPlayer();
         int maxQueueSize = config.chunkQueueSize();
-        int inFlight = this.drainCompletedEntries(world, channel, session, chunksPerTick);
+        int inFlight = this.drainCompletedEntries(world, channel, session, chunksPerTick, debug);
 
-        if (config.debugEnabled()) {
+        if (debug) {
             LOGGER.info(
                 "EH dispatch: inFlight={} queueSize={} maxInflight={} maxQueueSize={} chunksPerTick={}",
                 inFlight, session.chunkQueue().size(), maxInflight, maxQueueSize, chunksPerTick
@@ -84,30 +85,12 @@ public final class ChunkDispatchService {
         }
 
         while (true) {
-            if (inFlight >= maxInflight) {
-                if (config.debugEnabled()) {
-                    LOGGER.info("EH dispatch stop: inFlight>=maxInflight");
-                }
-                break;
-            }
-            if (session.chunkQueue().size() >= maxQueueSize) {
-                if (config.debugEnabled()) {
-                    LOGGER.info("EH dispatch stop: queueSize>=maxQueueSize");
-                }
-                break;
-            }
-            if (!this.generationLimiterService.tryAcquire()) {
-                if (config.debugEnabled()) {
-                    LOGGER.info("EH dispatch stop: global generation limiter exhausted");
-                }
-                break;
-            }
+            if (inFlight >= maxInflight) { break; }
+            if (session.chunkQueue().size() >= maxQueueSize) { break; }
+            if (!this.generationLimiterService.tryAcquire()) { break; }
             Long chunkKey = session.pollNextChunkKey();
             if (chunkKey == null) {
                 this.generationLimiterService.release();
-                if (config.debugEnabled()) {
-                    LOGGER.info("EH dispatch stop: no chunk candidates");
-                }
                 break;
             }
             int chunkX = ChunkKeyCodec.x(chunkKey);
@@ -118,16 +101,11 @@ public final class ChunkDispatchService {
             }
             session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
             inFlight++;
-            if (--chunksPerTick <= 0) {
-                if (config.debugEnabled()) {
-                    LOGGER.info("EH dispatch stop: chunksPerTick exhausted");
-                }
-                break;
-            }
+            if (--chunksPerTick <= 0) { break; }
         }
     }
 
-    private int drainCompletedEntries(World world, Channel channel, PlayerSession session, int maxSendPerCycle) {
+    private int drainCompletedEntries(World world, Channel channel, PlayerSession session, int maxSendPerCycle, boolean debug) {
         AtomicInteger inFlight = new AtomicInteger(0);
         AtomicInteger sentCount = new AtomicInteger(0);
         session.chunkQueue().removeIf(entry -> {
@@ -139,7 +117,7 @@ public final class ChunkDispatchService {
                 inFlight.incrementAndGet();
                 return false;
             }
-            boolean processed = this.checkQueueEntry(world, channel, session, entry, sentCount);
+            boolean processed = this.checkQueueEntry(world, channel, session, entry, sentCount, debug);
             if (!processed) {
                 inFlight.incrementAndGet();
             }
@@ -251,16 +229,13 @@ public final class ChunkDispatchService {
         .exceptionally(throwable -> null);
     }
 
-    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry, AtomicInteger sentCount) {
+    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry, AtomicInteger sentCount, boolean debug) {
         CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
         if (!buildFuture.isDone()) {
             if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
                 session.onChunkBuildFailed(entry.chunkKey());
                 this.cacheService.markUnavailable(world.getUID(), entry.chunkKey());
                 entry.releaseFuture();
-                if (this.configContainer.get().debugEnabled()) {
-                    LOGGER.info("EH queue timeout: {}", entry.chunkKey());
-                }
                 return true;
             }
             return false;
@@ -268,32 +243,20 @@ public final class ChunkDispatchService {
         if (buildFuture.isCompletedExceptionally()) {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
-            if (this.configContainer.get().debugEnabled()) {
-                LOGGER.info("EH queue exception: {}", entry.chunkKey());
-            }
             return true;
         }
         ByteBuf payload = buildFuture.getNow(null);
         if (payload == null) {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
-            if (this.configContainer.get().debugEnabled()) {
-                LOGGER.info("EH queue null payload: {}", entry.chunkKey());
-            }
             return true;
         }
         if (!this.isChunkStillInRange(session, entry.chunkKey())) {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
-            if (this.configContainer.get().debugEnabled()) {
-                LOGGER.info("EH queue out of range: {}", entry.chunkKey());
-            }
             return true;
         }
         if (!channel.isWritable()) {
-            if (this.configContainer.get().debugEnabled()) {
-                LOGGER.info("EH queue backpressure: channel not writable");
-            }
             return false;
         }
         long payloadBytes = payload.readableBytes();
@@ -301,23 +264,13 @@ public final class ChunkDispatchService {
             long beforeUnwritable = channel.bytesBeforeUnwritable();
             if (beforeUnwritable > 0 && beforeUnwritable < payloadBytes) {
                 if (payloadBytes <= 65536) {
-                    if (this.configContainer.get().debugEnabled()) {
-                        LOGGER.info("EH queue backpressure: bytesBeforeUnwritable={} payloadBytes={}", beforeUnwritable, payloadBytes);
-                    }
                     return false;
                 }
-                if (this.configContainer.get().debugEnabled()) {
-                    LOGGER.info("EH queue large payload bypass: bytesBeforeUnwritable={} payloadBytes={}", beforeUnwritable, payloadBytes);
-                }
             }
-        } catch (AbstractMethodError ignored) {
-            // ProtocolLib's NettyChannelProxy does not implement bytesBeforeUnwritable().
-            // Fall through and rely on isWritable() for backpressure.
+        } catch (AbstractMethodError error) {
+          LOGGER.error(error.getMessage());
         }
         if (!session.tryConsumeBandwidth(payloadBytes)) {
-            if (this.configContainer.get().debugEnabled()) {
-                LOGGER.info("EH queue bandwidth limit: payloadBytes={}", payloadBytes);
-            }
             return false;
         }
         ByteBuf toSend = payload.retainedDuplicate();
@@ -348,9 +301,6 @@ public final class ChunkDispatchService {
             return false;
         }
         session.onChunkSent(chunkKey);
-        if (this.configContainer.get().debugEnabled()) {
-            LOGGER.info("EH sent chunk {}", chunkKey);
-        }
         writePromise.addListener(future -> {
             if (!future.isSuccess()) {
                 session.onChunkBuildFailed(chunkKey);

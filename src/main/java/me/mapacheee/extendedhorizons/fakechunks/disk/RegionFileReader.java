@@ -53,6 +53,19 @@ public final class RegionFileReader {
     private static final int DECOMPRESSION_BUFFER_SIZE = 8192;
 
     /**
+     * Reusable direct ByteBuffers for the fixed-size reads (location entry + chunk header).
+     * Eliminates 2 heap allocations per chunk read.
+     */
+    private static final ThreadLocal<ByteBuffer> LOCATION_BUF =
+        ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(LOCATION_ENTRY_SIZE));
+    private static final ThreadLocal<ByteBuffer> CHUNK_HEADER_BUF =
+        ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(5));
+
+    /** Cached LZ4 decompressor — avoid calling LZ4Factory.fastestInstance() on every decompression. */
+    private static final LZ4SafeDecompressor LZ4_DECOMPRESSOR =
+        LZ4Factory.fastestInstance().safeDecompressor();
+
+    /**
      * Cache of open FileChannels to avoid heavy OS handle churn.
      * Thread-safe and auto-evicts inactive channels after 10 minutes.
      */
@@ -121,7 +134,8 @@ public final class RegionFileReader {
                 return null;
             }
 
-            ByteBuffer buf = ByteBuffer.allocate(4);
+            ByteBuffer buf = LOCATION_BUF.get();
+            buf.clear();
             int bytesRead = channel.read(buf, locationIndex);
             if (bytesRead < 4) {
                 return null;
@@ -148,7 +162,8 @@ public final class RegionFileReader {
                 return null;
             }
 
-            ByteBuffer headerBuf = ByteBuffer.allocate(5);
+            ByteBuffer headerBuf = CHUNK_HEADER_BUF.get();
+            headerBuf.clear();
             int headerRead = channel.read(headerBuf, dataStart);
             if (headerRead < 5) {
                 return null;
@@ -179,7 +194,7 @@ public final class RegionFileReader {
             }
 
             byte[] compressedData = dataBuf.array();
-            return decompress(compressedData, compressionType, chunkX, chunkZ, regionFile.getName());
+            return decompress(compressedData, compressionType, sectorCount, chunkX, chunkZ, regionFile.getName());
         } catch (java.nio.channels.ClosedChannelException e) {
             CHANNEL_CACHE.invalidate(regionFile.getAbsolutePath());
             LOGGER.debug("FileChannel closed for {}, invalidating cache", regionFile.getName());
@@ -201,11 +216,11 @@ public final class RegionFileReader {
     /**
      * Decompresses chunk data according to the compression type.
      */
-    private static byte[] decompress(byte[] data, int compressionType, int chunkX, int chunkZ, String fileName) {
+    private static byte[] decompress(byte[] data, int compressionType, int sectorCount, int chunkX, int chunkZ, String fileName) {
         try {
             return switch (compressionType) {
-                case COMPRESSION_GZIP -> decompressGzip(data);
-                case COMPRESSION_ZLIB -> decompressZlib(data);
+                case COMPRESSION_GZIP -> decompressGzip(data, sectorCount);
+                case COMPRESSION_ZLIB -> decompressZlib(data, sectorCount);
                 case COMPRESSION_NONE -> data;
                 case COMPRESSION_LZ4 -> decompressLz4(data);
                 default -> {
@@ -221,16 +236,16 @@ public final class RegionFileReader {
         }
     }
 
-    private static byte[] decompressGzip(byte[] data) throws IOException {
+    private static byte[] decompressGzip(byte[] data, int sectorCount) throws IOException {
         try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(data))) {
-            return readAllBytes(gis);
+            return readAllBytes(gis, sectorCount);
         }
     }
 
-    private static byte[] decompressZlib(byte[] data) throws IOException {
+    private static byte[] decompressZlib(byte[] data, int sectorCount) throws IOException {
         Inflater inflater = new Inflater();
         try (InflaterInputStream iis = new InflaterInputStream(new ByteArrayInputStream(data), inflater)) {
-            return readAllBytes(iis);
+            return readAllBytes(iis, sectorCount);
         } finally {
             inflater.end();
         }
@@ -238,18 +253,16 @@ public final class RegionFileReader {
 
     private static byte[] decompressLz4(byte[] data) throws IOException {
         try {
-            LZ4Factory factory = LZ4Factory.fastestInstance();
-            LZ4SafeDecompressor decompressor = factory.safeDecompressor();
             int maxOutput = data.length * 8;
-            byte[] output = decompressor.decompress(data, maxOutput);
-            return output;
+            return LZ4_DECOMPRESSOR.decompress(data, maxOutput);
         } catch (Exception e) {
             throw new IOException("LZ4 decompression failed", e);
         }
     }
 
-    private static byte[] readAllBytes(InputStream is) throws IOException {
-        ByteArrayOutputStream bos = new ByteArrayOutputStream(DECOMPRESSION_BUFFER_SIZE);
+    private static byte[] readAllBytes(InputStream is, int sectorCount) throws IOException {
+        int estimatedSize = Math.max(DECOMPRESSION_BUFFER_SIZE, sectorCount * SECTOR_SIZE);
+        ByteArrayOutputStream bos = new ByteArrayOutputStream(estimatedSize);
         byte[] buffer = new byte[DECOMPRESSION_BUFFER_SIZE];
         int len;
         while ((len = is.read(buffer)) != -1) {

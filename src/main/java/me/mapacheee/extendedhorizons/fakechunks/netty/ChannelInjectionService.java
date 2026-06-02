@@ -27,12 +27,13 @@ public final class ChannelInjectionService {
         }
         Runnable action = () -> {
             if (channel.pipeline().get("encoder") != null
+                && needsPacketIdProbe()
                 && channel.pipeline().get(EH_PACKET_ID_PROBE_HANDLER) == null) {
                 channel.pipeline().addBefore("encoder", EH_PACKET_ID_PROBE_HANDLER, new EhPacketIdProbeHandler());
             }
             if (channel.pipeline().get(EH_HANDLER) instanceof EhPacketHandler handler) {
                 handler.setSession(session);
-                PacketIdRegistry.resolveFromEncoder(channel);
+                removePacketIdProbeIfResolved(channel);
                 return;
             }
             if (channel.pipeline().get("packet_handler") == null) {
@@ -42,6 +43,7 @@ public final class ChannelInjectionService {
             handler.setSession(session);
             channel.pipeline().addBefore("packet_handler", EH_HANDLER, handler);
             PacketIdRegistry.resolveFromEncoder(channel);
+            removePacketIdProbeIfResolved(channel);
         };
         this.runOnEventLoop(channel, action);
     }
@@ -81,7 +83,18 @@ public final class ChannelInjectionService {
     }
 
     public boolean writeBypass(Channel channel, Object payload) {
-        return this.writeBypassFuture(channel, payload) != null;
+        if (channel == null || !channel.isActive()) {
+            return false;
+        }
+        Runnable action = () -> {
+            if (!channel.isActive()) {
+                ReferenceCountUtil.release(payload);
+                return;
+            }
+            channel.write(new EhBypassPacket(payload), channel.voidPromise());
+        };
+        this.runOnEventLoop(channel, action);
+        return true;
     }
 
     public ChannelPromise writeBypassFuture(Channel channel, Object payload) {
@@ -134,9 +147,22 @@ public final class ChannelInjectionService {
     private void runOnEventLoop(Channel channel, Runnable action) {
         EventLoop eventLoop = channel.eventLoop();
         if (eventLoop.inEventLoop()) {
-          action.run();
+            action.run();
             return;
         }
         eventLoop.execute(action);
+    }
+
+    private static boolean needsPacketIdProbe() {
+        return !PacketIdRegistry.hasLevelChunkWithLightId() || !PacketIdRegistry.hasChunkCacheRadiusId();
+    }
+
+    private static void removePacketIdProbeIfResolved(Channel channel) {
+        if (needsPacketIdProbe()) {
+            return;
+        }
+        if (channel.pipeline().get(EH_PACKET_ID_PROBE_HANDLER) != null) {
+            channel.pipeline().remove(EH_PACKET_ID_PROBE_HANDLER);
+        }
     }
 }

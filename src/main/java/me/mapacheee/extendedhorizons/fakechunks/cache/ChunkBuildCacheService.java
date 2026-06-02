@@ -6,6 +6,7 @@ import me.mapacheee.lib.caffeine.cache.RemovalCause;
 import com.google.inject.Inject;
 import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
+import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.config.EhConfig;
@@ -35,6 +36,10 @@ public final class ChunkBuildCacheService {
         int ttlSeconds = this.configContainer.get().cacheTtlSeconds();
         int maxEntries = this.configContainer.get().cacheMaxEntries();
         long bypassMs = this.configContainer.get().cacheBypassAfterRealInteractionMs();
+        Cache<ChunkKey, ByteBuf> oldSerializedCache = this.serializedCache;
+        Cache<ChunkKey, CompletableFuture<ByteBuf>> oldBuildEntryCache = this.buildEntryCache;
+        Cache<ChunkKey, Boolean> oldBypassCache = this.bypassCache;
+        Cache<ChunkKey, Long> oldUnavailableCache = this.unavailableUntilMs;
 
         Cache<ChunkKey, ByteBuf> newSerializedCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
@@ -45,12 +50,7 @@ public final class ChunkBuildCacheService {
         Cache<ChunkKey, CompletableFuture<ByteBuf>> newBuildEntryCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
             .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
-            .removalListener((ChunkKey key, CompletableFuture<ByteBuf> value, RemovalCause cause) -> {
-                if (value != null && value.isDone() && !value.isCompletedExceptionally()) {
-                    ByteBuf buf = value.getNow(null);
-                    ReferenceCountUtil.release(buf);
-                }
-            })
+            .removalListener((ChunkKey key, CompletableFuture<ByteBuf> value, RemovalCause cause) -> releaseFuturePayload(value))
             .build();
 
         Cache<ChunkKey, Boolean> newBypassCache = Caffeine.newBuilder()
@@ -68,6 +68,11 @@ public final class ChunkBuildCacheService {
         this.buildEntryCache = newBuildEntryCache;
         this.bypassCache = newBypassCache;
         this.unavailableUntilMs = newUnavailableCache;
+
+        drainCache(oldSerializedCache);
+        drainCache(oldBuildEntryCache);
+        drainCache(oldBypassCache);
+        drainCache(oldUnavailableCache);
     }
 
     public ByteBuf getSerialized(UUID worldId, long chunkKey) {
@@ -95,27 +100,39 @@ public final class ChunkBuildCacheService {
             return existing.thenApply(this::retainReadable);
         }
 
+        CompletableFuture<ByteBuf> shared = new CompletableFuture<>();
+        this.buildEntryCache.put(key, shared);
+
         CompletableFuture<ByteBuf> started;
         try {
             started = starter.get();
         } catch (Throwable throwable) {
+            this.buildEntryCache.invalidate(key);
+            shared.complete(null);
             return CompletableFuture.completedFuture(null);
         }
         if (started == null) {
+            this.buildEntryCache.invalidate(key);
+            shared.complete(null);
             return CompletableFuture.completedFuture(null);
         }
-        this.buildEntryCache.put(key, started);
         started.whenComplete((payload, throwable) -> {
-            this.buildEntryCache.invalidate(key);
             if (throwable != null || payload == null || !payload.isReadable()) {
+                shared.complete(null);
+                this.buildEntryCache.invalidate(key);
                 return;
             }
-            if (Boolean.TRUE.equals(this.bypassCache.getIfPresent(key))) {
-                return;
+            ByteBuf sharedPayload = payload.retainedDuplicate();
+            try {
+                if (!Boolean.TRUE.equals(this.bypassCache.getIfPresent(key))) {
+                    this.serializedCache.put(key, payload.retainedDuplicate());
+                }
+                shared.complete(sharedPayload);
+            } finally {
+                ReferenceCountUtil.release(payload);
             }
-            this.serializedCache.put(key, payload.retainedDuplicate());
         });
-        return started.thenApply(this::retainReadable);
+        return shared.thenApply(this::retainReadable);
     }
 
     public void invalidate(UUID worldId, long chunkKey) {
@@ -171,6 +188,12 @@ public final class ChunkBuildCacheService {
         this.buildEntryCache.invalidateAll();
         this.bypassCache.invalidateAll();
         this.unavailableUntilMs.invalidateAll();
+        this.cleanUp();
+    }
+
+    @OnDisable
+    public void onDisable() {
+        this.invalidateAll();
     }
 
     public record ChunkKey(UUID worldId, long chunkKey) {
@@ -182,5 +205,29 @@ public final class ChunkBuildCacheService {
         }
         return payload.retainedDuplicate();
     }
-}
 
+    private static void releaseFuturePayload(CompletableFuture<ByteBuf> value) {
+        if (value == null) {
+            return;
+        }
+        if (value.isDone()) {
+            if (!value.isCompletedExceptionally()) {
+                ReferenceCountUtil.release(value.getNow(null));
+            }
+            return;
+        }
+        value.whenComplete((buf, throwable) -> {
+            if (throwable == null) {
+                ReferenceCountUtil.release(buf);
+            }
+        });
+    }
+
+    private static void drainCache(Cache<?, ?> cache) {
+        if (cache == null) {
+            return;
+        }
+        cache.invalidateAll();
+        cache.cleanUp();
+    }
+}

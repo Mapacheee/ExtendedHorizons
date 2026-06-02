@@ -9,21 +9,38 @@ final class EhPacketIdProbeHandler extends ChannelOutboundHandlerAdapter {
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        if (!PacketIdRegistry.hasLevelChunkWithLightId()
-            && msg instanceof ByteBuf buf
-            && PacketIdRegistry.consumePendingLevelChunkProbe(ctx.channel())) {
-            int packetId = readVarInt(buf);
-            PacketIdRegistry.resolveLevelChunkWithLightId(packetId);
+        boolean removeAfterWrite = false;
+        if (msg instanceof ByteBuf buf) {
+            if (!PacketIdRegistry.hasLevelChunkWithLightId()
+                && PacketIdRegistry.consumePendingLevelChunkProbe(ctx.channel())) {
+                PacketIdRegistry.resolveLevelChunkWithLightId(readVarInt(buf));
+            }
+            if (!PacketIdRegistry.hasChunkCacheRadiusId()
+                && PacketIdRegistry.consumePendingRadiusProbe(ctx.channel())) {
+                PacketIdRegistry.resolveChunkCacheRadiusId(readVarInt(buf));
+            }
+            if (PacketIdRegistry.hasLevelChunkWithLightId()
+                && PacketIdRegistry.hasChunkCacheRadiusId()
+                && ctx.pipeline().get(ChannelInjectionService.EH_PACKET_ID_PROBE_HANDLER) == this) {
+                removeAfterWrite = true;
+            }
         }
-        super.write(ctx, msg, promise);
+        try {
+            super.write(ctx, msg, promise);
+        } finally {
+            if (removeAfterWrite && ctx.pipeline().get(ChannelInjectionService.EH_PACKET_ID_PROBE_HANDLER) == this) {
+                ctx.pipeline().remove(this);
+            }
+        }
     }
 
     private static int readVarInt(ByteBuf input) {
-        ByteBuf buf = input.duplicate();
         int value = 0;
         int position = 0;
-        while (position < 5 && buf.isReadable()) {
-            int currentByte = buf.readByte() & 0xFF;
+        int index = input.readerIndex();
+        int writerIndex = input.writerIndex();
+        while (position < 5 && index < writerIndex) {
+            int currentByte = input.getByte(index++) & 0xFF;
             value |= (currentByte & 0x7F) << (position * 7);
             if ((currentByte & 0x80) == 0) {
                 return value;
@@ -33,4 +50,3 @@ final class EhPacketIdProbeHandler extends ChannelOutboundHandlerAdapter {
         return -1;
     }
 }
-

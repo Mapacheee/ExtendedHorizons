@@ -37,11 +37,6 @@ public final class DiskChunkSerializer {
     private static final int PROTOCOL_MC296121 = 770;
     private static final int MIN_PACKET_SIZE = 4096;
 
-    /**
-     * True on servers that don't have 'minecraft:chain' in their block registry (≤1.21.1).
-     * On those versions the block was called 'minecraft:iron_chain'. World data from newer
-     * versions (where it was renamed to 'chain') needs to be remapped before parsing.
-     */
     private static final boolean REMAP_CHAIN_TO_IRON_CHAIN =
             BuiltInRegistries.BLOCK.keySet().stream()
                     .noneMatch(key -> "minecraft:chain".equals(key.toString()));

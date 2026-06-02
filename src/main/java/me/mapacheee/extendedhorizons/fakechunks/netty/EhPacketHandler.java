@@ -21,22 +21,22 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.ChunkPos;
 
 import java.util.UUID;
-import java.util.List;
-import java.util.ArrayList;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 
 public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
     private static final int VARINT_MAX_BYTES = 5;
-    private static final java.lang.reflect.Field CHUNK_POS_X;
-    private static final java.lang.reflect.Field CHUNK_POS_Z;
+    private static final MethodHandle CHUNK_POS_X_GETTER;
+    private static final MethodHandle CHUNK_POS_Z_GETTER;
 
     static {
         try {
-            CHUNK_POS_X = ChunkPos.class.getDeclaredField("x");
-            CHUNK_POS_X.setAccessible(true);
-            CHUNK_POS_Z = ChunkPos.class.getDeclaredField("z");
-            CHUNK_POS_Z.setAccessible(true);
-        } catch (NoSuchFieldException e) {
+            MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(ChunkPos.class, MethodHandles.lookup());
+            CHUNK_POS_X_GETTER = lookup.findGetter(ChunkPos.class, "x", int.class);
+            CHUNK_POS_Z_GETTER = lookup.findGetter(ChunkPos.class, "z", int.class);
+        } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
@@ -73,21 +73,10 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         if (msg instanceof BundlePacket<?> bundle) {
             PlayerSession session = this.session;
             if (session != null && session.enabled()) {
-                boolean hasRadius = false;
-                List<Packet<?>> filtered = new ArrayList<>();
-                for (Packet<?> sub : bundle.subPackets()) {
-                    if (sub instanceof ClientboundSetChunkCacheRadiusPacket) {
-                        hasRadius = true;
-                    } else {
-                        filtered.add(sub);
-                    }
-                }
-                if (hasRadius) {
+                if (hasRadiusPacket(bundle)) {
                     session.lastAdvertisedDistance(-1);
                     ReferenceCountUtil.release(msg);
-                    for (Packet<?> p : filtered) {
-                        ctx.write(p);
-                    }
+                    writeBundleWithoutRadius(ctx, bundle);
                     promise.setSuccess();
                     return;
                 }
@@ -142,6 +131,23 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         throw new IllegalArgumentException("VarInt too big");
     }
 
+    private static boolean hasRadiusPacket(BundlePacket<?> bundle) {
+        for (Packet<?> sub : bundle.subPackets()) {
+            if (sub instanceof ClientboundSetChunkCacheRadiusPacket) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void writeBundleWithoutRadius(ChannelHandlerContext ctx, BundlePacket<?> bundle) {
+        for (Packet<?> sub : bundle.subPackets()) {
+            if (!(sub instanceof ClientboundSetChunkCacheRadiusPacket)) {
+                ctx.write(sub);
+            }
+        }
+    }
+
     private boolean handle(Object input) {
         PlayerSession session = this.session;
         if (session == null) {
@@ -158,8 +164,10 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             case ClientboundForgetLevelChunkPacket packet -> {
                 ChunkPos pos = packet.pos();
                 try {
-                    yield session.serverChunkRemove(CHUNK_POS_X.getInt(pos), CHUNK_POS_Z.getInt(pos));
-                } catch (IllegalAccessException e) {
+                    yield session.serverChunkRemove(
+                        (int) CHUNK_POS_X_GETTER.invokeExact(pos),
+                        (int) CHUNK_POS_Z_GETTER.invokeExact(pos));
+                } catch (Throwable e) {
                     yield false;
                 }
             }
