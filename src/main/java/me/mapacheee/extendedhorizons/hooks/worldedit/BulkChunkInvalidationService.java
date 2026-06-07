@@ -18,6 +18,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,13 @@ public final class BulkChunkInvalidationService {
     private final ChannelInjectionService channelInjectionService;
     private final ChunkDispatchService dispatchService;
     private final ConcurrentHashMap<UUID, Set<Long>> pendingInvalidations = new ConcurrentHashMap<>();
+
+    /**
+     * Reusable buffer for collecting chunk keys that need unload packets.
+     * Only used from the main/global tick thread inside {@link #processPending()},
+     * so no synchronization is required.
+     */
+    private final List<Long> unloadBuffer = new ArrayList<>();
 
     private volatile ScheduledTask processorTask;
 
@@ -78,6 +86,17 @@ public final class BulkChunkInvalidationService {
         this.pendingInvalidations.computeIfAbsent(worldId, k -> ConcurrentHashMap.newKeySet()).add(chunkKey);
     }
 
+    /**
+     * Batch version of {@link #queueInvalidation(UUID, long)} that inserts
+     * all chunk keys in a single {@code computeIfAbsent} + {@code addAll} call,
+     * dramatically reducing ConcurrentHashMap contention when called from
+     * WorldEdit/FAWE operations that touch thousands of chunks.
+     */
+    public void queueInvalidationBatch(UUID worldId, Collection<Long> chunkKeys) {
+        if (worldId == null || chunkKeys == null || chunkKeys.isEmpty()) return;
+        this.pendingInvalidations.computeIfAbsent(worldId, k -> ConcurrentHashMap.newKeySet()).addAll(chunkKeys);
+    }
+
     private void processPending() {
         if (this.pendingInvalidations.isEmpty()) {
             return;
@@ -95,43 +114,53 @@ public final class BulkChunkInvalidationService {
                 continue;
             }
 
-            for (Long chunkKey : keys) {
-                this.cacheService.invalidate(worldId, chunkKey);
-                this.antiXrayPayloadCacheService.invalidateChunk(worldId, chunkKey);
-                this.lightPayloadCacheService.invalidate(worldId, chunkKey);
+            long[] keyArray = new long[keys.size()];
+            int idx = 0;
+            for (Long key : keys) {
+                keyArray[idx++] = key;
+            }
+            final int count = idx;
+
+            for (int i = 0; i < count; i++) {
+                this.cacheService.invalidate(worldId, keyArray[i]);
+                this.antiXrayPayloadCacheService.invalidateChunk(worldId, keyArray[i]);
+                this.lightPayloadCacheService.invalidate(worldId, keyArray[i]);
             }
 
             this.sessionRegistry.forEachSession(session -> {
                 if (!worldId.equals(session.worldId())) {
                     return;
                 }
-                List<Long> unloadKeys = null;
-                for (Long chunkKey : keys) {
-                    boolean wasLoaded = session.invalidateChunk(chunkKey);
+                this.unloadBuffer.clear();
+                for (int i = 0; i < count; i++) {
+                    boolean wasLoaded = session.invalidateChunk(keyArray[i]);
                     if (wasLoaded) {
-                        if (unloadKeys == null) {
-                            unloadKeys = new ArrayList<>();
-                        }
-                        unloadKeys.add(chunkKey);
+                        this.unloadBuffer.add(keyArray[i]);
                     }
                 }
-                if (unloadKeys != null && !unloadKeys.isEmpty()) {
-                    Player player = Bukkit.getPlayer(session.playerId());
-                    if (player == null) {
-                        return;
-                    }
-                    Channel channel = this.channelInjectionService.resolveChannel(player);
-                    if (channel == null || !channel.isActive()) {
-                        return;
-                    }
-                    List<Long> toUnload = unloadKeys;
-                    this.channelInjectionService.executeOnEventLoop(channel, () -> {
-                        for (long key : toUnload) {
-                            this.dispatchService.sendUnload(channel, session, key);
-                        }
-                    });
+                if (this.unloadBuffer.isEmpty()) {
+                    return;
                 }
+                Player player = Bukkit.getPlayer(session.playerId());
+                if (player == null) {
+                    return;
+                }
+                Channel channel = this.channelInjectionService.resolveChannel(player);
+                if (channel == null || !channel.isActive()) {
+                    return;
+                }
+                long[] toUnload = new long[this.unloadBuffer.size()];
+                for (int i = 0; i < toUnload.length; i++) {
+                    toUnload[i] = this.unloadBuffer.get(i);
+                }
+                this.channelInjectionService.executeOnEventLoop(channel, () -> {
+                    for (long key : toUnload) {
+                        this.dispatchService.sendUnload(channel, session, key);
+                    }
+                });
             });
+
         }
     }
 }
+
