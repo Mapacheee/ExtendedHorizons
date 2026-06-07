@@ -60,6 +60,8 @@ public final class RegionFileReader {
         ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(LOCATION_ENTRY_SIZE));
     private static final ThreadLocal<ByteBuffer> CHUNK_HEADER_BUF =
         ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(5));
+    private static final ThreadLocal<byte[]> DECOMPRESSION_BUF =
+        ThreadLocal.withInitial(() -> new byte[DECOMPRESSION_BUFFER_SIZE]);
 
     /** Cached LZ4 decompressor — avoid calling LZ4Factory.fastestInstance() on every decompression. */
     private static final LZ4SafeDecompressor LZ4_DECOMPRESSOR =
@@ -263,7 +265,7 @@ public final class RegionFileReader {
     private static byte[] readAllBytes(InputStream is, int sectorCount) throws IOException {
         int estimatedSize = Math.max(DECOMPRESSION_BUFFER_SIZE, sectorCount * SECTOR_SIZE);
         ByteArrayOutputStream bos = new ByteArrayOutputStream(estimatedSize);
-        byte[] buffer = new byte[DECOMPRESSION_BUFFER_SIZE];
+        byte[] buffer = DECOMPRESSION_BUF.get();
         int len;
         while ((len = is.read(buffer)) != -1) {
             bos.write(buffer, 0, len);

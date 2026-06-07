@@ -526,16 +526,21 @@ public final class PlayerSession {
             indices[i] = i;
         }
 
-        Arrays.sort(indices, Comparator.comparingDouble(i -> {
+        // Precompute sorting keys to avoid math overhead and boxing during sort operations (O(N log N) -> O(N))
+        double[] keys = new double[len];
+        for (int i = 0; i < len; i++) {
             int ox = ChunkKeyCodec.x(base[i]);
             int oz = ChunkKeyCodec.z(base[i]);
             double dist = Math.sqrt(ox * ox + oz * oz);
             if (dist <= 0) {
-                return -1.0d;
+                keys[i] = -1.0d;
+            } else {
+                double alignment = (ox * dirX + oz * dirZ) / dist;
+                keys[i] = dist * (1.0d - DIRECTION_WEIGHT * alignment);
             }
-            double alignment = (ox * dirX + oz * dirZ) / dist;
-            return dist * (1.0d - DIRECTION_WEIGHT * alignment);
-        }));
+        }
+
+        Arrays.sort(indices, (i1, i2) -> Double.compare(keys[i1], keys[i2]));
 
         long[] sorted = new long[len];
         for (int i = 0; i < len; i++) {
