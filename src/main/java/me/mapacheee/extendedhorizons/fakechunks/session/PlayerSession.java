@@ -57,10 +57,37 @@ public final class PlayerSession {
     private volatile boolean hasMovementDirection;
     private volatile long lastChunkCrossNanos;
     private final List<Long> pendingUnloads = new ArrayList<>();
+    private volatile int cachedPermissionCap = -2;
+    private volatile boolean cachedHasBypass;
+    private volatile long permissionCacheExpiryNanos;
 
     public PlayerSession(UUID playerId, UUID worldId) {
         this.playerId = playerId;
         this.worldId = worldId;
+    }
+
+    public int cachedPermissionCap() {
+        return this.cachedPermissionCap;
+    }
+
+    public void cachedPermissionCap(int cap) {
+        this.cachedPermissionCap = cap;
+    }
+
+    public boolean cachedHasBypass() {
+        return this.cachedHasBypass;
+    }
+
+    public void cachedHasBypass(boolean hasBypass) {
+        this.cachedHasBypass = hasBypass;
+    }
+
+    public long permissionCacheExpiryNanos() {
+        return this.permissionCacheExpiryNanos;
+    }
+
+    public void permissionCacheExpiryNanos(long expiry) {
+        this.permissionCacheExpiryNanos = expiry;
     }
 
     public UUID playerId() {
