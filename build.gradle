@@ -49,10 +49,17 @@ repositories {
 dependencies {
     compileOnlyApi("me.mapacheee:MapacheeeLib:1.0.0")
     annotationProcessor("me.mapacheee:MapacheeeLib:1.0.0")
-    paperweight.paperDevBundle("26.1.2.build.+")
+    paperweight.paperDevBundle("26.2.build.+")
 
-    annotationProcessor("com.thewinterframework:paper:1.0.6")
-    annotationProcessor("com.thewinterframework:configuration:1.0.4")
+    implementation("com.thewinterframework:paper:2.1.1")
+    annotationProcessor("com.thewinterframework:paper:2.1.1")
+    implementation("com.thewinterframework:configuration:2.0.0")
+    annotationProcessor("com.thewinterframework:configuration:2.0.0")
+    implementation("com.thewinterframework:command:2.0.0") {
+        exclude group: "org.incendo", module: "cloud-paper"
+        exclude group: "org.incendo", module: "cloud-annotations"
+    }
+    annotationProcessor("com.thewinterframework:command:2.0.0")
 
     implementation("dev.faststats.metrics:bukkit:0.22.0")
     compileOnly("me.clip:placeholderapi:2.12.2")
@@ -61,9 +68,26 @@ dependencies {
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit") { transitive = false }
 }
 
+// Workaround: Winter v2 AP reads META-INF/winter/exposed-classes.txt via
+// Filer.getResource(CLASS_PATH, ...), but paperweight's custom FileManager
+// cannot open that entry from inside MapacheeeLib's JAR. We create the file
+// as a loose directory on the compile classpath so the AP can find it.
+def generatedWinterDir = layout.buildDirectory.dir("generated/classpath/winter").get().asFile
+
+tasks.register("generateWinterExposedClasses") {
+    doLast {
+        def metaInfDir = new File(generatedWinterDir, "META-INF/winter")
+        metaInfDir.mkdirs()
+        def file = new File(metaInfDir, "exposed-classes.txt")
+        if (!file.exists()) file.createNewFile()
+    }
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 25
+    dependsOn("generateWinterExposedClasses")
+    classpath = classpath + files(generatedWinterDir)
 }
 
 shadowJar {
