@@ -13,6 +13,7 @@ import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.item.ItemStack;
@@ -34,7 +35,7 @@ public final class PaperFarPlayerBackend implements FarPlayerBackend {
             state.z(),
             state.pitch(),
             state.yaw(),
-            EntityType.PLAYER,
+            EntityTypes.PLAYER,
             0,
             Vec3.ZERO,
             state.headYaw()

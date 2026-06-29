@@ -18,6 +18,7 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.level.ChunkPos;
 
 import java.util.UUID;
@@ -200,7 +201,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         }
         switch (input) {
             case ClientboundAddEntityPacket packet -> {
-                if (packet.getType() == EntityType.PLAYER) {
+                if (packet.getType() == EntityTypes.PLAYER) {
                     session.addServerTrackedEntity(packet.getId());
                     UUID targetUuid = packet.getUUID();
                     Integer farEntityId = session.trackedFarPlayers().remove(targetUuid);

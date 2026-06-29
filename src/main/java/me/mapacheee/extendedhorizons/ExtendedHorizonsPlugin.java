@@ -3,10 +3,8 @@ package me.mapacheee.extendedhorizons;
 import dev.faststats.bukkit.BukkitMetrics;
 import dev.faststats.core.Metrics;
 import com.google.inject.Binder;
-import com.google.inject.Scopes;
 import com.thewinterframework.paper.PaperWinterPlugin;
 import com.thewinterframework.plugin.WinterBootPlugin;
-import com.thewinterframework.service.annotation.Service;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
 import me.mapacheee.extendedhorizons.fakechunks.backend.PaperChunkBackend;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
@@ -96,9 +94,8 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
     @Override
     public void configure(Binder binder) {
-        binder.bindScope(Service.class, Scopes.SINGLETON);
-        binder.bind(ChunkBackend.class).to(PaperChunkBackend.class).in(Scopes.SINGLETON);
-        binder.bind(FarPlayerBackend.class).to(PaperFarPlayerBackend.class).in(Scopes.SINGLETON);
+        binder.bind(ChunkBackend.class).to(PaperChunkBackend.class);
+        binder.bind(FarPlayerBackend.class).to(PaperFarPlayerBackend.class);
     }
 }
 
