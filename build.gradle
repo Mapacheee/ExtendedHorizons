@@ -51,11 +51,11 @@ dependencies {
     annotationProcessor("me.mapacheee:MapacheeeLib:1.0.0")
     paperweight.paperDevBundle("26.2.build.+")
 
-    implementation("com.thewinterframework:paper:2.1.1")
+    compileOnly("com.thewinterframework:paper:2.1.1")
     annotationProcessor("com.thewinterframework:paper:2.1.1")
-    implementation("com.thewinterframework:configuration:2.0.0")
+    compileOnly("com.thewinterframework:configuration:2.0.0")
     annotationProcessor("com.thewinterframework:configuration:2.0.0")
-    implementation("com.thewinterframework:command:2.0.0") {
+    compileOnly("com.thewinterframework:command:2.0.0") {
         exclude group: "org.incendo", module: "cloud-paper"
         exclude group: "org.incendo", module: "cloud-annotations"
     }
