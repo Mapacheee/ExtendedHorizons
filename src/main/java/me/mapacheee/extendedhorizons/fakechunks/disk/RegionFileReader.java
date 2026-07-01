@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
+import net.jpountz.lz4.LZ4BlockInputStream;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4SafeDecompressor;
 
@@ -224,7 +225,7 @@ public final class RegionFileReader {
                 case COMPRESSION_GZIP -> decompressGzip(data, sectorCount);
                 case COMPRESSION_ZLIB -> decompressZlib(data, sectorCount);
                 case COMPRESSION_NONE -> data;
-                case COMPRESSION_LZ4 -> decompressLz4(data);
+                case COMPRESSION_LZ4 -> decompressLz4(data, sectorCount);
                 default -> {
                     LOGGER.warn("Unknown compression type {} for chunk [{}, {}] in {}",
                         compressionType, chunkX, chunkZ, fileName);
@@ -253,10 +254,9 @@ public final class RegionFileReader {
         }
     }
 
-    private static byte[] decompressLz4(byte[] data) throws IOException {
-        try {
-            int maxOutput = data.length * 8;
-            return LZ4_DECOMPRESSOR.decompress(data, maxOutput);
+    private static byte[] decompressLz4(byte[] data, int sectorCount) throws IOException {
+        try (LZ4BlockInputStream lzis = LZ4BlockInputStream.newBuilder().build(new ByteArrayInputStream(data))) {
+            return readAllBytes(lzis, sectorCount);
         } catch (Exception e) {
             throw new IOException("LZ4 decompression failed", e);
         }
