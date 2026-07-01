@@ -47,8 +47,8 @@ repositories {
 }
 
 dependencies {
-    compileOnlyApi("me.mapacheee:MapacheeeLib:1.0.0")
-    annotationProcessor("me.mapacheee:MapacheeeLib:1.0.0")
+    compileOnlyApi("me.mapacheee:MapacheeeLib:1.0.1")
+    annotationProcessor("me.mapacheee:MapacheeeLib:1.0.1")
     paperweight.paperDevBundle("26.2.build.+")
 
     /*compileOnly("com.thewinterframework:paper:2.1.1")
