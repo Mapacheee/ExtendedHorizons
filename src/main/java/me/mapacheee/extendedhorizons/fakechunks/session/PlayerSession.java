@@ -464,6 +464,11 @@ public final class PlayerSession {
         return false;
     }
 
+    public boolean isEhLoaded(long chunkKey) {
+        return this.getStateByKey(chunkKey).lifecycle() == ChunkLifecycle.EH_LOADED;
+    }
+
+
     public long[] loadedBvChunkKeys() {
         if (this.chunkStates.length == 0) {
             return EMPTY_LONG_ARRAY;
