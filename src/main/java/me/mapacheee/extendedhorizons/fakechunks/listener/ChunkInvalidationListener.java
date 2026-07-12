@@ -2,17 +2,21 @@ package me.mapacheee.extendedhorizons.fakechunks.listener;
 
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
-import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
-import me.mapacheee.extendedhorizons.hooks.worldedit.BulkChunkInvalidationService;
-import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
-import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import io.netty.channel.Channel;
+import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
+import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
-import org.bukkit.craftbukkit.block.data.CraftBlockData;
+import net.minecraft.world.level.block.state.BlockState;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.craftbukkit.block.data.CraftBlockData;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -27,17 +31,23 @@ public final class ChunkInvalidationListener implements Listener {
 
     private static final int CHUNK_SHIFT = 4;
 
-    private final BulkChunkInvalidationService bulkService;
+    private final ChunkBuildCacheService chunkBuildCacheService;
+    private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
+    private final LightPayloadCacheService lightPayloadCacheService;
     private final SessionRegistry sessionRegistry;
     private final ChannelInjectionService channelInjectionService;
 
     @Inject
     public ChunkInvalidationListener(
-        BulkChunkInvalidationService bulkService,
+        ChunkBuildCacheService chunkBuildCacheService,
+        AntiXrayPayloadCacheService antiXrayPayloadCacheService,
+        LightPayloadCacheService lightPayloadCacheService,
         SessionRegistry sessionRegistry,
         ChannelInjectionService channelInjectionService
     ) {
-        this.bulkService = bulkService;
+        this.chunkBuildCacheService = chunkBuildCacheService;
+        this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
+        this.lightPayloadCacheService = lightPayloadCacheService;
         this.sessionRegistry = sessionRegistry;
         this.channelInjectionService = channelInjectionService;
     }
@@ -45,26 +55,28 @@ public final class ChunkInvalidationListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
         Block block = event.getBlock();
-        this.invalidate(block);
-        this.broadcastBlockChange(block, org.bukkit.Material.AIR.createBlockData());
+        this.invalidateCaches(block);
+        this.broadcastBlockChange(block, Material.AIR.createBlockData());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
         Block placed = event.getBlockPlaced();
-        this.invalidate(placed);
+        this.invalidateCaches(placed);
         this.broadcastBlockChange(placed, placed.getBlockData());
     }
 
-    private void invalidate(Block block) {
+    private void invalidateCaches(Block block) {
         int chunkX = block.getX() >> CHUNK_SHIFT;
         int chunkZ = block.getZ() >> CHUNK_SHIFT;
         long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
         UUID worldId = block.getWorld().getUID();
-        this.bulkService.queueInvalidation(worldId, chunkKey);
+        this.chunkBuildCacheService.invalidate(worldId, chunkKey);
+        this.antiXrayPayloadCacheService.invalidateChunk(worldId, chunkKey);
+        this.lightPayloadCacheService.invalidate(worldId, chunkKey);
     }
 
-    private void broadcastBlockChange(Block block, org.bukkit.block.data.BlockData blockData) {
+    private void broadcastBlockChange(Block block, BlockData blockData) {
         UUID worldId = block.getWorld().getUID();
         int chunkX = block.getX() >> CHUNK_SHIFT;
         int chunkZ = block.getZ() >> CHUNK_SHIFT;
@@ -84,6 +96,7 @@ public final class ChunkInvalidationListener implements Listener {
                     Channel channel = this.channelInjectionService.resolveChannel(player);
                     if (channel != null && channel.isActive()) {
                         this.channelInjectionService.writeBypass(channel, packet);
+                        this.channelInjectionService.flush(channel);
                     }
                 }
             }
