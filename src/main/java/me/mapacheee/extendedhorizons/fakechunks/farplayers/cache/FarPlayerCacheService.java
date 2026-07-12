@@ -71,11 +71,11 @@ public final class FarPlayerCacheService {
         UUID prevWorld = this.playerLastWorld.get(playerId);
         Long prevRegion = this.playerLastRegion.get(playerId);
 
-        if (prevWorld != null && (!prevWorld.equals(worldId) || prevRegion == null || prevRegion != regionKey)) {
+        if (prevWorld != null && (!prevWorld.equals(worldId) || prevRegion == null || prevRegion.longValue() != regionKey)) {
             removeFromSpatialIndex(playerId, prevWorld, prevRegion);
         }
 
-        if (prevWorld == null || !prevWorld.equals(worldId) || prevRegion == null || prevRegion != regionKey) {
+        if (prevWorld == null || !prevWorld.equals(worldId) || prevRegion == null || prevRegion.longValue() != regionKey) {
             this.spatialIndex.computeIfAbsent(worldId, k -> new ConcurrentHashMap<>())
                 .computeIfAbsent(regionKey, k -> Collections.newSetFromMap(new ConcurrentHashMap<>()))
                 .add(playerId);

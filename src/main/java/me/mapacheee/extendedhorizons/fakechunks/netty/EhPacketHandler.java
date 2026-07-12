@@ -21,6 +21,9 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.ChunkPos;
 import me.mapacheee.extendedhorizons.util.NmsCompat;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.UUID;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -28,6 +31,7 @@ import java.lang.invoke.MethodType;
 
 public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(EhPacketHandler.class);
     private static final int VARINT_MAX_BYTES = 5;
     private static final MethodHandle CHUNK_POS_X_GETTER;
     private static final MethodHandle CHUNK_POS_Z_GETTER;
@@ -46,53 +50,58 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        if (msg instanceof ClientboundLevelChunkWithLightPacket) {
-            PacketIdRegistry.markPendingLevelChunkProbe(ctx.channel());
-        }
-        if (msg instanceof net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket) {
-            PacketIdRegistry.markPendingRadiusProbe(ctx.channel());
-        }
-        PlayerSession trackingSession = this.session;
-        if (trackingSession != null) {
-            this.captureEntityTracking(ctx, msg, trackingSession);
-        }
-        if (this.handle(msg)) {
-            ReferenceCountUtil.release(msg);
-            promise.setSuccess();
-            return;
-        }
-
-        if (msg instanceof ByteBuf buf && this.isPreEncodedRadiusPacket(buf)) {
-            PlayerSession session = this.session;
-            if (session != null && session.enabled()) {
-                session.lastAdvertisedDistance(-1);
+        try {
+            if (msg instanceof ClientboundLevelChunkWithLightPacket) {
+                PacketIdRegistry.markPendingLevelChunkProbe(ctx.channel());
+            }
+            if (msg instanceof net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket) {
+                PacketIdRegistry.markPendingRadiusProbe(ctx.channel());
+            }
+            PlayerSession trackingSession = this.session;
+            if (trackingSession != null) {
+                this.captureEntityTracking(ctx, msg, trackingSession);
+            }
+            if (this.handle(msg)) {
                 ReferenceCountUtil.release(msg);
                 promise.setSuccess();
                 return;
             }
-        }
-        if (msg instanceof BundlePacket<?> bundle) {
-            PlayerSession session = this.session;
-            if (session != null && session.enabled()) {
-                if (hasRadiusPacket(bundle)) {
+
+            if (msg instanceof ByteBuf buf && this.isPreEncodedRadiusPacket(buf)) {
+                PlayerSession session = this.session;
+                if (session != null && session.enabled()) {
                     session.lastAdvertisedDistance(-1);
                     ReferenceCountUtil.release(msg);
-                    writeBundleWithoutRadius(ctx, bundle);
                     promise.setSuccess();
                     return;
                 }
             }
-        }
-        if (msg instanceof EhBypassPacket bypass) {
-            Object payload = bypass.payload();
-            if (payload instanceof ByteBuf) {
-                super.write(ctx, msg, promise);
-            } else {
-                super.write(ctx, payload, promise);
+            if (msg instanceof BundlePacket<?> bundle) {
+                PlayerSession session = this.session;
+                if (session != null && session.enabled()) {
+                    if (hasRadiusPacket(bundle)) {
+                        session.lastAdvertisedDistance(-1);
+                        ReferenceCountUtil.release(msg);
+                        writeBundleWithoutRadius(ctx, bundle);
+                        promise.setSuccess();
+                        return;
+                    }
+                }
             }
-            return;
+            if (msg instanceof EhBypassPacket bypass) {
+                Object payload = bypass.payload();
+                if (payload instanceof ByteBuf) {
+                    super.write(ctx, msg, promise);
+                } else {
+                    super.write(ctx, payload, promise);
+                }
+                return;
+            }
+            super.write(ctx, msg, promise);
+        } catch (Throwable throwable) {
+            LOGGER.error("Exception in EhPacketHandler.write(): {}", msg.getClass().getName(), throwable);
+            super.write(ctx, msg, promise);
         }
-        super.write(ctx, msg, promise);
     }
 
     private boolean isPreEncodedRadiusPacket(ByteBuf buf) {

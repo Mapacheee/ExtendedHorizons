@@ -49,8 +49,8 @@ public final class PlayerSession {
     private volatile long bandwidthLastRefillNanos;
     private final Deque<ChunkSendQueueEntry> chunkQueue = new ConcurrentLinkedDeque<>();
     private final Map<UUID, Integer> trackedFarPlayers = new ConcurrentHashMap<>();
-    private final Set<UUID> trackingBuffer = new HashSet<>();
-    private final Set<Integer> usedFarEntityIdBuffer = new HashSet<>();
+    private final Set<UUID> trackingBuffer = ConcurrentHashMap.newKeySet();
+    private final Set<Integer> usedFarEntityIdBuffer = ConcurrentHashMap.newKeySet();
     private final Set<Integer> serverTrackedEntityIds = ConcurrentHashMap.newKeySet();
     private volatile double moveDirX;
     private volatile double moveDirZ;

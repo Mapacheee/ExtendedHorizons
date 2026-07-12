@@ -36,7 +36,7 @@ final class FastChunkDataWriter {
     static void writeChunkData(FriendlyByteBuf out, LevelChunk chunk) {
         writeHeightmaps(out, chunk);
 
-        ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(1024, Integer.MAX_VALUE);
+        ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(1024, 256 * 1024);
         try {
             FriendlyByteBuf sectionBuf = new FriendlyByteBuf(sectionBuffer);
             for (LevelChunkSection section : chunk.getSections()) {

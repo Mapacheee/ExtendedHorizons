@@ -124,9 +124,8 @@ public final class ChunkBuildCacheService {
             }
             ByteBuf sharedPayload = payload.retainedDuplicate();
             try {
-                if (!Boolean.TRUE.equals(this.bypassCache.getIfPresent(key))) {
-                    this.serializedCache.put(key, payload.retainedDuplicate());
-                }
+                this.serializedCache.put(key, payload.retainedDuplicate());
+                this.bypassCache.invalidate(key);
                 shared.complete(sharedPayload);
             } finally {
                 ReferenceCountUtil.release(payload);

@@ -373,6 +373,7 @@ public final class FakeChunkOrchestratorService {
         }
         session.unloadEhChunks();
         session.clearDispatchState();
+        this.channelInjectionService.flush(channel);
     }
 
     private void unloadSessionChunks(Channel channel, PlayerSession session) {

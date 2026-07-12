@@ -6,18 +6,24 @@ import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 @Service
 public final class ChunkSerializationExecutorService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ChunkSerializationExecutorService.class);
     private static final String THREAD_PREFIX = "EH-ChunkSerializer-";
+    private static final int MAX_QUEUED_PER_WORKER = 4;
 
     private final Container<EhConfig> configContainer;
     private volatile ExecutorService executor;
@@ -52,7 +58,18 @@ public final class ChunkSerializationExecutorService {
         if (workers <= 0) {
             return;
         }
-        this.executor = Executors.newFixedThreadPool(workers, new SerializerThreadFactory());
+        this.executor = new ThreadPoolExecutor(
+            workers, workers,
+            0L, TimeUnit.MILLISECONDS,
+            new LinkedBlockingQueue<>(workers * MAX_QUEUED_PER_WORKER),
+            new SerializerThreadFactory(),
+            (runnable, pool) -> {
+                LOGGER.warn("Chunk serialization queue full ({}), running on caller thread", workers * MAX_QUEUED_PER_WORKER);
+                if (!pool.isShutdown()) {
+                    runnable.run();
+                }
+            }
+        );
     }
 
     @OnDisable

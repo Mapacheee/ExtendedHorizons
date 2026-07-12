@@ -157,7 +157,7 @@ public final class DiskChunkSerializer {
             byte[][] blockLight, byte[][] skyLight,
             ServerLevel level
     ) {
-        ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(MIN_PACKET_SIZE, Integer.MAX_VALUE);
+        ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(MIN_PACKET_SIZE, 2 * 1024 * 1024);
         try {
             VarInt.write(raw, PacketIdRegistry.getLevelChunkWithLightId());
             raw.writeInt(chunkX);

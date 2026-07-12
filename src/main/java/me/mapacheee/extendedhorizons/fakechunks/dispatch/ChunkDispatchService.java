@@ -251,36 +251,45 @@ public final class ChunkDispatchService {
             entry.releaseFuture();
             return true;
         }
-        if (!this.isChunkStillInRange(session, entry.chunkKey())) {
-            session.onChunkBuildFailed(entry.chunkKey());
-            entry.releaseFuture();
-            return true;
-        }
-        if (!channel.isWritable()) {
-            return false;
-        }
-        long payloadBytes = payload.readableBytes();
+        payload.retain();
+        boolean removeEntry = false;
         try {
-            long beforeUnwritable = channel.bytesBeforeUnwritable();
-            if (beforeUnwritable > 0 && beforeUnwritable < payloadBytes) {
-                if (payloadBytes <= 65536) {
-                    return false;
-                }
+            if (!this.isChunkStillInRange(session, entry.chunkKey())) {
+                session.onChunkBuildFailed(entry.chunkKey());
+                removeEntry = true;
+                return true;
             }
-        } catch (AbstractMethodError error) {
-          LOGGER.error(error.getMessage());
+            if (!channel.isWritable()) {
+                return false;
+            }
+            long payloadBytes = payload.readableBytes();
+            try {
+                long beforeUnwritable = channel.bytesBeforeUnwritable();
+                if (beforeUnwritable > 0 && beforeUnwritable < payloadBytes) {
+                    if (payloadBytes <= 65536) {
+                        return false;
+                    }
+                }
+            } catch (AbstractMethodError error) {
+                LOGGER.error(error.getMessage());
+            }
+            if (!session.tryConsumeBandwidth(payloadBytes)) {
+                return false;
+            }
+            ByteBuf toSend = payload.retainedDuplicate();
+            if (this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {
+                sentCount.incrementAndGet();
+            } else {
+                session.onChunkBuildFailed(entry.chunkKey());
+            }
+            removeEntry = true;
+            return true;
+        } finally {
+            payload.release();
+            if (removeEntry) {
+                entry.releaseFuture();
+            }
         }
-        if (!session.tryConsumeBandwidth(payloadBytes)) {
-            return false;
-        }
-        ByteBuf toSend = payload.retainedDuplicate();
-        if (this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {
-            sentCount.incrementAndGet();
-        } else {
-            session.onChunkBuildFailed(entry.chunkKey());
-        }
-        entry.releaseFuture();
-        return true;
     }
 
     private boolean trySend(
@@ -301,9 +310,12 @@ public final class ChunkDispatchService {
             return false;
         }
         session.onChunkSent(chunkKey);
+        UUID capturedWorldId = expectedWorldId;
+        long capturedEpoch = expectedEpoch;
+        long capturedChunkKey = chunkKey;
         writePromise.addListener(future -> {
-            if (!future.isSuccess()) {
-                session.onChunkBuildFailed(chunkKey);
+            if (!future.isSuccess() && this.isSessionValid(session, capturedWorldId, capturedEpoch)) {
+                session.onChunkBuildFailed(capturedChunkKey);
             }
         });
         return true;
