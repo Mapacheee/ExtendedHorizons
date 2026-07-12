@@ -16,6 +16,7 @@ public final class ChannelInjectionService {
     public static final String EH_HANDLER = "eh_packet_handler";
     public static final String EH_PACKET_ID_PROBE_HANDLER = "eh_packet_id_probe";
     public static final String EH_PACKET_SNIFFER = "eh_packet_sniffer";
+    public static final String EH_BYPASS_UNWRAP_HANDLER = "eh_bypass_unwrap";
 
     public void inject(Player player) {
         this.inject(player, null);
@@ -47,6 +48,14 @@ public final class ChannelInjectionService {
             EhPacketHandler handler = new EhPacketHandler();
             handler.setSession(session);
             channel.pipeline().addBefore("packet_handler", EH_HANDLER, handler);
+            if (channel.pipeline().get(EH_BYPASS_UNWRAP_HANDLER) == null) {
+                String anchor = channel.pipeline().get("craftengine_encoder") != null
+                    ? "craftengine_encoder"
+                    : "encoder";
+                if (channel.pipeline().get(anchor) != null) {
+                    channel.pipeline().addBefore(anchor, EH_BYPASS_UNWRAP_HANDLER, new EhBypassUnwrapHandler());
+                }
+            }
             PacketIdRegistry.resolveFromEncoder(channel);
             removePacketIdProbeIfResolved(channel);
         };
@@ -65,6 +74,9 @@ public final class ChannelInjectionService {
             }
             if (channel.pipeline().get(EH_PACKET_ID_PROBE_HANDLER) != null) {
                 channel.pipeline().remove(EH_PACKET_ID_PROBE_HANDLER);
+            }
+            if (channel.pipeline().get(EH_BYPASS_UNWRAP_HANDLER) != null) {
+                channel.pipeline().remove(EH_BYPASS_UNWRAP_HANDLER);
             }
         };
         this.runOnEventLoop(channel, action);
