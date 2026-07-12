@@ -110,6 +110,9 @@ public final class PacketIdRegistry {
             }
             Object protocolInfo = findProtocolInfo(encoder);
             if (protocolInfo == null) {
+                if (resolveFromProtocolEnum()) {
+                    encoderResolveAttempted = true;
+                }
                 return;
             }
             
@@ -129,6 +132,60 @@ public final class PacketIdRegistry {
         } catch (Throwable throwable) {
             LOGGER.error("EH encoder resolve: unexpected error", throwable);
         }
+    }
+
+    private static boolean resolveFromProtocolEnum() {
+        try {
+            Class<?> protocolClass = Class.forName("net.minecraft.network.protocol.Protocol");
+            Method getPacketId = findGetPacketIdMethod(protocolClass);
+            if (getPacketId == null) {
+                LOGGER.info("EH resolveFromProtocolEnum: no suitable method found on Protocol");
+                return false;
+            }
+            Object playProtocol = protocolClass.getEnumConstants()[0];
+
+            int chunkId = (int) getPacketId.invoke(playProtocol, ClientboundLevelChunkWithLightPacket.class);
+            if (chunkId >= 0) {
+                resolveLevelChunkWithLightId(chunkId);
+            }
+
+            int radiusId = (int) getPacketId.invoke(playProtocol, net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket.class);
+            if (radiusId >= 0) {
+                resolveChunkCacheRadiusId(radiusId);
+            }
+
+            return hasLevelChunkWithLightId() && hasChunkCacheRadiusId();
+        } catch (Throwable throwable) {
+            LOGGER.info("EH resolveFromProtocolEnum failed: {}", throwable.getMessage());
+            return false;
+        }
+    }
+
+    private static Method findGetPacketIdMethod(Class<?> protocolClass) {
+        for (Method method : protocolClass.getMethods()) {
+            if (method.getParameterCount() == 1 && method.getParameterTypes()[0] == Class.class) {
+                String name = method.getName();
+                if (name.equals("getPacketId") || name.equals("getId") || name.startsWith("get")) {
+                    Class<?> returnType = method.getReturnType();
+                    if (returnType == int.class || returnType == Integer.class) {
+                        return method;
+                    }
+                }
+            }
+        }
+        for (Method method : protocolClass.getDeclaredMethods()) {
+            if (method.getParameterCount() == 1 && method.getParameterTypes()[0] == Class.class) {
+                String name = method.getName();
+                if (name.equals("getPacketId") || name.equals("getId") || name.startsWith("get")) {
+                    Class<?> returnType = method.getReturnType();
+                    if (returnType == int.class || returnType == Integer.class) {
+                        return method;
+                    }
+                }
+            }
+        }
+        LOGGER.info("EH findGetPacketIdMethod: no suitable method found on {}", protocolClass.getName());
+        return null;
     }
 
     private static Object findProtocolInfo(Object encoder) {

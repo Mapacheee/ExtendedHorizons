@@ -11,6 +11,7 @@ import me.mapacheee.extendedhorizons.fakechunks.farplayers.FarPlayerTrackingServ
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -203,6 +204,13 @@ public final class FakeChunkOrchestratorService {
             this.farPlayerTrackingService.clearTracked(channel, session);
         }
 
+        if (!PacketIdRegistry.hasLevelChunkWithLightId()) {
+            PacketIdRegistry.resolveFromEncoder(channel);
+            if (!PacketIdRegistry.hasLevelChunkWithLightId()) {
+                this.channelInjectionService.flush(channel);
+                return;
+            }
+        }
         this.dispatchService.processQueue(snapshot.world(), channel, session);
         this.channelInjectionService.flush(channel);
     }

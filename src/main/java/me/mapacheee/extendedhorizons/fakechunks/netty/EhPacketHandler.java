@@ -84,11 +84,8 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             }
         }
         if (msg instanceof EhBypassPacket bypass) {
-            Object payload = bypass.payload();
-            if (!(payload instanceof ByteBuf)) {
-                super.write(ctx, payload, promise);
-                return;
-            }
+            super.write(ctx, bypass.payload(), promise);
+            return;
         }
         super.write(ctx, msg, promise);
     }

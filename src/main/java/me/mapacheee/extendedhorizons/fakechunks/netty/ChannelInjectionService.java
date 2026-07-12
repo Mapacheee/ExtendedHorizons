@@ -15,6 +15,7 @@ public final class ChannelInjectionService {
 
     public static final String EH_HANDLER = "eh_packet_handler";
     public static final String EH_PACKET_ID_PROBE_HANDLER = "eh_packet_id_probe";
+    public static final String EH_PACKET_SNIFFER = "eh_packet_sniffer";
 
     public void inject(Player player) {
         this.inject(player, null);
@@ -26,6 +27,10 @@ public final class ChannelInjectionService {
             return;
         }
         Runnable action = () -> {
+            if (needsPacketIdProbe()
+                && channel.pipeline().get(EH_PACKET_SNIFFER) == null) {
+                channel.pipeline().addLast(EH_PACKET_SNIFFER, new PacketIdSnifferHandler());
+            }
             if (channel.pipeline().get("encoder") != null
                 && needsPacketIdProbe()
                 && channel.pipeline().get(EH_PACKET_ID_PROBE_HANDLER) == null) {
