@@ -335,14 +335,22 @@ public final class FakeChunkOrchestratorService {
         return updated;
     }
 
+    private static final int MAX_PERMISSION_CAP = 100;
+    private static final String[] PERMISSION_STRINGS = new String[MAX_PERMISSION_CAP + 1];
+
+    static {
+        for (int i = 1; i <= MAX_PERMISSION_CAP; i++) {
+            PERMISSION_STRINGS[i] = PERMISSION_PREFIX + i;
+        }
+    }
+
     private static int resolvePermissionCap(Player player) {
-        int maxFound = -1;
-        for (int i = 100; i >= 1; i--) {
-            if (player.hasPermission(PERMISSION_PREFIX + i)) {
+        for (int i = MAX_PERMISSION_CAP; i >= 1; i--) {
+            if (player.hasPermission(PERMISSION_STRINGS[i])) {
                 return i;
             }
         }
-        return maxFound;
+        return -1;
     }
 
     public void invalidatePermissionCache(UUID playerId) {

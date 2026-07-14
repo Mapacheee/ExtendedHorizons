@@ -25,7 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
+
 import java.util.concurrent.CompletableFuture;
 
 @Service
@@ -75,7 +75,7 @@ public final class ChunkDispatchService {
         int chunksPerTick = config.maxSendPerCycle();
         int maxInflight = config.maxInflightPerPlayer();
         int maxQueueSize = config.chunkQueueSize();
-        int inFlight = this.drainCompletedEntries(world, channel, session, chunksPerTick, debug);
+        int inFlight = this.drainCompletedEntries(world, channel, session, config, chunksPerTick, debug);
 
         if (debug) {
             LOGGER.info(
@@ -95,7 +95,7 @@ public final class ChunkDispatchService {
             }
             int chunkX = ChunkKeyCodec.x(chunkKey);
             int chunkZ = ChunkKeyCodec.z(chunkKey);
-            CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey);
+            CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey, config);
             if (buildFuture.isDone()) {
                 this.generationLimiterService.release();
             }
@@ -105,25 +105,25 @@ public final class ChunkDispatchService {
         }
     }
 
-    private int drainCompletedEntries(World world, Channel channel, PlayerSession session, int maxSendPerCycle, boolean debug) {
-        AtomicInteger inFlight = new AtomicInteger(0);
-        AtomicInteger sentCount = new AtomicInteger(0);
+    private int drainCompletedEntries(World world, Channel channel, PlayerSession session, EhConfig config, int maxSendPerCycle, boolean debug) {
+        int[] inFlight = {0};
+        int[] sentCount = {0};
         session.chunkQueue().removeIf(entry -> {
             if (!entry.buildFuture().isDone()) {
-                inFlight.incrementAndGet();
+                inFlight[0]++;
                 return false;
             }
-            if (sentCount.get() >= maxSendPerCycle && !entry.buildFuture().isCompletedExceptionally()) {
-                inFlight.incrementAndGet();
+            if (sentCount[0] >= maxSendPerCycle && !entry.buildFuture().isCompletedExceptionally()) {
+                inFlight[0]++;
                 return false;
             }
-            boolean processed = this.checkQueueEntry(world, channel, session, entry, sentCount, debug);
+            boolean processed = this.checkQueueEntry(world, channel, session, config, entry, sentCount, debug);
             if (!processed) {
-                inFlight.incrementAndGet();
+                inFlight[0]++;
             }
             return processed;
         });
-        return inFlight.get();
+        return inFlight[0];
     }
 
     public void sendUnload(Channel channel, PlayerSession session, long chunkKey) {
@@ -142,10 +142,10 @@ public final class ChunkDispatchService {
         PlayerSession session,
         int chunkX,
         int chunkZ,
-        long chunkKey
+        long chunkKey,
+        EhConfig config
     ) {
         UUID expectedWorldId = session.worldId();
-        EhConfig config = this.configContainer.get();
         boolean antiXrayEnabled = config.antiXrayEnabled(world.getName());
         String antiXrayProfileHash = antiXrayEnabled
             ? this.antiXrayPayloadCacheService.resolveProfileHash(world, config)
@@ -229,7 +229,7 @@ public final class ChunkDispatchService {
         .exceptionally(throwable -> null);
     }
 
-    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry, AtomicInteger sentCount, boolean debug) {
+    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, EhConfig config, ChunkSendQueueEntry entry, int[] sentCount, boolean debug) {
         CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
         if (!buildFuture.isDone()) {
             if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
@@ -266,19 +266,15 @@ public final class ChunkDispatchService {
             try {
                 long beforeUnwritable = channel.bytesBeforeUnwritable();
                 if (beforeUnwritable > 0 && beforeUnwritable < payloadBytes) {
-                    if (payloadBytes <= 65536) {
-                        return false;
-                    }
+                    return false;
                 }
-            } catch (AbstractMethodError error) {
-                LOGGER.error(error.getMessage());
-            }
+            } catch (AbstractMethodError ignored) {}
             if (!session.tryConsumeBandwidth(payloadBytes)) {
                 return false;
             }
             ByteBuf toSend = payload.retainedDuplicate();
             if (this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {
-                sentCount.incrementAndGet();
+                sentCount[0]++;
             } else {
                 session.onChunkBuildFailed(entry.chunkKey());
             }
