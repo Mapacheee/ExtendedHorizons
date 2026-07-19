@@ -49,11 +49,20 @@ public final class ChannelInjectionService {
             handler.setSession(session);
             channel.pipeline().addBefore("packet_handler", EH_HANDLER, handler);
             if (channel.pipeline().get(EH_BYPASS_UNWRAP_HANDLER) == null) {
-                String anchor = channel.pipeline().get("craftengine_encoder") != null
-                    ? "craftengine_encoder"
-                    : "encoder";
-                if (channel.pipeline().get(anchor) != null) {
-                    channel.pipeline().addBefore(anchor, EH_BYPASS_UNWRAP_HANDLER, new EhBypassUnwrapHandler());
+                // CraftEngine's "craftengine_encoder" (a MessageToMessageEncoder<ByteBuf>) sits just
+                // before the vanilla "encoder" and remaps custom block-state ids in outbound chunk
+                // packets. Our fake chunks carry those same server-only ids, so CraftEngine MUST see
+                // them as a ByteBuf too, otherwise the client receives an unknown block-state id and
+                // crashes ("No value with id N").
+                //
+                // Outbound writes travel tail -> head. We therefore unwrap our EhBypassPacket into a
+                // raw ByteBuf on the TAIL side of craftengine_encoder (addAfter), so that by the time
+                // the data reaches craftengine_encoder it is already a ByteBuf and gets remapped. When
+                // CraftEngine is absent we just unwrap right before the vanilla encoder.
+                if (channel.pipeline().get("craftengine_encoder") != null) {
+                    channel.pipeline().addAfter("craftengine_encoder", EH_BYPASS_UNWRAP_HANDLER, new EhBypassUnwrapHandler());
+                } else if (channel.pipeline().get("encoder") != null) {
+                    channel.pipeline().addBefore("encoder", EH_BYPASS_UNWRAP_HANDLER, new EhBypassUnwrapHandler());
                 }
             }
             PacketIdRegistry.resolveFromEncoder(channel);
