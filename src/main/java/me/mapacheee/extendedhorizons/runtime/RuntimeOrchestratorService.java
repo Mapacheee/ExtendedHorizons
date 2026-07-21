@@ -126,7 +126,7 @@ public final class RuntimeOrchestratorService {
                     Location loc = player.getLocation();
                     ServerPlayer nmsPlayer = ((CraftPlayer) player).getHandle();
 
-                    if (player.getGameMode() == GameMode.SPECTATOR || player.hasMetadata("vanished")) {
+                    if (player.getGameMode() == GameMode.SPECTATOR || isVanished(player)) {
                         this.farPlayerCacheService.removePlayer(player.getUniqueId());
                         return;
                     }
@@ -232,5 +232,15 @@ public final class RuntimeOrchestratorService {
         } catch (Throwable throwable) {
             LOGGER.debug("Failed to cancel runtime task cleanly", throwable);
         }
+    }
+
+    private static boolean isVanished(Player player) {
+        var metadata = player.getMetadata("vanished");
+        for (var entry : metadata) {
+            if (entry.asBoolean()) {
+                return true;
+            }
+        }
+        return false;
     }
 }
