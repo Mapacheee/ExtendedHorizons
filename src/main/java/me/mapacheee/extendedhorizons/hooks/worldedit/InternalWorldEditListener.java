@@ -28,6 +28,10 @@ import java.util.UUID;
 public final class InternalWorldEditListener {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(InternalWorldEditListener.class);
+    private static final long FIRST_INVALIDATION_DELAY_TICKS = 2L;
+    private static final long SECOND_INVALIDATION_DELAY_TICKS = 10L;
+    private static final long THIRD_INVALIDATION_DELAY_TICKS = 30L;
+    private static final long MIN_DELAY_TICKS = 1L;
     private final BulkChunkInvalidationService bulkService;
 
     public InternalWorldEditListener(BulkChunkInvalidationService bulkService) {
@@ -76,13 +80,13 @@ public final class InternalWorldEditListener {
             return;
         }
 
-        this.scheduleSelectionInvalidation(plugin, player, 2L);
-        this.scheduleSelectionInvalidation(plugin, player, 10L);
-        this.scheduleSelectionInvalidation(plugin, player, 30L);
+        this.scheduleSelectionInvalidation(plugin, player, FIRST_INVALIDATION_DELAY_TICKS);
+        this.scheduleSelectionInvalidation(plugin, player, SECOND_INVALIDATION_DELAY_TICKS);
+        this.scheduleSelectionInvalidation(plugin, player, THIRD_INVALIDATION_DELAY_TICKS);
     }
 
     private void scheduleSelectionInvalidation(ExtendedHorizonsPlugin plugin, Player player, long delayTicks) {
-        FoliaTaskUtil.runGlobalDelayed(plugin, () -> this.doInvalidateSelection(player), Math.max(1L, delayTicks));
+        FoliaTaskUtil.runGlobalDelayed(plugin, () -> this.doInvalidateSelection(player), Math.max(MIN_DELAY_TICKS, delayTicks));
     }
 
     private void doInvalidateSelection(Player player) {

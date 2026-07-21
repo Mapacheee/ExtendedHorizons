@@ -34,6 +34,9 @@ public final class DiskChunkSerializer {
 
     private static final int PROTOCOL_MC296121 = 770;
     private static final int MIN_PACKET_SIZE = 4096;
+    private static final int MAX_PACKET_BUFFER = 2 * 1024 * 1024;
+    private static final int EXTRA_LIGHT_SECTIONS = 2;
+    private static final int LIGHT_SECTION_OFFSET = 1;
 
     private static final boolean REMAP_CHAIN_TO_IRON_CHAIN =
             BuiltInRegistries.BLOCK.keySet().stream()
@@ -70,8 +73,8 @@ public final class DiskChunkSerializer {
     ) {
         int sectionsCount  = level.getSectionsCount();
         int minSectionY    = level.getMinSectionY();
-        int lightSections  = sectionsCount + 2;
-        int minLightSection = minSectionY - 1;
+        int lightSections  = sectionsCount + EXTRA_LIGHT_SECTIONS;
+        int minLightSection = minSectionY - LIGHT_SECTION_OFFSET;
 
         PalettedContainerFactory factory = level.palettedContainerFactory();
         LevelChunkSection[] sections = new LevelChunkSection[sectionsCount];
@@ -157,7 +160,7 @@ public final class DiskChunkSerializer {
             byte[][] blockLight, byte[][] skyLight,
             ServerLevel level
     ) {
-        ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(MIN_PACKET_SIZE, 2 * 1024 * 1024);
+        ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(MIN_PACKET_SIZE, MAX_PACKET_BUFFER);
         try {
             VarInt.write(raw, PacketIdRegistry.getLevelChunkWithLightId());
             raw.writeInt(chunkX);

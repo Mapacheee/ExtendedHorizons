@@ -44,6 +44,9 @@ public final class RuntimeOrchestratorService {
     private static final EquipmentSlot[] EQUIPMENT_SLOTS = EquipmentSlot.values();
     private static final int EQUIPMENT_SLOT_COUNT = EQUIPMENT_SLOTS.length;
     private static final int CACHE_CLEANUP_INTERVAL = 200;
+    private static final int DEBUG_METRICS_LOG_INTERVAL = 200;
+    private static final double CACHE_HIT_RATE_SCALE = 10_000.0d;
+    private static final double PERCENTAGE_DIVISOR = 100.0d;
 
     private final Container<EhConfig> configContainer;
     private final SessionRegistry sessionRegistry;
@@ -202,7 +205,7 @@ public final class RuntimeOrchestratorService {
             this.antiXrayPayloadCacheService.cleanUp();
         }
 
-        if (config.debugEnabled() && Math.floorMod(this.orchestratorTick, 200) == 0) {
+        if (config.debugEnabled() && Math.floorMod(this.orchestratorTick, DEBUG_METRICS_LOG_INTERVAL) == 0) {
             ChunkBuildMetricsService.Snapshot metrics = this.chunkBuildMetricsService.snapshotAndReset();
             if (metrics.hasData()) {
                 LOGGER.info(
@@ -211,7 +214,7 @@ public final class RuntimeOrchestratorService {
                     metrics.antiXraySnapshotCount(),
                     metrics.antiXrayAsyncAvgMicros(),
                     metrics.antiXrayAsyncCount(),
-                    Math.round(metrics.antiXrayCacheHitRate() * 10000.0d) / 100.0d,
+                    Math.round(metrics.antiXrayCacheHitRate() * CACHE_HIT_RATE_SCALE) / PERCENTAGE_DIVISOR,
                     metrics.antiXrayFallbackCount()
                 );
             }

@@ -10,6 +10,9 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 
 final class FastChunkDataWriter {
 
+    private static final int SECTION_BUFFER_INITIAL = 1024;
+    private static final int SECTION_BUFFER_MAX = 256 * 1024;
+
     private FastChunkDataWriter() {}
 
     static boolean canUseFastPath(LevelChunk chunk) {
@@ -36,7 +39,7 @@ final class FastChunkDataWriter {
     static void writeChunkData(FriendlyByteBuf out, LevelChunk chunk) {
         writeHeightmaps(out, chunk);
 
-        ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(1024, 256 * 1024);
+        ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(SECTION_BUFFER_INITIAL, SECTION_BUFFER_MAX);
         try {
             FriendlyByteBuf sectionBuf = new FriendlyByteBuf(sectionBuffer);
             for (LevelChunkSection section : chunk.getSections()) {

@@ -42,6 +42,9 @@ public final class FakeChunkOrchestratorService {
     private static final int DEFAULT_VIEW_DISTANCE = 10;
     private static final String PERMISSION_BYPASS = "extendedhorizons.bypass";
     private static final String PERMISSION_PREFIX = "extendedhorizons.max.";
+    private static final int PERMISSION_CAP_UNINITIALIZED = -2;
+    private static final int PERMISSION_CAP_NONE = -1;
+    private static final int CLIENT_DISTANCE_UNSET = -1;
 
     private final Container<EhConfig> configContainer;
     private static final Logger LOGGER = LoggerFactory.getLogger(FakeChunkOrchestratorService.class);
@@ -300,7 +303,7 @@ public final class FakeChunkOrchestratorService {
         }
 
         int target = Math.min(base, effectiveCap);
-        int clientRequestedDistance = -1;
+        int clientRequestedDistance = CLIENT_DISTANCE_UNSET;
         try {
             clientRequestedDistance = player.getClientViewDistance();
         } catch (LinkageError e) {
@@ -315,7 +318,7 @@ public final class FakeChunkOrchestratorService {
     private PermissionCacheEntry resolvePermissionSnapshot(Player player, PlayerSession session) {
         long now = System.nanoTime();
         int cachedCap = session.cachedPermissionCap();
-        if (cachedCap != -2 && now < session.permissionCacheExpiryNanos()) {
+        if (cachedCap != PERMISSION_CAP_UNINITIALIZED && now < session.permissionCacheExpiryNanos()) {
             return new PermissionCacheEntry(cachedCap, session.cachedHasBypass());
         }
 
@@ -350,7 +353,7 @@ public final class FakeChunkOrchestratorService {
                 return i;
             }
         }
-        return -1;
+        return PERMISSION_CAP_NONE;
     }
 
     public void invalidatePermissionCache(UUID playerId) {
@@ -360,13 +363,13 @@ public final class FakeChunkOrchestratorService {
         this.permissionCache.invalidate(playerId);
         PlayerSession session = this.sessionRegistry.get(playerId);
         if (session != null) {
-            session.cachedPermissionCap(-2);
+            session.cachedPermissionCap(PERMISSION_CAP_UNINITIALIZED);
         }
     }
 
     public void invalidateAllPermissionCache() {
         this.permissionCache.invalidateAll();
-        this.sessionRegistry.forEachSession(session -> session.cachedPermissionCap(-2));
+        this.sessionRegistry.forEachSession(session -> session.cachedPermissionCap(PERMISSION_CAP_UNINITIALIZED));
     }
 
     private void clearSessionState(@Nullable Channel channel, @Nullable PlayerSession session) {

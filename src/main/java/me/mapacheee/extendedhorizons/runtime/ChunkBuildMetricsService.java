@@ -7,6 +7,8 @@ import java.util.concurrent.atomic.LongAdder;
 @Service
 public final class ChunkBuildMetricsService {
 
+    private static final long NANOS_TO_MICROS = 1_000L;
+
     private final LongAdder antiXraySnapshotCount = new LongAdder();
     private final LongAdder antiXraySnapshotNanos = new LongAdder();
 
@@ -68,14 +70,14 @@ public final class ChunkBuildMetricsService {
             if (this.antiXraySnapshotCount <= 0) {
                 return 0L;
             }
-            return (this.antiXraySnapshotNanos / this.antiXraySnapshotCount) / 1000L;
+            return (this.antiXraySnapshotNanos / this.antiXraySnapshotCount) / NANOS_TO_MICROS;
         }
 
         public long antiXrayAsyncAvgMicros() {
             if (this.antiXrayAsyncCount <= 0) {
                 return 0L;
             }
-            return (this.antiXrayAsyncNanos / this.antiXrayAsyncCount) / 1000L;
+            return (this.antiXrayAsyncNanos / this.antiXrayAsyncCount) / NANOS_TO_MICROS;
         }
 
         public double antiXrayCacheHitRate() {

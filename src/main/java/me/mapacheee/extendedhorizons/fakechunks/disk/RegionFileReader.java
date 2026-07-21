@@ -43,7 +43,8 @@ public final class RegionFileReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(RegionFileReader.class);
 
     private static final int SECTOR_SIZE = 4096;
-    private static final int HEADER_SIZE = SECTOR_SIZE * 2;
+    private static final int HEADER_SECTORS = 2;
+    private static final int HEADER_SIZE = SECTOR_SIZE * HEADER_SECTORS;
     private static final int LOCATION_ENTRY_SIZE = 4;
 
     private static final int COMPRESSION_GZIP = 1;
@@ -52,6 +53,15 @@ public final class RegionFileReader {
     private static final int COMPRESSION_LZ4 = 4;
 
     private static final int DECOMPRESSION_BUFFER_SIZE = 8192;
+    private static final int CHUNK_HEADER_BYTES = 5;
+    private static final int CHANNEL_CACHE_MAX_SIZE = 128;
+    private static final int CHANNEL_CACHE_EXPIRY_MINUTES = 10;
+    private static final int REGION_COORD_SHIFT = 5;
+    private static final int REGION_LOCAL_MASK = 31;
+    private static final int REGION_DIMENSION = 32;
+    private static final int SECTOR_OFFSET_SHIFT = 8;
+    private static final int SECTOR_COUNT_MASK = 0xFF;
+    private static final int MIN_SECTOR_OFFSET = 2;
 
     /**
      * Reusable direct ByteBuffers for the fixed-size reads (location entry + chunk header).
@@ -60,7 +70,7 @@ public final class RegionFileReader {
     private static final ThreadLocal<ByteBuffer> LOCATION_BUF =
         ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(LOCATION_ENTRY_SIZE));
     private static final ThreadLocal<ByteBuffer> CHUNK_HEADER_BUF =
-        ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(5));
+        ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(CHUNK_HEADER_BYTES));
     private static final ThreadLocal<byte[]> DECOMPRESSION_BUF =
         ThreadLocal.withInitial(() -> new byte[DECOMPRESSION_BUFFER_SIZE]);
 
@@ -73,8 +83,8 @@ public final class RegionFileReader {
      * Thread-safe and auto-evicts inactive channels after 10 minutes.
      */
     private static final Cache<String, FileChannel> CHANNEL_CACHE = Caffeine.newBuilder()
-        .maximumSize(128)
-        .expireAfterAccess(Duration.ofMinutes(10))
+        .maximumSize(CHANNEL_CACHE_MAX_SIZE)
+        .expireAfterAccess(Duration.ofMinutes(CHANNEL_CACHE_EXPIRY_MINUTES))
         .removalListener((String path, FileChannel channel, RemovalCause cause) -> {
           try {
             channel.close();
@@ -96,8 +106,8 @@ public final class RegionFileReader {
      * @return the decompressed NBT bytes, or null if the chunk does not exist or cannot be read.
      */
     public static byte[] readChunkBytes(File worldFolder, int chunkX, int chunkZ) {
-        int regionX = chunkX >> 5;
-        int regionZ = chunkZ >> 5;
+        int regionX = chunkX >> REGION_COORD_SHIFT;
+        int regionZ = chunkZ >> REGION_COORD_SHIFT;
 
         File regionFolder = new File(worldFolder, "region");
         File regionFile = new File(regionFolder, "r." + regionX + "." + regionZ + ".mca");
@@ -107,9 +117,9 @@ public final class RegionFileReader {
             return null;
         }
 
-        int localX = chunkX & 31;
-        int localZ = chunkZ & 31;
-        int locationIndex = (localX + localZ * 32) * LOCATION_ENTRY_SIZE;
+        int localX = chunkX & REGION_LOCAL_MASK;
+        int localZ = chunkZ & REGION_LOCAL_MASK;
+        int locationIndex = (localX + localZ * REGION_DIMENSION) * LOCATION_ENTRY_SIZE;
 
         FileChannel channel;
         try {
@@ -149,10 +159,10 @@ public final class RegionFileReader {
                 return null;
             }
 
-            int sectorOffset = (locationValue >> 8) & 0xFFFFFF;
-            int sectorCount = locationValue & 0xFF;
+            int sectorOffset = (locationValue >> SECTOR_OFFSET_SHIFT) & 0xFFFFFF;
+            int sectorCount = locationValue & SECTOR_COUNT_MASK;
 
-            if (sectorOffset < 2) {
+            if (sectorOffset < MIN_SECTOR_OFFSET) {
                 LOGGER.warn("Invalid sector offset {} for chunk [{}, {}] in {}",
                     sectorOffset, chunkX, chunkZ, regionFile.getName());
                 return null;
@@ -168,7 +178,7 @@ public final class RegionFileReader {
             ByteBuffer headerBuf = CHUNK_HEADER_BUF.get();
             headerBuf.clear();
             int headerRead = channel.read(headerBuf, dataStart);
-            if (headerRead < 5) {
+            if (headerRead < CHUNK_HEADER_BYTES) {
                 return null;
             }
             headerBuf.flip();
@@ -189,7 +199,7 @@ public final class RegionFileReader {
             }
 
             ByteBuffer dataBuf = ByteBuffer.allocate(compressedLength);
-            int dataRead = channel.read(dataBuf, dataStart + 5);
+            int dataRead = channel.read(dataBuf, dataStart + CHUNK_HEADER_BYTES);
             if (dataRead < compressedLength) {
                 LOGGER.warn("Compressed payload read truncated for chunk [{}, {}] in {}",
                     chunkX, chunkZ, regionFile.getName());

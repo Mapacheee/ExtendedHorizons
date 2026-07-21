@@ -33,6 +33,8 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EhPacketHandler.class);
     private static final int VARINT_MAX_BYTES = 5;
+    private static final int BUNDLE_VARINT_HEADER_SIZE = 2;
+    private static final int BUNDLE_TRAILER_BYTE_COUNT = 1;
     private static final MethodHandle CHUNK_POS_X_GETTER;
     private static final MethodHandle CHUNK_POS_Z_GETTER;
 
@@ -113,9 +115,9 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
                 return true;
             }
 
-            if (firstVarInt == 2 && buf.isReadable()) {
+            if (firstVarInt == BUNDLE_VARINT_HEADER_SIZE && buf.isReadable()) {
                 int secondVarInt = readVarInt(buf);
-                if (secondVarInt == targetId && buf.readableBytes() == 1) {
+                if (secondVarInt == targetId && buf.readableBytes() == BUNDLE_TRAILER_BYTE_COUNT) {
                     return true;
                 }
             }

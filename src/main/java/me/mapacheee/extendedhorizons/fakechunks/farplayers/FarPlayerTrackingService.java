@@ -26,6 +26,7 @@ public final class FarPlayerTrackingService {
     private static final int FAR_ENTITY_ID_ALLOCATION_ATTEMPTS = 10_000;
     private static final double FAR_RADIUS_PADDING = 0.35d;
     private static final int CHUNK_SHIFT = 4;
+    private static final int ALLOCATION_FAILED = -1;
 
     private final Container<EhConfig> configContainer;
     private final FarPlayerCacheService cacheService;
@@ -103,7 +104,7 @@ public final class FarPlayerTrackingService {
             newlyRetained.add(state.uuid());
             if (!alreadyTracked) {
                 int farEntityId = this.allocateFarEntityId(usedFarEntityIds, state.uuid(), state.entityId());
-                if (farEntityId == -1) {
+                if (farEntityId == ALLOCATION_FAILED) {
                     continue;
                 }
                 this.spawn(channel, trackedFarPlayers, usedFarEntityIds, state, farEntityId);
@@ -208,7 +209,7 @@ public final class FarPlayerTrackingService {
                 candidate = FAR_ENTITY_ID_RANGE_START;
             }
         }
-        return -1;
+        return ALLOCATION_FAILED;
     }
 
 

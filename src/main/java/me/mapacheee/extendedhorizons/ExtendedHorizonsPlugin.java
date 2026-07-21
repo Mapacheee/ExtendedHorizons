@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @WinterBootPlugin
 public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
 
+    private static final String METRICS_TOKEN = "a1d882d1ace0dfbd8ccfa1eef51a4b1e";
+
     private Metrics metrics;
 
     private static volatile ExtendedHorizonsPlugin instance;
@@ -39,7 +41,7 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
     @Override
     public void onPluginEnable() {
         this.metrics = BukkitMetrics.factory()
-            .token("a1d882d1ace0dfbd8ccfa1eef51a4b1e")
+            .token(METRICS_TOKEN)
             .addMetric(Metric.number("active_sessions", () -> {
                 int count = 0;
                 SessionRegistry registry = getService(SessionRegistry.class);

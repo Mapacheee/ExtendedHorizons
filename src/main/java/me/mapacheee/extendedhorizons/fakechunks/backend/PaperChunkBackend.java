@@ -48,6 +48,12 @@ public final class PaperChunkBackend implements ChunkBackend {
     private static final int SECTION_BUFFER_MIN = 64;
     private static final int BIOME_BUFFER_SIZE = 64;
     private static final int MIN_PACKET_SIZE = 2048;
+    private static final int MAX_PACKET_BUFFER = 2 * 1024 * 1024;
+    private static final int SECTION_MAX_BUFFER = 256 * 1024;
+    private static final int HEIGHTMAP_BUFFER_INITIAL = 256;
+    private static final int HEIGHTMAP_BUFFER_MAX = 64 * 1024;
+    private static final int SECTION_STATES_MAX_BUFFER = 128 * 1024;
+    private static final int LIGHT_MAX_BUFFER = 512 * 1024;
     private static final int LIGHT_ESTIMATE_VANILLA = 2048;
     private static final int CHUNK_ESTIMATE_FAST = 1024;
     private static final int CHUNK_ESTIMATE_VANILLA = 2048;
@@ -286,7 +292,7 @@ public final class PaperChunkBackend implements ChunkBackend {
         boolean useFast = preferFast && canUseFastChunkData && hasLight;
 
         int initialCapacity = this.estimatePacketSize(chunk, antiXrayProcessor, useFast);
-        ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(initialCapacity, 2 * 1024 * 1024);
+        ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(initialCapacity, MAX_PACKET_BUFFER);
         FriendlyByteBuf buf = new FriendlyByteBuf(raw);
         try {
             VarInt.write(buf, PacketIdRegistry.getLevelChunkWithLightId());
@@ -356,7 +362,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     private void writeChunkDataWithAntiXray(FriendlyByteBuf out, LevelChunk chunk, AntiXrayProcessor antiXrayProcessor) {
         writeHeightmaps(out, chunk);
 
-        ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(this.estimateSectionBufferSize(chunk), 256 * 1024);
+        ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(this.estimateSectionBufferSize(chunk), SECTION_MAX_BUFFER);
         try {
             FriendlyByteBuf sectionBuf = new FriendlyByteBuf(sectionBuffer);
             int minSectionY = chunk.getMinSectionY();
@@ -482,7 +488,7 @@ public final class PaperChunkBackend implements ChunkBackend {
         UUID worldId,
         long chunkKey
     ) {
-        ByteBuf heightmaps = PooledByteBufAllocator.DEFAULT.buffer(256, 64 * 1024);
+        ByteBuf heightmaps = PooledByteBufAllocator.DEFAULT.buffer(HEIGHTMAP_BUFFER_INITIAL, HEIGHTMAP_BUFFER_MAX);
         ByteBuf light = this.lightPayloadCacheService.get(worldId, chunkKey);
         AntiXraySectionSnapshot[] sectionSnapshots = null;
         try {
@@ -495,8 +501,9 @@ public final class PaperChunkBackend implements ChunkBackend {
             for (int i = 0; i < chunkSections.length; i++) {
                 LevelChunkSection section = chunkSections[i];
                 short nonEmptyBlockCount = getNonEmptyBlockCount(section);
-                ByteBuf states = PooledByteBufAllocator.DEFAULT.buffer(Math.max(64, section.getSerializedSize()), 128 * 1024);
-                ByteBuf biomes = PooledByteBufAllocator.DEFAULT.buffer(64, 64 * 1024);
+                ByteBuf states = PooledByteBufAllocator.DEFAULT.buffer(
+                    Math.max(SECTION_BUFFER_MIN, section.getSerializedSize()), SECTION_STATES_MAX_BUFFER);
+                ByteBuf biomes = PooledByteBufAllocator.DEFAULT.buffer(BIOME_BUFFER_SIZE, HEIGHTMAP_BUFFER_MAX);
                 FriendlyByteBuf statesOut = new FriendlyByteBuf(states);
                 FriendlyByteBuf biomesOut = new FriendlyByteBuf(biomes);
 
@@ -521,7 +528,7 @@ public final class PaperChunkBackend implements ChunkBackend {
                     heightmaps.release();
                     return null;
                 }
-                light = PooledByteBufAllocator.DEFAULT.buffer(FastLightDataWriter.estimateLightDataSize(chunk), 512 * 1024);
+                light = PooledByteBufAllocator.DEFAULT.buffer(FastLightDataWriter.estimateLightDataSize(chunk), LIGHT_MAX_BUFFER);
                 FriendlyByteBuf lightOut = new FriendlyByteBuf(light);
                 FastLightDataWriter.writeLightData(lightOut, chunk);
                 this.lightPayloadCacheService.put(worldId, chunkKey, light);
@@ -552,7 +559,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     private ByteBuf serializeAntiXraySnapshot(int chunkX, int chunkZ, AntiXrayChunkSnapshot snapshot) {
         AntiXraySectionSnapshot[] sections = snapshot.sections();
         int sectionCapacity = Math.max(SECTION_BUFFER_PADDING, this.estimateSectionSnapshotSize(sections));
-        ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(sectionCapacity, 256 * 1024);
+        ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(sectionCapacity, SECTION_MAX_BUFFER);
         try {
             FriendlyByteBuf sectionOut = new FriendlyByteBuf(sectionBuffer);
             for (AntiXraySectionSnapshot section : sections) {
@@ -579,7 +586,7 @@ public final class PaperChunkBackend implements ChunkBackend {
                 + sectionBytes
                 + 1
                 + snapshot.light().readableBytes();
-            ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(Math.max(MIN_PACKET_SIZE, estimated), 2 * 1024 * 1024);
+            ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(Math.max(MIN_PACKET_SIZE, estimated), MAX_PACKET_BUFFER);
             FriendlyByteBuf out = new FriendlyByteBuf(raw);
             try {
                 VarInt.write(out, PacketIdRegistry.getLevelChunkWithLightId());

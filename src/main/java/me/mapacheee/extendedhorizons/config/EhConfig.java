@@ -15,6 +15,40 @@ public record EhConfig(
     @Setting("world-settings") Map<String, WorldSettingsConfig> worldSettings
 ) {
 
+    private static final int MIN_VIEW_DISTANCE = 2;
+    private static final int DEFAULT_TARGET_VIEW_DISTANCE = 32;
+    private static final int DEFAULT_MAX_SEND_PER_CYCLE = 6;
+    private static final int MIN_MAX_SEND_PER_CYCLE = 1;
+    private static final long DEFAULT_BANDWIDTH_BYTES_PER_SECOND = 512_000L;
+    private static final long MIN_BANDWIDTH_BYTES_PER_SECOND = 32_768L;
+    private static final long DEFAULT_BANDWIDTH_BURST_BYTES = 1_024_000L;
+    private static final int DEFAULT_SERIALIZATION_WORKERS = 0;
+    private static final int MAX_SERIALIZATION_WORKERS = 16;
+    private static final int DEFAULT_MAX_GLOBAL_GENERATIONS_PER_TICK = 50;
+    private static final int MIN_MAX_GLOBAL_GENERATIONS_PER_TICK = 1;
+    private static final int DEFAULT_MAX_INFLIGHT_PER_PLAYER = 4;
+    private static final int MIN_MAX_INFLIGHT_PER_PLAYER = 1;
+    private static final int DEFAULT_CHUNK_QUEUE_SIZE = 64;
+    private static final int MIN_CHUNK_QUEUE_SIZE = 8;
+    private static final long DEFAULT_UNAVAILABLE_RETRY_MS = 150L;
+    private static final long MIN_UNAVAILABLE_RETRY_MS = 25L;
+    private static final int DEFAULT_CACHE_TTL_SECONDS = 15;
+    private static final int MIN_CACHE_TTL_SECONDS = 1;
+    private static final int DEFAULT_CACHE_MAX_ENTRIES = 1500;
+    private static final int MIN_CACHE_MAX_ENTRIES = 128;
+    private static final long DEFAULT_BYPASS_AFTER_INTERACTION_MS = 3000L;
+    private static final long MIN_BYPASS_AFTER_INTERACTION_MS = 250L;
+    private static final int DEFAULT_PERMISSION_CACHE_ENTRIES = 4096;
+    private static final int DEFAULT_PERMISSION_CACHE_TTL_SECONDS = 5;
+    private static final int MIN_PERMISSION_CACHE_TTL_SECONDS = 1;
+    private static final int DEFAULT_FAR_PLAYER_CACHE_ENTRIES = 500;
+    private static final int MIN_FAR_PLAYER_CACHE_ENTRIES = 64;
+    private static final int DEFAULT_RUNTIME_PERIOD_TICKS = 1;
+    private static final int MIN_RUNTIME_PERIOD_TICKS = 1;
+    private static final int DEFAULT_FAR_PLAYER_MOVE_TICKS = 4;
+    private static final int MIN_FAR_PLAYER_MOVE_TICKS = 1;
+    private static final int DEFAULT_FAR_PLAYER_EQUIP_TICKS = 15;
+
     private static final List<String> DEFAULT_ANTI_XRAY_HIDDEN_BLOCKS = List.of(
         "minecraft:diamond_ore",
         "minecraft:deepslate_diamond_ore",
@@ -48,12 +82,12 @@ public record EhConfig(
     public int targetViewDistance(String worldName) {
         WorldSettingsConfig worldConfig = this.world(worldName);
         if (worldConfig != null && worldConfig.targetDistance() > 0) {
-            return Math.max(2, worldConfig.targetDistance());
+            return Math.max(MIN_VIEW_DISTANCE, worldConfig.targetDistance());
         }
         if (this.fakeChunks == null) {
-            return 32;
+            return DEFAULT_TARGET_VIEW_DISTANCE;
         }
-        return Math.max(2, this.fakeChunks.targetViewDistance());
+        return Math.max(MIN_VIEW_DISTANCE, this.fakeChunks.targetViewDistance());
     }
 
     public boolean fakeChunksEnabledForWorld(String worldName) {
@@ -63,9 +97,9 @@ public record EhConfig(
 
     public int maxSendPerCycle() {
         if (this.fakeChunks == null) {
-            return 6;
+            return DEFAULT_MAX_SEND_PER_CYCLE;
         }
-        return Math.max(1, this.fakeChunks.maxSendPerCycle());
+        return Math.max(MIN_MAX_SEND_PER_CYCLE, this.fakeChunks.maxSendPerCycle());
     }
 
     public boolean bandwidthEnabled() {
@@ -77,14 +111,14 @@ public record EhConfig(
 
     public long bandwidthBytesPerSecond() {
         if (this.fakeChunks == null || this.fakeChunks.bandwidth() == null) {
-            return 512_000L;
+            return DEFAULT_BANDWIDTH_BYTES_PER_SECOND;
         }
-        return Math.max(32_768L, this.fakeChunks.bandwidth().bytesPerSecond());
+        return Math.max(MIN_BANDWIDTH_BYTES_PER_SECOND, this.fakeChunks.bandwidth().bytesPerSecond());
     }
 
     public long bandwidthBurstBytes() {
         if (this.fakeChunks == null || this.fakeChunks.bandwidth() == null) {
-            return 1_024_000L;
+            return DEFAULT_BANDWIDTH_BURST_BYTES;
         }
         long configured = this.fakeChunks.bandwidth().burstBytes();
         return Math.max(this.bandwidthBytesPerSecond(), configured);
@@ -99,38 +133,38 @@ public record EhConfig(
 
     public int serializationWorkers() {
         if (this.fakeChunks == null) {
-            return 0;
+            return DEFAULT_SERIALIZATION_WORKERS;
         }
         int configured = this.fakeChunks.serializationWorkers();
-        return Math.clamp(configured, 0, 16);
+        return Math.clamp(configured, DEFAULT_SERIALIZATION_WORKERS, MAX_SERIALIZATION_WORKERS);
     }
 
     public int maxGlobalGenerationsPerTick() {
         if (this.fakeChunks == null) {
-            return 50;
+            return DEFAULT_MAX_GLOBAL_GENERATIONS_PER_TICK;
         }
-        return Math.max(1, this.fakeChunks.maxGlobalGenerationsPerTick());
+        return Math.max(MIN_MAX_GLOBAL_GENERATIONS_PER_TICK, this.fakeChunks.maxGlobalGenerationsPerTick());
     }
 
     public int maxInflightPerPlayer() {
         if (this.fakeChunks == null) {
-            return 4;
+            return DEFAULT_MAX_INFLIGHT_PER_PLAYER;
         }
-        return Math.max(1, this.fakeChunks.maxInflightPerPlayer());
+        return Math.max(MIN_MAX_INFLIGHT_PER_PLAYER, this.fakeChunks.maxInflightPerPlayer());
     }
 
     public int chunkQueueSize() {
         if (this.fakeChunks == null) {
-            return 64;
+            return DEFAULT_CHUNK_QUEUE_SIZE;
         }
-        return Math.max(8, this.fakeChunks.chunkQueueSize());
+        return Math.max(MIN_CHUNK_QUEUE_SIZE, this.fakeChunks.chunkQueueSize());
     }
 
     public long unavailableRetryMs() {
         if (this.fakeChunks == null) {
-            return 150L;
+            return DEFAULT_UNAVAILABLE_RETRY_MS;
         }
-        return Math.max(25L, this.fakeChunks.unavailableRetryMs());
+        return Math.max(MIN_UNAVAILABLE_RETRY_MS, this.fakeChunks.unavailableRetryMs());
     }
 
     public boolean generateMissingChunks() {
@@ -150,61 +184,61 @@ public record EhConfig(
 
     public int cacheTtlSeconds() {
         if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
-            return 15;
+            return DEFAULT_CACHE_TTL_SECONDS;
         }
-        return Math.max(1, this.fakeChunks.cache().ttlSeconds());
+        return Math.max(MIN_CACHE_TTL_SECONDS, this.fakeChunks.cache().ttlSeconds());
     }
 
     public int cacheMaxEntries() {
         if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
-            return 1500;
+            return DEFAULT_CACHE_MAX_ENTRIES;
         }
-        return Math.max(128, this.fakeChunks.cache().maxEntries());
+        return Math.max(MIN_CACHE_MAX_ENTRIES, this.fakeChunks.cache().maxEntries());
     }
 
     public long cacheBypassAfterRealInteractionMs() {
         if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
-            return 3000L;
+            return DEFAULT_BYPASS_AFTER_INTERACTION_MS;
         }
-        return Math.max(250L, this.fakeChunks.cache().bypassAfterRealInteractionMs());
+        return Math.max(MIN_BYPASS_AFTER_INTERACTION_MS, this.fakeChunks.cache().bypassAfterRealInteractionMs());
     }
 
     public int permissionCacheEntries() {
         if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
-            return 4096;
+            return DEFAULT_PERMISSION_CACHE_ENTRIES;
         }
         int configured = this.fakeChunks.cache().permissionCacheEntries();
-        return configured > 0 ? configured : 4096;
+        return configured > 0 ? configured : DEFAULT_PERMISSION_CACHE_ENTRIES;
     }
 
     public int permissionCacheTtlSeconds() {
         if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
-            return 5;
+            return DEFAULT_PERMISSION_CACHE_TTL_SECONDS;
         }
         int configured = this.fakeChunks.cache().permissionCacheTtlSeconds();
-        return Math.max(1, configured);
+        return Math.max(MIN_PERMISSION_CACHE_TTL_SECONDS, configured);
     }
 
     public int farPlayerCacheEntries() {
         if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
-            return 500;
+            return DEFAULT_FAR_PLAYER_CACHE_ENTRIES;
         }
         int configured = this.fakeChunks.cache().farPlayerCacheEntries();
-        return Math.max(64, configured);
+        return Math.max(MIN_FAR_PLAYER_CACHE_ENTRIES, configured);
     }
 
     public int runtimePeriodTicks() {
         if (this.fakeChunks == null || this.fakeChunks.runtime() == null) {
-            return 1;
+            return DEFAULT_RUNTIME_PERIOD_TICKS;
         }
-        return Math.max(1, this.fakeChunks.runtime().periodTicks());
+        return Math.max(MIN_RUNTIME_PERIOD_TICKS, this.fakeChunks.runtime().periodTicks());
     }
 
     public int farPlayerMoveTicks() {
         if (this.fakeChunks == null || this.fakeChunks.farPlayers() == null) {
-            return 4;
+            return DEFAULT_FAR_PLAYER_MOVE_TICKS;
         }
-        return Math.max(1, this.fakeChunks.farPlayers().moveTicks());
+        return Math.max(MIN_FAR_PLAYER_MOVE_TICKS, this.fakeChunks.farPlayers().moveTicks());
     }
 
     public boolean farPlayersEnabled() {
@@ -217,7 +251,7 @@ public record EhConfig(
 
     public int farPlayerEquipTicks() {
         if (this.fakeChunks == null || this.fakeChunks.farPlayers() == null) {
-            return 15;
+            return DEFAULT_FAR_PLAYER_EQUIP_TICKS;
         }
         return Math.max(1, this.fakeChunks.farPlayers().equipTicks());
     }

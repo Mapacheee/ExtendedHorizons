@@ -16,6 +16,8 @@ final class FastLightDataWriter {
 
     private static final int NO_SKY_HEADER_BYTES = 3;
     private static final int DEFAULT_SECTION_COUNT = 16;
+    private static final int EXTRA_LIGHT_SECTIONS = 2;
+    private static final int FULL_BRIGHT_ARRAY_BYTES = 2048;
 
     private static final MethodHandle GET_STORAGE_VISIBLE = createStorageVisibleHandle();
 
@@ -72,9 +74,9 @@ final class FastLightDataWriter {
     static void writeSyntheticFullBrightLight(FriendlyByteBuf out, LevelChunk chunk) {
         SWMRNibbleArray[] blockNibbles = chunk.starlight$getBlockNibbles();
         boolean hasSky = chunk.starlight$getSkyNibbles() != null;
-        int sectionCount = blockNibbles != null ? blockNibbles.length : chunk.getSectionsCount() + 2;
+        int sectionCount = blockNibbles != null ? blockNibbles.length : chunk.getSectionsCount() + EXTRA_LIGHT_SECTIONS;
 
-        byte[] fullBright = new byte[2048];
+        byte[] fullBright = new byte[FULL_BRIGHT_ARRAY_BYTES];
         java.util.Arrays.fill(fullBright, (byte) 0xFF);
 
         if (hasSky) {
