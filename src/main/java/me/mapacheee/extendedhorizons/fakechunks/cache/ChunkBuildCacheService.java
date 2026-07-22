@@ -122,14 +122,9 @@ public final class ChunkBuildCacheService {
                 this.buildEntryCache.invalidate(key);
                 return;
             }
-            ByteBuf sharedPayload = payload.retainedDuplicate();
-            try {
-                this.serializedCache.put(key, payload.retainedDuplicate());
-                this.bypassCache.invalidate(key);
-                shared.complete(sharedPayload);
-            } finally {
-                ReferenceCountUtil.release(payload);
-            }
+            this.serializedCache.put(key, payload.retainedDuplicate());
+            this.bypassCache.invalidate(key);
+            shared.complete(payload);
         });
         return shared.thenApply(this::retainReadable);
     }

@@ -33,11 +33,18 @@ public final class ChunkSendQueueEntry {
 
     public void releaseFuture() {
         if (this.released.compareAndSet(false, true)) {
-            this.buildFuture.thenAccept(buf -> {
+            if (this.buildFuture.isDone() && !this.buildFuture.isCompletedExceptionally()) {
+                ByteBuf buf = this.buildFuture.getNow(null);
                 if (buf != null && buf.refCnt() > 0) {
                     ReferenceCountUtil.release(buf);
                 }
-            });
+            } else if (!this.buildFuture.isDone()) {
+                this.buildFuture.thenAccept(buf -> {
+                    if (buf != null && buf.refCnt() > 0) {
+                        ReferenceCountUtil.release(buf);
+                    }
+                });
+            }
         }
     }
 }

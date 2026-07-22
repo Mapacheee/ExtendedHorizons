@@ -108,7 +108,13 @@ public final class ChannelInjectionService {
                 ReferenceCountUtil.release(payload);
                 return;
             }
-            channel.write(new EhBypassPacket(payload), channel.voidPromise());
+            ChannelPromise promise = channel.newPromise();
+            promise.addListener(future -> {
+                if (!future.isSuccess()) {
+                    ReferenceCountUtil.release(payload);
+                }
+            });
+            channel.write(new EhBypassPacket(payload), promise);
         };
         this.runOnEventLoop(channel, action);
         return true;

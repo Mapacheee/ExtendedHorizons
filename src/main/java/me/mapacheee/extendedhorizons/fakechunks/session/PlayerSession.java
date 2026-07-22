@@ -5,14 +5,12 @@ import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicLong;
@@ -558,14 +556,10 @@ public final class PlayerSession {
         double dirX = this.moveDirX;
         double dirZ = this.moveDirZ;
 
-        Integer[] indices = new Integer[len];
-        for (int i = 0; i < len; i++) {
-            indices[i] = i;
-        }
-
-        // Precompute sorting keys to avoid math overhead and boxing during sort operations (O(N log N) -> O(N))
+        int[] indices = new int[len];
         double[] keys = new double[len];
         for (int i = 0; i < len; i++) {
+            indices[i] = i;
             int ox = ChunkKeyCodec.x(base[i]);
             int oz = ChunkKeyCodec.z(base[i]);
             double dist = Math.sqrt(ox * ox + oz * oz);
@@ -577,7 +571,16 @@ public final class PlayerSession {
             }
         }
 
-        Arrays.sort(indices, (i1, i2) -> Double.compare(keys[i1], keys[i2]));
+        for (int i = 1; i < len; i++) {
+            int current = indices[i];
+            double currentKey = keys[current];
+            int j = i - 1;
+            while (j >= 0 && keys[indices[j]] > currentKey) {
+                indices[j + 1] = indices[j];
+                j--;
+            }
+            indices[j + 1] = current;
+        }
 
         long[] sorted = new long[len];
         for (int i = 0; i < len; i++) {

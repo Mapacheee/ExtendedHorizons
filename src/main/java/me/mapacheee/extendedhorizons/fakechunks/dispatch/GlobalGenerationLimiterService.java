@@ -8,9 +8,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class GlobalGenerationLimiterService {
 
     private final AtomicInteger remaining = new AtomicInteger(0);
+    private volatile int maxPerTick;
 
     public void reset(int maxPerTick) {
-        this.remaining.set(Math.max(0, maxPerTick));
+        this.maxPerTick = Math.max(0, maxPerTick);
+        this.remaining.set(this.maxPerTick);
     }
 
     public boolean tryAcquire() {
@@ -25,7 +27,15 @@ public final class GlobalGenerationLimiterService {
     }
 
     public void release() {
-        this.remaining.incrementAndGet();
+        int current;
+        int next;
+        do {
+            current = this.remaining.get();
+            next = current + 1;
+            if (next > this.maxPerTick) {
+                return;
+            }
+        } while (!this.remaining.compareAndSet(current, next));
     }
 }
 

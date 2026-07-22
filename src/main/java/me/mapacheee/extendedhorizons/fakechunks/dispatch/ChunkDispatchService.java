@@ -106,24 +106,23 @@ public final class ChunkDispatchService {
     }
 
     private int drainCompletedEntries(World world, Channel channel, PlayerSession session, EhConfig config, int maxSendPerCycle, boolean debug) {
-        int[] inFlight = {0};
-        int[] sentCount = {0};
+        int[] counters = {0, 0};
         session.chunkQueue().removeIf(entry -> {
             if (!entry.buildFuture().isDone()) {
-                inFlight[0]++;
+                counters[0]++;
                 return false;
             }
-            if (sentCount[0] >= maxSendPerCycle && !entry.buildFuture().isCompletedExceptionally()) {
-                inFlight[0]++;
+            if (counters[1] >= maxSendPerCycle && !entry.buildFuture().isCompletedExceptionally()) {
+                counters[0]++;
                 return false;
             }
-            boolean processed = this.checkQueueEntry(world, channel, session, config, entry, sentCount, debug);
+            boolean processed = this.checkQueueEntry(world, channel, session, config, entry, counters, debug);
             if (!processed) {
-                inFlight[0]++;
+                counters[0]++;
             }
             return processed;
         });
-        return inFlight[0];
+        return counters[0];
     }
 
     public void sendUnload(Channel channel, PlayerSession session, long chunkKey) {
@@ -229,7 +228,7 @@ public final class ChunkDispatchService {
         .exceptionally(throwable -> null);
     }
 
-    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, EhConfig config, ChunkSendQueueEntry entry, int[] sentCount, boolean debug) {
+    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, EhConfig config, ChunkSendQueueEntry entry, int[] counters, boolean debug) {
         CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
         if (!buildFuture.isDone()) {
             if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
@@ -274,7 +273,7 @@ public final class ChunkDispatchService {
             }
             ByteBuf toSend = payload.retainedDuplicate();
             if (this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {
-                sentCount[0]++;
+                counters[1]++;
             } else {
                 session.onChunkBuildFailed(entry.chunkKey());
             }

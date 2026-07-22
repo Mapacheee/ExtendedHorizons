@@ -59,6 +59,7 @@ public final class RuntimeOrchestratorService {
     private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
 
     private final Map<UUID, List<Pair<EquipmentSlot, ItemStack>>> lastEquipment = new HashMap<>();
+    private final List<Player> playerBuffer = new ArrayList<>();
 
     private volatile ScheduledTask runtimeTask;
     private int orchestratorTick;
@@ -107,11 +108,12 @@ public final class RuntimeOrchestratorService {
         if (plugin == null || !plugin.isEnabled()) {
             return;
         }
-        List<Player> playerList = new ArrayList<>(Bukkit.getOnlinePlayers());
-        if (playerList.isEmpty()) {
+        this.playerBuffer.clear();
+        this.playerBuffer.addAll(Bukkit.getOnlinePlayers());
+        if (this.playerBuffer.isEmpty()) {
             return;
         }
-        Collections.shuffle(playerList);
+        Collections.shuffle(this.playerBuffer);
 
         EhConfig config = this.configContainer.get();
         this.generationLimiterService.reset(config.maxGlobalGenerationsPerTick());
@@ -120,7 +122,7 @@ public final class RuntimeOrchestratorService {
         boolean farPlayersEnabled = config.farPlayersEnabled();
         boolean pollEquipment = farPlayersEnabled && Math.floorMod(this.orchestratorTick, config.farPlayerEquipTicks()) == 0;
 
-        for (Player player : playerList) {
+        for (Player player : this.playerBuffer) {
             FoliaTaskUtil.runForPlayer(player, plugin, () -> {
                 try {
                     Location loc = player.getLocation();

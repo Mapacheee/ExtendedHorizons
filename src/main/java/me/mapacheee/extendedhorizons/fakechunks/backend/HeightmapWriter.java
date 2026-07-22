@@ -18,8 +18,22 @@ final class HeightmapWriter {
     private HeightmapWriter() {
     }
 
+    static long[][] extractHeightmapsData(LevelChunk chunk) {
+        long[][] heightmapsData = new long[SENDABLE_HEIGHTMAP_TYPES.length][];
+        for (int i = 0; i < SENDABLE_HEIGHTMAP_TYPES.length; i++) {
+            Heightmap.Types type = SENDABLE_HEIGHTMAP_TYPES[i];
+            if (chunk.hasPrimedHeightmap(type)) {
+                heightmapsData[i] = chunk.getOrCreateHeightmapUnprimed(type).getRawData();
+            }
+        }
+        return heightmapsData;
+    }
+
     static void writeHeightmaps(FriendlyByteBuf out, LevelChunk chunk) {
-        long[][] heightmapsData = extractHeightmapsData(chunk);
+        writeHeightmaps(out, extractHeightmapsData(chunk));
+    }
+
+    static void writeHeightmaps(FriendlyByteBuf out, long[][] heightmapsData) {
         int heightmapsCount = 0;
         for (long[] data : heightmapsData) {
             if (data != null) {
@@ -38,7 +52,10 @@ final class HeightmapWriter {
     }
 
     static int estimateHeightmapsSize(LevelChunk chunk) {
-        long[][] heightmapsData = extractHeightmapsData(chunk);
+        return estimateHeightmapsSize(extractHeightmapsData(chunk));
+    }
+
+    static int estimateHeightmapsSize(long[][] heightmapsData) {
         int heightmapsCount = 0;
         for (long[] data : heightmapsData) {
             if (data != null) {
@@ -55,17 +72,6 @@ final class HeightmapWriter {
             }
         }
         return size;
-    }
-
-    private static long[][] extractHeightmapsData(LevelChunk chunk) {
-        long[][] heightmapsData = new long[SENDABLE_HEIGHTMAP_TYPES.length][];
-        for (int i = 0; i < SENDABLE_HEIGHTMAP_TYPES.length; i++) {
-            Heightmap.Types type = SENDABLE_HEIGHTMAP_TYPES[i];
-            if (chunk.hasPrimedHeightmap(type)) {
-                heightmapsData[i] = chunk.getOrCreateHeightmapUnprimed(type).getRawData();
-            }
-        }
-        return heightmapsData;
     }
 }
 
