@@ -29,6 +29,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public final class BulkChunkInvalidationService {
 
+    private static final long COOLDOWN_NANOS = 2_000_000_000L;
+
     private final ChunkBuildCacheService cacheService;
     private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
     private final LightPayloadCacheService lightPayloadCacheService;
@@ -36,12 +38,8 @@ public final class BulkChunkInvalidationService {
     private final ChannelInjectionService channelInjectionService;
     private final ChunkDispatchService dispatchService;
     private final ConcurrentHashMap<UUID, Set<Long>> pendingInvalidations = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Long> cooldownMap = new ConcurrentHashMap<>();
 
-    /**
-     * Reusable buffer for collecting chunk keys that need unload packets.
-     * Only used from the main/global tick thread inside {@link #processPending()},
-     * so no synchronization is required.
-     */
     private final List<Long> unloadBuffer = new ArrayList<>();
 
     private volatile ScheduledTask processorTask;
@@ -79,26 +77,30 @@ public final class BulkChunkInvalidationService {
             this.processorTask = null;
         }
         this.pendingInvalidations.clear();
+        this.cooldownMap.clear();
     }
 
     public void queueInvalidation(UUID worldId, long chunkKey) {
         if (worldId == null) return;
+        long compositeKey = compositeKey(worldId, chunkKey);
+        if (isOnCooldown(compositeKey)) return;
         this.pendingInvalidations.computeIfAbsent(worldId, k -> ConcurrentHashMap.newKeySet()).add(chunkKey);
     }
 
-    /**
-     * Batch version of {@link #queueInvalidation(UUID, long)} that inserts
-     * all chunk keys in a single {@code computeIfAbsent} + {@code addAll} call,
-     * dramatically reducing ConcurrentHashMap contention when called from
-     * WorldEdit/FAWE operations that touch thousands of chunks.
-     */
     public void queueInvalidationBatch(UUID worldId, Collection<Long> chunkKeys) {
         if (worldId == null || chunkKeys == null || chunkKeys.isEmpty()) return;
-        this.pendingInvalidations.computeIfAbsent(worldId, k -> ConcurrentHashMap.newKeySet()).addAll(chunkKeys);
+        Set<Long> set = this.pendingInvalidations.computeIfAbsent(worldId, k -> ConcurrentHashMap.newKeySet());
+        for (Long key : chunkKeys) {
+            long compositeKey = compositeKey(worldId, key);
+            if (!isOnCooldown(compositeKey)) {
+                set.add(key);
+            }
+        }
     }
 
     private void processPending() {
         if (this.pendingInvalidations.isEmpty()) {
+            evictExpiredCooldowns();
             return;
         }
 
@@ -121,7 +123,10 @@ public final class BulkChunkInvalidationService {
             }
             final int count = idx;
 
+            long now = System.nanoTime();
             for (int i = 0; i < count; i++) {
+                long compositeKey = compositeKey(worldId, keyArray[i]);
+                this.cooldownMap.put(compositeKey, now);
                 this.cacheService.invalidate(worldId, keyArray[i]);
                 this.antiXrayPayloadCacheService.invalidateChunk(worldId, keyArray[i]);
                 this.lightPayloadCacheService.invalidate(worldId, keyArray[i]);
@@ -159,8 +164,25 @@ public final class BulkChunkInvalidationService {
                     }
                 });
             });
-
         }
+
+        evictExpiredCooldowns();
+    }
+
+    private boolean isOnCooldown(long compositeKey) {
+        Long lastTime = this.cooldownMap.get(compositeKey);
+        return lastTime != null && (System.nanoTime() - lastTime) < COOLDOWN_NANOS;
+    }
+
+    private void evictExpiredCooldowns() {
+        long now = System.nanoTime();
+        if (this.cooldownMap.size() > 10_000) {
+            this.cooldownMap.entrySet().removeIf(e -> (now - e.getValue()) >= COOLDOWN_NANOS);
+        }
+    }
+
+    private static long compositeKey(UUID worldId, long chunkKey) {
+        return worldId.hashCode() * 31L + chunkKey;
     }
 }
 

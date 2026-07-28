@@ -4,7 +4,6 @@ import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
-import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,12 +36,6 @@ public final class WorldEditInvalidationListener {
         if (this.internalListener != null) {
             this.internalListener.unregister();
             this.internalListener = null;
-        }
-    }
-
-    public void invalidatePlayerSelection(Player player) {
-        if (this.internalListener != null) {
-            this.internalListener.invalidatePlayerSelection(player);
         }
     }
 }
