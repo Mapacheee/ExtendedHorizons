@@ -16,7 +16,6 @@ import java.util.List;
 final class FastLightDataWriter {
 
     private static final int NO_SKY_HEADER_BYTES = 3;
-    private static final int DEFAULT_SECTION_COUNT = 16;
     private static final int EXTRA_LIGHT_SECTIONS = 2;
     private static final int FULL_BRIGHT_ARRAY_BYTES = 2048;
     private static final byte[] FULL_BRIGHT;
@@ -206,11 +205,11 @@ final class FastLightDataWriter {
 
     private static LightMasks buildMasks(byte[][] blockLight, byte[][] skyLight) {
         int sectionCount = blockLight.length;
-        List<byte[]> skyData = new ArrayList<>(Math.min(sectionCount, DEFAULT_SECTION_COUNT));
+        List<byte[]> skyData = new ArrayList<>(sectionCount);
         BitSet notSkyEmpty = new BitSet(sectionCount);
         BitSet skyEmpty = new BitSet(sectionCount);
 
-        List<byte[]> blockData = new ArrayList<>(Math.min(sectionCount, DEFAULT_SECTION_COUNT));
+        List<byte[]> blockData = new ArrayList<>(sectionCount);
         BitSet notBlockEmpty = new BitSet(sectionCount);
         BitSet blockEmpty = new BitSet(sectionCount);
 

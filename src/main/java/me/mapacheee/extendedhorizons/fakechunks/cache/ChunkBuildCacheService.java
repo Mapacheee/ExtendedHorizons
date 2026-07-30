@@ -44,24 +44,28 @@ public final class ChunkBuildCacheService {
         Cache<ChunkKey, ByteBuf> newSerializedCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
             .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
+            .expireAfterAccess(Duration.ofSeconds(Math.min(ttlSeconds, 60L)))
             .removalListener((ChunkKey key, ByteBuf value, RemovalCause cause) -> ReferenceCountUtil.release(value))
             .build();
 
         Cache<ChunkKey, CompletableFuture<ByteBuf>> newBuildEntryCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
             .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
+            .expireAfterAccess(Duration.ofSeconds(Math.min(ttlSeconds, 60L)))
             .removalListener((ChunkKey key, CompletableFuture<ByteBuf> value, RemovalCause cause) -> releaseFuturePayload(value))
             .build();
 
         Cache<ChunkKey, Boolean> newBypassCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
             .expireAfterWrite(Duration.ofMillis(bypassMs))
+            .expireAfterAccess(Duration.ofMillis(Math.min(bypassMs, 60_000L)))
             .build();
 
         long unavailableTtlMs = Math.max(1_000L, this.configContainer.get().unavailableRetryMs() * 2L);
         Cache<ChunkKey, Long> newUnavailableCache = Caffeine.newBuilder()
             .maximumSize(maxEntries)
             .expireAfterWrite(Duration.ofMillis(unavailableTtlMs))
+            .expireAfterAccess(Duration.ofMillis(Math.min(unavailableTtlMs, 60_000L)))
             .build();
 
         this.serializedCache = newSerializedCache;
