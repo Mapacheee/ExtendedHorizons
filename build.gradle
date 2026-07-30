@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'me.mapacheee'
-version = '3.1.7-release'
+version = '3.1.8-release'
 description = 'ExtendedHorizons - Advanced view distance extension plugin'
 
 java {
