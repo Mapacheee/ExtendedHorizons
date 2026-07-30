@@ -75,6 +75,12 @@ fake-chunks:
     # Update interval for far-player equipment/metadata packets.
     equip-ticks: 30
 
+  worldedit:
+    # Enables/disables the WorldEdit / FAWE integration hook.
+    # When enabled, chunks modified by WorldEdit are invalidated
+    # so fake chunks show the updated blocks.
+    enabled: true
+
   cache:
     # Serialized fake chunk cache TTL.
     ttl-seconds: 10

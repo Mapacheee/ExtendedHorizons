@@ -140,6 +140,13 @@ public record EhConfig(
         return Math.clamp(configured, DEFAULT_SERIALIZATION_WORKERS, MAX_SERIALIZATION_WORKERS);
     }
 
+    public boolean worldEditEnabled() {
+        if (this.fakeChunks == null || this.fakeChunks.worldEdit() == null) {
+            return true;
+        }
+      return this.fakeChunks.worldEdit().enabled();
+    }
+
     public int maxGlobalGenerationsPerTick() {
         if (this.fakeChunks == null) {
             return DEFAULT_MAX_GLOBAL_GENERATIONS_PER_TICK;
@@ -316,7 +323,13 @@ public record EhConfig(
         @Setting("disk-reader-enabled") Boolean diskReaderEnabled,
         CacheConfig cache,
         RuntimeConfig runtime,
-        @Setting("far-players") FarPlayersConfig farPlayers
+        @Setting("far-players") FarPlayersConfig farPlayers,
+        @Setting("worldedit") WorldEditConfig worldEdit
+    ) {}
+
+    @ConfigSerializable
+    public record WorldEditConfig(
+        boolean enabled
     ) {}
 
     @ConfigSerializable

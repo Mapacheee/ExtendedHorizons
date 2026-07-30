@@ -1,7 +1,9 @@
 package me.mapacheee.extendedhorizons.hooks.worldedit;
 
 import com.google.inject.Inject;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.paper.listener.ListenerComponent;
+import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -24,19 +26,26 @@ public final class CommandInvalidationListener implements Listener {
     private static final Logger LOGGER = LoggerFactory.getLogger(CommandInvalidationListener.class);
 
     private final BulkChunkInvalidationService bulkChunkInvalidationService;
+    private final Container<EhConfig> configContainer;
 
     @Inject
-    public CommandInvalidationListener(BulkChunkInvalidationService bulkChunkInvalidationService) {
+    public CommandInvalidationListener(
+        BulkChunkInvalidationService bulkChunkInvalidationService,
+        Container<EhConfig> configContainer
+    ) {
         this.bulkChunkInvalidationService = bulkChunkInvalidationService;
+        this.configContainer = configContainer;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
+        if (!this.configContainer.get().worldEditEnabled()) return;
         this.handleVanillaCommand(event.getPlayer(), event.getMessage());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onServerCommand(ServerCommandEvent event) {
+        if (!this.configContainer.get().worldEditEnabled()) return;
         this.handleVanillaCommand(event.getSender(), "/" + event.getCommand());
     }
 
