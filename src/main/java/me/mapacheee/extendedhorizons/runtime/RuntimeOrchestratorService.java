@@ -32,10 +32,10 @@ import com.mojang.datafixers.util.Pair;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public final class RuntimeOrchestratorService {
@@ -58,7 +58,7 @@ public final class RuntimeOrchestratorService {
     private final LightPayloadCacheService lightPayloadCacheService;
     private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
 
-    private final Map<UUID, List<Pair<EquipmentSlot, ItemStack>>> lastEquipment = new HashMap<>();
+    private final Map<UUID, List<Pair<EquipmentSlot, ItemStack>>> lastEquipment = new ConcurrentHashMap<>();
     private final List<Player> playerBuffer = new ArrayList<>();
 
     private volatile ScheduledTask runtimeTask;

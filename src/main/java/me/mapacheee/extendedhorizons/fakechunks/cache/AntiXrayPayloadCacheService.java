@@ -14,10 +14,10 @@ import org.bukkit.World;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public final class AntiXrayPayloadCacheService {
@@ -31,7 +31,7 @@ public final class AntiXrayPayloadCacheService {
     private final Container<EhConfig> configContainer;
     private volatile Cache<AntiXrayPayloadKey, ByteBuf> cache;
     private volatile Cache<UUID, ProfileHashEntry> profileHashCache;
-    private final Map<Long, List<AntiXrayPayloadKey>> chunkIndex = new HashMap<>();
+    private final Map<Long, List<AntiXrayPayloadKey>> chunkIndex = new ConcurrentHashMap<>();
 
     @Inject
     public AntiXrayPayloadCacheService(Container<EhConfig> configContainer) {
