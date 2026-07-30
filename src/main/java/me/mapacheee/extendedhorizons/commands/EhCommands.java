@@ -2,7 +2,9 @@ package me.mapacheee.extendedhorizons.commands;
 
 import com.google.inject.Inject;
 import com.thewinterframework.command.CommandComponent;
+import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.ReloadServiceManager;
+import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkSerializationExecutorService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
@@ -12,6 +14,7 @@ import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
+import me.mapacheee.extendedhorizons.messages.EhMessages;
 import me.mapacheee.extendedhorizons.messages.MessagesFacade;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -46,6 +49,10 @@ public class EhCommands {
     private SessionRegistry sessionRegistry;
     @Inject
     private MessagesFacade messages;
+    @Inject
+    private Container<EhConfig> configContainer;
+    @Inject
+    private Container<EhMessages> messagesContainer;
 
     private static final int MIN_DISTANCE = 2;
 
@@ -63,6 +70,8 @@ public class EhCommands {
     @Permission("extendedhorizons.reload")
     public void reloadCommand(Source source) {
         this.reloadServiceManager.reload();
+        this.configContainer.reload();
+        this.messagesContainer.reload();
         this.chunkBuildCacheService.rebuildCaches();
         this.chunkBuildCacheService.invalidateAll();
         this.lightPayloadCacheService.rebuild();
