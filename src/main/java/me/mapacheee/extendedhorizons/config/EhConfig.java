@@ -12,7 +12,8 @@ import java.util.Map;
 public record EhConfig(
     DebugConfig debug,
     @Setting("fake-chunks") FakeChunksConfig fakeChunks,
-    @Setting("world-settings") Map<String, WorldSettingsConfig> worldSettings
+    @Setting("world-settings") Map<String, WorldSettingsConfig> worldSettings,
+    @Setting("welcome-enabled") boolean welcomeEnabled
 ) {
 
     private static final int MIN_VIEW_DISTANCE = 2;
@@ -72,7 +73,7 @@ public record EhConfig(
     );
 
     public static EhConfig empty() {
-        return new EhConfig(null, null, null);
+        return new EhConfig(null, null, null, true);
     }
 
     public boolean debugEnabled() {

@@ -13,5 +13,6 @@ public record EhMessages(
     @Setting("set-notify") String setNotify,
     @Setting("reset-success") String resetSuccess,
     @Setting("reset-self-success") String resetSelfSuccess,
-    @Setting("reset-console-error") String resetConsoleError
+    @Setting("reset-console-error") String resetConsoleError,
+    @Setting("welcome") String welcome
 ) {}

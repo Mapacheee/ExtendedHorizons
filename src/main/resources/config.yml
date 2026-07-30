@@ -89,6 +89,9 @@ fake-chunks:
     # Max entries in far player cache (player states and equipment).
     far-player-cache-entries: 150
 
+# Enables the welcome message sent to players on join.
+welcome-enabled: true
+
 # Per-world overrides.
 world-settings:
   world:

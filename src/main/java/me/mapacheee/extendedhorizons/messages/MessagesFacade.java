@@ -53,6 +53,12 @@ public final class MessagesFacade {
         return parse(this.raw().resetSelfSuccess());
     }
 
+    public Component welcome(long chunks, String player) {
+        return parse(this.raw().welcome(),
+            Placeholder.unparsed("chunks", String.valueOf(chunks)),
+            Placeholder.unparsed("player", player));
+    }
+
     public Component resetConsoleError() {
         return parse(this.raw().resetConsoleError());
     }
