@@ -11,6 +11,7 @@ import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayProcessor;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
+import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import org.slf4j.Logger;
@@ -79,6 +80,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     private final AntiXrayService antiXrayService;
     private final ChunkSerializationExecutorService serializationExecutorService;
     private final LightPayloadCacheService lightPayloadCacheService;
+    private final ChunkBuildCacheService chunkBuildCacheService;
     private final ChunkBuildMetricsService metricsService;
     private final Container<EhConfig> configContainer;
 
@@ -88,12 +90,14 @@ public final class PaperChunkBackend implements ChunkBackend {
         AntiXrayService antiXrayService,
         ChunkSerializationExecutorService serializationExecutorService,
         LightPayloadCacheService lightPayloadCacheService,
+        ChunkBuildCacheService chunkBuildCacheService,
         ChunkBuildMetricsService metricsService
     ) {
         this.configContainer = configContainer;
         this.antiXrayService = antiXrayService;
         this.serializationExecutorService = serializationExecutorService;
         this.lightPayloadCacheService = lightPayloadCacheService;
+        this.chunkBuildCacheService = chunkBuildCacheService;
         this.metricsService = metricsService;
     }
 
@@ -143,20 +147,30 @@ public final class PaperChunkBackend implements ChunkBackend {
         };
 
         if (this.configContainer.get().diskReaderEnabled()) {
-            this.serializationExecutorService.submit(() -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ))
-                .whenComplete((diskPayload, throwable) -> {
-                    if (diskPayload != null) {
-                        if (this.configContainer.get().debugEnabled()) {
-                            LOGGER.info("EH disk payload ok for chunk [{}, {}]", chunkX, chunkZ);
+            UUID worldId = world.getUID();
+            long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
+            boolean bypass = this.chunkBuildCacheService.shouldBypass(worldId, chunkKey);
+            if (!bypass) {
+                this.serializationExecutorService.submit(() -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ))
+                    .whenComplete((diskPayload, throwable) -> {
+                        if (diskPayload != null) {
+                            if (this.configContainer.get().debugEnabled()) {
+                                LOGGER.info("EH disk payload ok for chunk [{}, {}]", chunkX, chunkZ);
+                            }
+                            future.complete(diskPayload);
+                        } else {
+                            if (this.configContainer.get().debugEnabled()) {
+                                LOGGER.info("EH disk payload null for chunk [{}, {}], falling back", chunkX, chunkZ);
+                            }
+                            fallbackLoad.run();
                         }
-                        future.complete(diskPayload);
-                    } else {
-                        if (this.configContainer.get().debugEnabled()) {
-                            LOGGER.info("EH disk payload null for chunk [{}, {}], falling back", chunkX, chunkZ);
-                        }
-                        fallbackLoad.run();
-                    }
-                });
+                    });
+            } else {
+                if (this.configContainer.get().debugEnabled()) {
+                    LOGGER.info("EH bypass active, skipping disk reader for chunk [{}, {}]", chunkX, chunkZ);
+                }
+                fallbackLoad.run();
+            }
         } else {
             fallbackLoad.run();
         }
