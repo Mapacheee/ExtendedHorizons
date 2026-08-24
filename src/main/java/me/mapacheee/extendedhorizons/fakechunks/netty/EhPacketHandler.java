@@ -4,6 +4,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.PromiseCombiner;
 import io.netty.buffer.ByteBuf;
 import it.unimi.dsi.fastutil.ints.IntList;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
@@ -17,9 +18,8 @@ import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.level.ChunkPos;
-import me.mapacheee.extendedhorizons.util.NmsCompat;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory;
 import java.util.UUID;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 
 public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
@@ -65,7 +64,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             }
             if (this.handle(msg)) {
                 ReferenceCountUtil.release(msg);
-                promise.setSuccess();
+                promise.trySuccess();
                 return;
             }
 
@@ -74,7 +73,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
                 if (session != null && session.enabled()) {
                     session.lastAdvertisedDistance(-1);
                     ReferenceCountUtil.release(msg);
-                    promise.setSuccess();
+                    promise.trySuccess();
                     return;
                 }
             }
@@ -83,23 +82,23 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
                 if (session != null && session.enabled()) {
                     if (hasRadiusPacket(bundle)) {
                         session.lastAdvertisedDistance(-1);
-                        ReferenceCountUtil.release(msg);
-                        writeBundleWithoutRadius(ctx, bundle);
-                        promise.setSuccess();
+                        try {
+                            writeBundleWithoutRadius(ctx, bundle, promise);
+                        } catch (Throwable throwable) {
+                            promise.tryFailure(throwable);
+                            LOGGER.error("Failed to filter radius packet from bundle", throwable);
+                        } finally {
+                            ReferenceCountUtil.release(msg);
+                        }
                         return;
                     }
                 }
             }
-            if (msg instanceof EhBypassPacket bypass) {
-                Object payload = bypass.payload();
-                super.write(ctx, payload, promise);
-                return;
-            }
-            super.write(ctx, msg, promise);
         } catch (Throwable throwable) {
-            LOGGER.error("Exception in EhPacketHandler.write(): {}", msg.getClass().getName(), throwable);
-            super.write(ctx, msg, promise);
+            String messageType = msg == null ? "null" : msg.getClass().getName();
+            LOGGER.error("Exception while inspecting outbound message: {}", messageType, throwable);
         }
+        super.write(ctx, msg, promise);
     }
 
     private boolean isPreEncodedRadiusPacket(ByteBuf buf) {
@@ -154,12 +153,18 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         return false;
     }
 
-    private static void writeBundleWithoutRadius(ChannelHandlerContext ctx, BundlePacket<?> bundle) {
+    private static void writeBundleWithoutRadius(
+        ChannelHandlerContext ctx,
+        BundlePacket<?> bundle,
+        ChannelPromise promise
+    ) {
+        PromiseCombiner combiner = new PromiseCombiner(ctx.executor());
         for (Packet<?> sub : bundle.subPackets()) {
             if (!(sub instanceof ClientboundSetChunkCacheRadiusPacket)) {
-                ctx.write(sub);
+                combiner.add(ctx.write(sub));
             }
         }
+        combiner.finish(promise);
     }
 
     private boolean handle(Object input) {
@@ -214,7 +219,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         }
         switch (input) {
             case ClientboundAddEntityPacket packet -> {
-                if (packet.getType() == NmsCompat.PLAYER_ENTITY_TYPE) {
+                if (packet.getType() == EntityTypes.PLAYER) {
                     session.addServerTrackedEntity(packet.getId());
                     UUID targetUuid = packet.getUUID();
                     Integer farEntityId = session.trackedFarPlayers().remove(targetUuid);
@@ -232,11 +237,15 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
                 } catch (Throwable ignored) {
                 }
             }
-            default -> {}
+            default -> { }
         }
     }
 
     public void setSession(PlayerSession session) {
         this.session = session;
+    }
+
+    PlayerSession session() {
+        return this.session;
     }
 }
