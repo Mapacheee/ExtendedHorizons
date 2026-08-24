@@ -62,10 +62,13 @@ public final class ChunkDispatchService {
     }
 
     public void processQueue(World world, Channel channel, PlayerSession session) {
-        if (world == null || channel == null || session == null) {
+        if (world == null || channel == null || session == null || session.closed()) {
             return;
         }
         EhConfig config = this.configContainer.get();
+        if (!this.cacheService.available()) {
+            return;
+        }
         boolean debug = config.debugEnabled();
         session.configureBandwidthLimiter(
             config.bandwidthEnabled(),
@@ -75,7 +78,7 @@ public final class ChunkDispatchService {
         int chunksPerTick = config.maxSendPerCycle();
         int maxInflight = config.maxInflightPerPlayer();
         int maxQueueSize = config.chunkQueueSize();
-        int inFlight = this.drainCompletedEntries(world, channel, session, config, chunksPerTick, debug);
+        int inFlight = this.drainCompletedEntries(world, channel, session, chunksPerTick);
 
         if (debug) {
             LOGGER.info(
@@ -95,20 +98,62 @@ public final class ChunkDispatchService {
             }
             int chunkX = ChunkKeyCodec.x(chunkKey);
             int chunkZ = ChunkKeyCodec.z(chunkKey);
-            CompletableFuture<ByteBuf> buildFuture = this.buildChunk(world, session, chunkX, chunkZ, chunkKey, config);
+            UUID expectedWorldId = session.worldId();
+            long expectedEpoch = session.epoch();
+            long cacheGeneration = this.cacheService.generation();
+            CompletableFuture<ByteBuf> buildFuture = this.buildChunk(
+                world,
+                expectedWorldId,
+                chunkX,
+                chunkZ,
+                chunkKey,
+                cacheGeneration,
+                config
+            );
             if (buildFuture.isDone()) {
                 this.generationLimiterService.release();
             }
-            session.chunkQueue().addLast(new ChunkSendQueueEntry(chunkKey, buildFuture));
+            ChunkSendQueueEntry queueEntry = new ChunkSendQueueEntry(
+                chunkKey,
+                expectedWorldId,
+                expectedEpoch,
+                cacheGeneration,
+                buildFuture
+            );
+            if (!session.enqueueChunk(queueEntry, expectedWorldId, expectedEpoch)) {
+                queueEntry.releaseFuture();
+                session.onChunkBuildFailed(chunkKey);
+                break;
+            }
             inFlight++;
             if (--chunksPerTick <= 0) { break; }
         }
     }
 
-    private int drainCompletedEntries(World world, Channel channel, PlayerSession session, EhConfig config, int maxSendPerCycle, boolean debug) {
+    private int drainCompletedEntries(World world, Channel channel, PlayerSession session, int maxSendPerCycle) {
         int[] counters = {0, 0};
         session.chunkQueue().removeIf(entry -> {
+            if (!this.isQueueEntryValid(world, session, entry)) {
+                session.onChunkBuildFailed(entry.chunkKey());
+                entry.releaseFuture();
+                return true;
+            }
             if (!entry.buildFuture().isDone()) {
+                if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
+                    session.onChunkBuildFailed(entry.chunkKey());
+                    this.cacheService.cancelBuild(
+                        entry.worldId(),
+                        entry.chunkKey(),
+                        entry.cacheGeneration()
+                    );
+                    this.cacheService.markUnavailable(
+                        entry.worldId(),
+                        entry.chunkKey(),
+                        entry.cacheGeneration()
+                    );
+                    entry.releaseFuture();
+                    return true;
+                }
                 counters[0]++;
                 return false;
             }
@@ -116,7 +161,7 @@ public final class ChunkDispatchService {
                 counters[0]++;
                 return false;
             }
-            boolean processed = this.checkQueueEntry(world, channel, session, config, entry, counters, debug);
+            boolean processed = this.checkQueueEntry(world, channel, session, entry, counters);
             if (!processed) {
                 counters[0]++;
             }
@@ -138,13 +183,14 @@ public final class ChunkDispatchService {
 
     private CompletableFuture<ByteBuf> buildChunk(
         World world,
-        PlayerSession session,
+        UUID expectedWorldId,
         int chunkX,
         int chunkZ,
         long chunkKey,
+        long cacheGeneration,
         EhConfig config
     ) {
-        UUID expectedWorldId = session.worldId();
+        long antiXrayCacheGeneration = this.antiXrayPayloadCacheService.generation();
         boolean antiXrayEnabled = config.antiXrayEnabled(world.getName());
         String antiXrayProfileHash = antiXrayEnabled
             ? this.antiXrayPayloadCacheService.resolveProfileHash(world, config)
@@ -163,7 +209,8 @@ public final class ChunkDispatchService {
                 expectedWorldId,
                 chunkKey,
                 antiXrayProfileHash,
-                config.serializerMode()
+                config.serializerMode(),
+                antiXrayCacheGeneration
             );
             if (antiXrayCached != null) {
                 this.metricsService.recordAntiXrayFinalCacheHit();
@@ -190,9 +237,10 @@ public final class ChunkDispatchService {
             }
         }
 
-        return this.cacheService.getOrStartBuildFuture(
+        CompletableFuture<ByteBuf> source = this.cacheService.getOrStartBuildFuture(
             expectedWorldId,
             chunkKey,
+            cacheGeneration,
             () -> this.chunkBackend.buildChunkPayload(
                 world,
                 chunkX,
@@ -206,51 +254,61 @@ public final class ChunkDispatchService {
                     return FoliaTaskUtil.runAtChunk(worldRef, cx, cz, plugin, runnable);
                 }
             )
-        )
-        .whenComplete((payload, throwable) -> {
-            if (payload == null && throwable == null) {
-                this.cacheService.markUnavailable(expectedWorldId, chunkKey);
+        );
+        CompletableFuture<ByteBuf> result = new CompletableFuture<>();
+        source.whenComplete((payload, throwable) -> {
+            if (throwable != null) {
+                result.complete(null);
+                return;
+            } else if (payload == null) {
+                this.cacheService.markUnavailable(expectedWorldId, chunkKey, cacheGeneration);
                 if (config.debugEnabled()) {
                     LOGGER.info("EH buildChunk failed: null payload for {}", chunkKey);
                 }
-                return;
+            } else if (antiXrayProfileHash != null) {
+                try {
+                    this.antiXrayPayloadCacheService.put(
+                        expectedWorldId,
+                        chunkKey,
+                        antiXrayProfileHash,
+                        config.serializerMode(),
+                        antiXrayCacheGeneration,
+                        payload
+                    );
+                } catch (RuntimeException exception) {
+                    LOGGER.warn("Failed to cache anti-xray payload for chunk {}", chunkKey, exception);
+                }
             }
-            if (throwable == null && antiXrayProfileHash != null) {
-                this.antiXrayPayloadCacheService.put(
-                    expectedWorldId,
-                    chunkKey,
-                    antiXrayProfileHash,
-                    config.serializerMode(),
-                    payload
-                );
+            if (!result.complete(payload)) {
+                ReferenceCountUtil.release(payload);
             }
-        })
-        .exceptionally(throwable -> null);
+        });
+        result.whenComplete((payload, throwable) -> {
+            if (result.isCancelled()) {
+                source.cancel(false);
+            }
+        });
+        return result;
     }
 
-    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, EhConfig config, ChunkSendQueueEntry entry, int[] counters, boolean debug) {
+    private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry, int[] counters) {
         CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
-        if (!buildFuture.isDone()) {
-            if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
-                session.onChunkBuildFailed(entry.chunkKey());
-                this.cacheService.markUnavailable(world.getUID(), entry.chunkKey());
-                entry.releaseFuture();
-                return true;
-            }
-            return false;
+        if (!this.isQueueEntryValid(world, session, entry)) {
+            session.onChunkBuildFailed(entry.chunkKey());
+            entry.releaseFuture();
+            return true;
         }
         if (buildFuture.isCompletedExceptionally()) {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
             return true;
         }
-        ByteBuf payload = buildFuture.getNow(null);
+        ByteBuf payload = entry.acquirePayload();
         if (payload == null) {
             session.onChunkBuildFailed(entry.chunkKey());
             entry.releaseFuture();
             return true;
         }
-        payload.retain();
         boolean removeEntry = false;
         try {
             if (!this.isChunkStillInRange(session, entry.chunkKey())) {
@@ -271,11 +329,33 @@ public final class ChunkDispatchService {
             if (!session.tryConsumeBandwidth(payloadBytes)) {
                 return false;
             }
-            ByteBuf toSend = payload.retainedDuplicate();
-            if (this.trySend(channel, session, world.getUID(), session.epoch(), toSend, entry.chunkKey())) {
+            ByteBuf toSend;
+            try {
+                toSend = EncodedPayloadCopy.copy(channel.alloc(), payload);
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Failed to copy chunk payload {} for dispatch", entry.chunkKey(), exception);
+                session.onChunkBuildFailed(entry.chunkKey());
+                removeEntry = true;
+                return true;
+            }
+            long sendAttempt = session.beginChunkSend(entry.chunkKey());
+            if (sendAttempt == 0L) {
+                ReferenceCountUtil.release(toSend);
+                removeEntry = true;
+                return true;
+            }
+            if (this.trySend(
+                channel,
+                session,
+                entry.worldId(),
+                entry.sessionEpoch(),
+                toSend,
+                entry.chunkKey(),
+                sendAttempt
+            )) {
                 counters[1]++;
             } else {
-                session.onChunkBuildFailed(entry.chunkKey());
+                session.onChunkSendFailed(entry.chunkKey(), sendAttempt);
             }
             removeEntry = true;
             return true;
@@ -293,24 +373,29 @@ public final class ChunkDispatchService {
         UUID expectedWorldId,
         long expectedEpoch,
         ByteBuf payload,
-        long chunkKey
+        long chunkKey,
+        long sendAttempt
     ) {
         if (!this.isSessionValid(session, expectedWorldId, expectedEpoch)) {
             ReferenceCountUtil.release(payload);
             return false;
         }
-        ChannelPromise writePromise = this.channelInjectionService.writeBypassFuture(channel, payload);
-        if (writePromise == null) {
-            ReferenceCountUtil.release(payload);
+        ChannelPromise writePromise = this.channelInjectionService.writeEncodedFuture(channel, payload);
+        if (writePromise == null || (writePromise.isDone() && !writePromise.isSuccess())) {
             return false;
         }
-        session.onChunkSent(chunkKey);
         UUID capturedWorldId = expectedWorldId;
         long capturedEpoch = expectedEpoch;
         long capturedChunkKey = chunkKey;
+        long capturedSendAttempt = sendAttempt;
         writePromise.addListener(future -> {
-            if (!future.isSuccess() && this.isSessionValid(session, capturedWorldId, capturedEpoch)) {
-                session.onChunkBuildFailed(capturedChunkKey);
+            if (!this.isSessionValid(session, capturedWorldId, capturedEpoch)) {
+                return;
+            }
+            if (future.isSuccess()) {
+                session.onChunkSent(capturedChunkKey, capturedSendAttempt);
+            } else {
+                session.onChunkSendFailed(capturedChunkKey, capturedSendAttempt);
             }
         });
         return true;
@@ -318,8 +403,15 @@ public final class ChunkDispatchService {
 
     private boolean isSessionValid(PlayerSession session, UUID worldId, long epoch) {
         return session != null
+                && !session.closed()
                 && worldId.equals(session.worldId())
                 && session.epoch() == epoch;
+    }
+
+    private boolean isQueueEntryValid(World world, PlayerSession session, ChunkSendQueueEntry entry) {
+        return world.getUID().equals(entry.worldId())
+            && entry.cacheGeneration() == this.cacheService.generation()
+            && this.isSessionValid(session, entry.worldId(), entry.sessionEpoch());
     }
 
     private boolean isChunkStillInRange(PlayerSession session, long chunkKey) {
