@@ -163,7 +163,15 @@ public final class FakeChunkOrchestratorService {
     }
 
     private void processOnNetty(Channel channel, PlayerSession session, TickSnapshot snapshot) {
-        session.setWorld(snapshot.worldId());
+        synchronized (session) {
+            this.processCurrentSnapshot(channel, session, snapshot);
+        }
+    }
+
+    private void processCurrentSnapshot(Channel channel, PlayerSession session, TickSnapshot snapshot) {
+        if (session.closed() || !snapshot.worldId().equals(session.worldId())) {
+            return;
+        }
         session.serverViewDistance(snapshot.serverDistance());
         session.moveTo(snapshot.chunkX(), snapshot.chunkZ(), snapshot.yaw());
         for (long key : session.drainPendingUnloads()) {

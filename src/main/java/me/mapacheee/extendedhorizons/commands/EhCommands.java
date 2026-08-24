@@ -69,18 +69,19 @@ public class EhCommands {
     @Command("eh reload")
     @Permission("extendedhorizons.reload")
     public void reloadCommand(Source source) {
-        this.reloadServiceManager.reload();
-        this.configContainer.reload();
-        this.messagesContainer.reload();
-        this.chunkBuildCacheService.rebuildCaches();
-        this.chunkBuildCacheService.invalidateAll();
-        this.lightPayloadCacheService.rebuild();
-        this.lightPayloadCacheService.invalidateAll();
-        this.antiXrayPayloadCacheService.rebuild();
-        this.antiXrayPayloadCacheService.invalidateAll();
-        this.antiXrayService.invalidateAllProfiles();
-        this.fakeChunkOrchestratorService.invalidateAllPermissionCache();
-        this.chunkSerializationExecutorService.rebuild();
+        this.chunkBuildCacheService.suspendForReload();
+        try {
+            this.reloadServiceManager.reload();
+            this.configContainer.reload();
+            this.messagesContainer.reload();
+            this.chunkSerializationExecutorService.rebuild();
+            this.lightPayloadCacheService.rebuild();
+            this.antiXrayPayloadCacheService.rebuild();
+            this.antiXrayService.invalidateAllProfiles();
+            this.fakeChunkOrchestratorService.invalidateAllPermissionCache();
+        } finally {
+            this.chunkBuildCacheService.rebuildCaches();
+        }
         source.source().sendMessage(this.messages.reloadSuccess());
     }
 
