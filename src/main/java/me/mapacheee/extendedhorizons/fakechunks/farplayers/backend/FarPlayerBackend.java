@@ -9,6 +9,7 @@ import net.minecraft.world.item.ItemStack;
 import java.util.List;
 
 public interface FarPlayerBackend {
+    Object createPlayerInfoPacket(FarPlayerState state);
     Object createSpawnPacket(FarPlayerState state);
     Object createMovePacket(FarPlayerState state);
     Object createDespawnPacket(int entityId);

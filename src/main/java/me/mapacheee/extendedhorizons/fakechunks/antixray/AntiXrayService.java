@@ -10,7 +10,11 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.util.CraftMagicNumbers;
 
-import java.util.*;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -103,7 +107,9 @@ public final class AntiXrayService {
                 continue;
             }
             for (var state : block.getStateDefinition().getPossibleStates()) {
-                states.add(Block.BLOCK_STATE_REGISTRY.getId(state));
+                if (state.getFluidState().isEmpty()) {
+                    states.add(Block.BLOCK_STATE_REGISTRY.getId(state));
+                }
             }
         }
         return states.stream().mapToInt(Integer::intValue).toArray();

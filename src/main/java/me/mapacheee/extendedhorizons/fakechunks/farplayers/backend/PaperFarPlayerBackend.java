@@ -6,24 +6,42 @@ import io.netty.buffer.Unpooled;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
-import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
-import me.mapacheee.extendedhorizons.util.NmsCompat;
 
-import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 
 @Service
 public final class PaperFarPlayerBackend implements FarPlayerBackend {
+
+    @Override
+    public Object createPlayerInfoPacket(FarPlayerState state) {
+        if (state.playerInfo() == null) {
+            return null;
+        }
+        return new ClientboundPlayerInfoUpdatePacket(
+            EnumSet.of(
+                ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER
+            ),
+            state.playerInfo()
+        );
+    }
 
     @Override
     public Object createSpawnPacket(FarPlayerState state) {
@@ -35,7 +53,7 @@ public final class PaperFarPlayerBackend implements FarPlayerBackend {
             state.z(),
             state.pitch(),
             state.yaw(),
-            NmsCompat.PLAYER_ENTITY_TYPE,
+            EntityTypes.PLAYER,
             0,
             Vec3.ZERO,
             state.headYaw()
@@ -44,7 +62,7 @@ public final class PaperFarPlayerBackend implements FarPlayerBackend {
 
     @Override
     public Object createMovePacket(FarPlayerState state) {
-        return new ClientboundTeleportEntityPacket(
+        return new ClientboundEntityPositionSyncPacket(
             state.entityId(),
             new PositionMoveRotation(
                 new Vec3(state.x(), state.y(), state.z()),
@@ -52,7 +70,6 @@ public final class PaperFarPlayerBackend implements FarPlayerBackend {
                 state.yaw(),
                 state.pitch()
             ),
-            Collections.emptySet(),
             true
         );
     }

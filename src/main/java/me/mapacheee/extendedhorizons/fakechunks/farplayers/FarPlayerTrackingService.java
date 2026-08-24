@@ -4,6 +4,7 @@ import com.google.inject.Inject;
 import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelPromise;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.FarPlayerBackend;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
@@ -11,6 +12,8 @@ import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.Iterator;
@@ -21,6 +24,7 @@ import java.util.UUID;
 @Service
 public final class FarPlayerTrackingService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(FarPlayerTrackingService.class);
     private static final int FAR_ENTITY_ID_RANGE_START = 1_000_000_000;
     private static final int FAR_ENTITY_ID_RANGE_END   = 1_900_000_000;
     private static final int FAR_ENTITY_ID_ALLOCATION_ATTEMPTS = 10_000;
@@ -90,11 +94,19 @@ public final class FarPlayerTrackingService {
 
             int stateChunkX = (int) Math.floor(state.x()) >> CHUNK_SHIFT;
             int stateChunkZ = (int) Math.floor(state.z()) >> CHUNK_SHIFT;
+            long stateChunkKey = ChunkKeyCodec.pack(stateChunkX, stateChunkZ);
             int relChunkX = stateChunkX - viewerChunkX;
             int relChunkZ = stateChunkZ - viewerChunkZ;
             double distSq = (double) relChunkX * relChunkX + (double) relChunkZ * relChunkZ;
 
             if (distSq > farLimitSq) {
+                if (alreadyTracked) {
+                    this.despawnAndRemove(channel, trackedFarPlayers, usedFarEntityIds, state.uuid(), trackedEntityId);
+                }
+                continue;
+            }
+
+            if (!session.isChunkReadyForEntities(stateChunkKey)) {
                 if (alreadyTracked) {
                     this.despawnAndRemove(channel, trackedFarPlayers, usedFarEntityIds, state.uuid(), trackedEntityId);
                 }
@@ -132,9 +144,22 @@ public final class FarPlayerTrackingService {
         int farEntityId
     ) {
         FarPlayerState packetState = this.withEntityId(state, farEntityId);
-        if (!this.channelInjectionService.writeBypass(channel, this.backend.createSpawnPacket(packetState))) {
+        Object playerInfoPacket = this.backend.createPlayerInfoPacket(packetState);
+        if (playerInfoPacket == null || !this.channelInjectionService.writeBypass(channel, playerInfoPacket)) {
+            LOGGER.warn("Failed to initialize far player profile {}", state.uuid());
             return;
         }
+        ChannelPromise spawnPromise = this.channelInjectionService.writeBypassFuture(
+            channel,
+            this.backend.createSpawnPacket(packetState)
+        );
+        if (spawnPromise == null || (spawnPromise.isDone() && !spawnPromise.isSuccess())) {
+            if (spawnPromise != null) {
+                LOGGER.warn("Failed to schedule far player spawn {}", state.uuid(), spawnPromise.cause());
+            }
+            return;
+        }
+        usedFarEntityIds.add(farEntityId);
 
         if (state.metadata() != null && !state.metadata().isEmpty()) {
             this.channelInjectionService.writeBypass(channel, this.backend.createMetadataPacket(farEntityId, state.metadata()));
@@ -144,8 +169,18 @@ public final class FarPlayerTrackingService {
             this.channelInjectionService.writeBypass(channel, this.backend.createEquipmentPacket(farEntityId, state.equipment()));
         }
 
-        trackedFarPlayers.put(state.uuid(), farEntityId);
-        usedFarEntityIds.add(farEntityId);
+        spawnPromise.addListener(future -> {
+            if (!future.isSuccess()) {
+                usedFarEntityIds.remove(farEntityId);
+                LOGGER.warn("Failed to spawn far player {}", state.uuid(), future.cause());
+                return;
+            }
+            Integer existing = trackedFarPlayers.putIfAbsent(state.uuid(), farEntityId);
+            if (existing != null && existing != farEntityId) {
+                usedFarEntityIds.remove(farEntityId);
+                this.despawn(channel, farEntityId);
+            }
+        });
     }
 
     private void moveAndSync(Channel channel, int trackedEntityId, FarPlayerState state, boolean syncMove, boolean syncEquip) {
@@ -221,6 +256,7 @@ public final class FarPlayerTrackingService {
             entityId,
             state.uuid(),
             state.worldId(),
+            state.playerInfo(),
             state.x(),
             state.y(),
             state.z(),

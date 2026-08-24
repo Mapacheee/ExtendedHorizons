@@ -25,6 +25,7 @@ import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
@@ -110,9 +111,6 @@ public final class RuntimeOrchestratorService {
         }
         this.playerBuffer.clear();
         this.playerBuffer.addAll(Bukkit.getOnlinePlayers());
-        if (this.playerBuffer.isEmpty()) {
-            return;
-        }
         Collections.shuffle(this.playerBuffer);
 
         EhConfig config = this.configContainer.get();
@@ -125,6 +123,9 @@ public final class RuntimeOrchestratorService {
         for (Player player : this.playerBuffer) {
             FoliaTaskUtil.runForPlayer(player, plugin, () -> {
                 try {
+                    if (!plugin.isEnabled()) {
+                        return;
+                    }
                     Location loc = player.getLocation();
                     ServerPlayer nmsPlayer = ((CraftPlayer) player).getHandle();
 
@@ -134,12 +135,12 @@ public final class RuntimeOrchestratorService {
                     }
 
                     if (farPlayersEnabled) {
+                        FarPlayerState oldState = this.farPlayerCacheService.getState(player.getUniqueId());
                         List<SynchedEntityData.DataValue<?>> metadata;
                         boolean pollMetadata = Math.floorMod(this.orchestratorTick, config.farPlayerMoveTicks()) == 0;
                         if (pollMetadata) {
                             metadata = nmsPlayer.getEntityData().packAll();
                         } else {
-                            FarPlayerState oldState = this.farPlayerCacheService.getState(player.getUniqueId());
                             if (oldState != null && oldState.metadata() != null) {
                                 metadata = oldState.metadata();
                             } else {
@@ -179,10 +180,17 @@ public final class RuntimeOrchestratorService {
                             }
                         }
 
+                        ClientboundPlayerInfoUpdatePacket.Entry playerInfo = oldState == null || oldState.playerInfo() == null
+                            ? ClientboundPlayerInfoUpdatePacket.createSinglePlayerInitializing(nmsPlayer, false)
+                                .entries()
+                                .getFirst()
+                            : oldState.playerInfo();
+
                         this.farPlayerCacheService.updateState(player.getUniqueId(), new FarPlayerState(
                             player.getEntityId(),
                             player.getUniqueId(),
                             player.getWorld().getUID(),
+                            playerInfo,
                             loc.getX(),
                             loc.getY(),
                             loc.getZ(),

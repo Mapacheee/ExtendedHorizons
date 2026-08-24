@@ -66,6 +66,11 @@ dependencies {
     compileOnly(platform("com.intellectualsites.bom:bom-newest:1.56"))
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Core")
     compileOnly("com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit") { transitive = false }
+
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly("me.mapacheee:MapacheeeLib:1.0.1")
 }
 
 // Workaround: Winter v2 AP reads META-INF/winter/exposed-classes.txt via
@@ -113,6 +118,14 @@ shadowJar {
 
 tasks.build {
     dependsOn shadowJar
+}
+
+tasks.test {
+    useJUnitPlatform()
+    workingDir = layout.buildDirectory.dir("test-work").get().asFile
+    doFirst {
+        getWorkingDir().mkdirs()
+    }
 }
 
 processResources {
