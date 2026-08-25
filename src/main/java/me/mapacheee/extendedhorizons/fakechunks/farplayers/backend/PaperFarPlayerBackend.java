@@ -4,8 +4,8 @@ import com.mojang.datafixers.util.Pair;
 import com.thewinterframework.service.annotation.Service;
 import io.netty.buffer.Unpooled;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
+import me.mapacheee.extendedhorizons.util.NmsCompat;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
@@ -13,7 +13,6 @@ import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
-import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.item.ItemStack;
@@ -46,7 +45,7 @@ public final class PaperFarPlayerBackend implements FarPlayerBackend {
 
     @Override
     public Object createSpawnPacket(FarPlayerState state) {
-        return new ClientboundAddEntityPacket(
+        return NmsCompat.createAddPlayerPacket(
             state.entityId(),
             state.uuid(),
             state.x(),
@@ -54,9 +53,6 @@ public final class PaperFarPlayerBackend implements FarPlayerBackend {
             state.z(),
             state.pitch(),
             state.yaw(),
-            EntityTypes.PLAYER,
-            0,
-            Vec3.ZERO,
             state.headYaw()
         );
     }

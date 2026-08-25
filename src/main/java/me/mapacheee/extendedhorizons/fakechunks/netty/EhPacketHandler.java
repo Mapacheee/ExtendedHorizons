@@ -8,6 +8,7 @@ import io.netty.util.concurrent.PromiseCombiner;
 import io.netty.buffer.ByteBuf;
 import it.unimi.dsi.fastutil.ints.IntList;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import me.mapacheee.extendedhorizons.util.NmsCompat;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
@@ -18,7 +19,6 @@ import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
-import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.level.ChunkPos;
 
 import org.slf4j.Logger;
@@ -219,7 +219,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         }
         switch (input) {
             case ClientboundAddEntityPacket packet -> {
-                if (packet.getType() == EntityTypes.PLAYER) {
+                if (NmsCompat.isPlayer(packet)) {
                     session.addServerTrackedEntity(packet.getId());
                     UUID targetUuid = packet.getUUID();
                     Integer farEntityId = session.trackedFarPlayers().remove(targetUuid);
