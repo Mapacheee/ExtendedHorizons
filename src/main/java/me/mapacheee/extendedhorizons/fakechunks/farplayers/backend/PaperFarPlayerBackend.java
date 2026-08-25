@@ -34,6 +34,7 @@ public final class PaperFarPlayerBackend implements FarPlayerBackend {
             EnumSet.of(
                 ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
                 ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
                 ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
                 ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
                 ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT,

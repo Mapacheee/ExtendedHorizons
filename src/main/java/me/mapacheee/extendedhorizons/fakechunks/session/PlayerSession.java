@@ -543,6 +543,16 @@ public final class PlayerSession {
     }
 
     public boolean isChunkReadyForEntities(long chunkKey) {
+        int targetChunkX = ChunkKeyCodec.x(chunkKey);
+        int targetChunkZ = ChunkKeyCodec.z(chunkKey);
+        int currentChunkX = ChunkKeyCodec.x(this.chunkKey);
+        int currentChunkZ = ChunkKeyCodec.z(this.chunkKey);
+        int dx = targetChunkX - currentChunkX;
+        int dz = targetChunkZ - currentChunkZ;
+        int serverDist = this.serverViewDistance;
+        if (dx * dx + dz * dz <= serverDist * serverDist) {
+            return true;
+        }
         ChunkLifecycle lifecycle = this.getStateByKey(chunkKey).lifecycle();
         return lifecycle == ChunkLifecycle.SERVER_LOADED || lifecycle == ChunkLifecycle.EH_LOADED;
     }

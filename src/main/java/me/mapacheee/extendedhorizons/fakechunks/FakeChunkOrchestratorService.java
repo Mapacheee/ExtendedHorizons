@@ -131,11 +131,11 @@ public final class FakeChunkOrchestratorService {
         List<FarPlayerState> visibleCandidates = null;
         boolean shouldUpdateFarPlayers = farPlayersEnabled && (chunkChanged || distanceChanged || !session.initiated() || isFarPlayerTick);
         if (shouldUpdateFarPlayers) {
+            visibleCandidates = new ArrayList<>();
             Collection<FarPlayerState> candidates = this.farPlayerCacheService.getNearbyPlayers(
                 world.getUID(), chunkX, chunkZ, targetDistance
             );
             if (!candidates.isEmpty()) {
-                visibleCandidates = new ArrayList<>(candidates.size());
                 for (FarPlayerState state : candidates) {
                     if (state.uuid().equals(player.getUniqueId())) {
                         continue;
@@ -415,4 +415,3 @@ public final class FakeChunkOrchestratorService {
 
     private record PermissionCacheEntry(int permissionCap, boolean hasBypass) {}
 }
-

@@ -131,10 +131,7 @@ public final class RuntimeOrchestratorService {
 
                     if (player.getGameMode() == GameMode.SPECTATOR || isVanished(player)) {
                         this.farPlayerCacheService.removePlayer(player.getUniqueId());
-                        return;
-                    }
-
-                    if (farPlayersEnabled) {
+                    } else if (farPlayersEnabled) {
                         FarPlayerState oldState = this.farPlayerCacheService.getState(player.getUniqueId());
                         List<SynchedEntityData.DataValue<?>> metadata;
                         boolean pollMetadata = Math.floorMod(this.orchestratorTick, config.farPlayerMoveTicks()) == 0;

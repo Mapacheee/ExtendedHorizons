@@ -63,8 +63,11 @@ public final class FarPlayerTrackingService {
 
         int tick = session.incrementTrackingTicker();
         EhConfig config = this.configContainer.get();
-        boolean syncMove = Math.floorMod(tick, config.farPlayerMoveTicks()) == 0;
-        boolean syncEquip = Math.floorMod(tick, config.farPlayerEquipTicks()) == 0;
+        int moveTicks = Math.max(1, config.farPlayerMoveTicks());
+        int equipTicks = Math.max(1, config.farPlayerEquipTicks());
+        int equipInterval = Math.max(1, equipTicks / moveTicks);
+        boolean syncMove = true;
+        boolean syncEquip = Math.floorMod(tick, equipInterval) == 0;
 
         double farLimit = targetDistance + FAR_RADIUS_PADDING;
         double farLimitSq = farLimit * farLimit;
@@ -149,38 +152,34 @@ public final class FarPlayerTrackingService {
             LOGGER.warn("Failed to initialize far player profile {}", state.uuid());
             return;
         }
+
+        trackedFarPlayers.put(state.uuid(), farEntityId);
+        usedFarEntityIds.add(farEntityId);
+
         ChannelPromise spawnPromise = this.channelInjectionService.writeBypassFuture(
             channel,
             this.backend.createSpawnPacket(packetState)
         );
-        if (spawnPromise == null || (spawnPromise.isDone() && !spawnPromise.isSuccess())) {
-            if (spawnPromise != null) {
-                LOGGER.warn("Failed to schedule far player spawn {}", state.uuid(), spawnPromise.cause());
-            }
-            return;
-        }
-        usedFarEntityIds.add(farEntityId);
 
         if (state.metadata() != null && !state.metadata().isEmpty()) {
             this.channelInjectionService.writeBypass(channel, this.backend.createMetadataPacket(farEntityId, state.metadata()));
         }
 
+        this.channelInjectionService.writeBypass(channel, this.backend.createRotateHeadPacket(farEntityId, state.headYaw()));
+
         if (state.equipment() != null && !state.equipment().isEmpty()) {
             this.channelInjectionService.writeBypass(channel, this.backend.createEquipmentPacket(farEntityId, state.equipment()));
         }
 
-        spawnPromise.addListener(future -> {
-            if (!future.isSuccess()) {
-                usedFarEntityIds.remove(farEntityId);
-                LOGGER.warn("Failed to spawn far player {}", state.uuid(), future.cause());
-                return;
-            }
-            Integer existing = trackedFarPlayers.putIfAbsent(state.uuid(), farEntityId);
-            if (existing != null && existing != farEntityId) {
-                usedFarEntityIds.remove(farEntityId);
-                this.despawn(channel, farEntityId);
-            }
-        });
+        if (spawnPromise != null) {
+            spawnPromise.addListener(future -> {
+                if (!future.isSuccess()) {
+                    usedFarEntityIds.remove(farEntityId);
+                    trackedFarPlayers.remove(state.uuid(), farEntityId);
+                    LOGGER.warn("Failed to spawn far player {}", state.uuid(), future.cause());
+                }
+            });
+        }
     }
 
     private void moveAndSync(Channel channel, int trackedEntityId, FarPlayerState state, boolean syncMove, boolean syncEquip) {
@@ -212,7 +211,9 @@ public final class FarPlayerTrackingService {
     }
 
     private void despawn(Channel channel, int entityId) {
-      this.channelInjectionService.writeBypass(channel, this.backend.createDespawnPacket(entityId));
+        if (channel != null && channel.isActive()) {
+            this.channelInjectionService.writeBypass(channel, this.backend.createDespawnPacket(entityId));
+        }
     }
 
     public void clearTracked(Channel channel, PlayerSession session) {
@@ -247,7 +248,6 @@ public final class FarPlayerTrackingService {
         return ALLOCATION_FAILED;
     }
 
-
     private FarPlayerState withEntityId(FarPlayerState state, int entityId) {
         if (state.entityId() == entityId) {
             return state;
@@ -267,5 +267,4 @@ public final class FarPlayerTrackingService {
             state.metadata()
         );
     }
-
 }
