@@ -23,6 +23,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 @Service
@@ -32,7 +33,11 @@ public final class ChunkSerializationExecutorService {
     private static final String THREAD_PREFIX = "EH-ChunkSerializer-";
     private static final int MAX_QUEUED_PER_WORKER = 4;
     private static final int SHUTDOWN_WAIT_SECONDS = 5;
+    private static final long WARN_THROTTLE_NANOS = TimeUnit.SECONDS.toNanos(10);
     private static final Runnable NOOP = () -> {};
+
+    private final AtomicLong lastWarnNanos = new AtomicLong(0L);
+    private final AtomicInteger suppressedWarns = new AtomicInteger(0);
 
     private final Container<EhConfig> configContainer;
     private final Object lifecycleLock = new Object();
@@ -111,8 +116,28 @@ public final class ChunkSerializationExecutorService {
             LOGGER.warn("Failed to discard chunk serialization resources", exception);
         }
     }
+    private void logQueueFullWarning(int queueCapacity) {
+        long now = System.nanoTime();
+        long last = this.lastWarnNanos.get();
+        if (now - last >= WARN_THROTTLE_NANOS && this.lastWarnNanos.compareAndSet(last, now)) {
+            int suppressed = this.suppressedWarns.getAndSet(0);
+            if (suppressed > 0) {
+                LOGGER.warn(
+                    "Chunk serialization queue full ({}), running on caller thread ({} similar warnings suppressed in the last 10s)",
+                    queueCapacity, suppressed
+                );
+            } else {
+                LOGGER.warn(
+                    "Chunk serialization queue full ({}), running on caller thread",
+                    queueCapacity
+                );
+            }
+        } else {
+            this.suppressedWarns.incrementAndGet();
+        }
+    }
 
-    private static final class ExecutorGeneration {
+    private final class ExecutorGeneration {
 
         private final ThreadPoolExecutor executor;
         private final int queueCapacity;
@@ -154,10 +179,7 @@ public final class ChunkSerializationExecutorService {
                         this.executor.execute(task);
                     } catch (RejectedExecutionException exception) {
                         if (this.active && !this.executor.isShutdown()) {
-                            LOGGER.warn(
-                                "Chunk serialization queue full ({}), running on caller thread",
-                                this.queueCapacity
-                            );
+                            ChunkSerializationExecutorService.this.logQueueFullWarning(this.queueCapacity);
                             runOnCaller = true;
                         } else {
                             task.cancel();
