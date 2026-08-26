@@ -1,7 +1,7 @@
 name: ExtendedHorizons
 version: ${version}
 main: me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin
-api-version: '1.20'
+api-version: '1.21'
 folia-supported: true
 description: ${description}
 author: Mapacheee
@@ -15,7 +15,7 @@ commands:
     usage: /<command>
     aliases: [eh]
     permission: extendedhorizons.use
-    
+
 permissions:
   extendedhorizons.use:
     description: Basic permission to use ExtendedHorizons
