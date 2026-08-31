@@ -4,18 +4,14 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import net.minecraft.SharedConstants;
-import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.ByteArrayTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.VarInt;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.biome.Biome;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
@@ -34,13 +30,9 @@ public final class DiskChunkSerializer {
 
     private static final int PROTOCOL_MC296121 = 770;
     private static final int MIN_PACKET_SIZE = 4096;
-    private static final int MAX_PACKET_BUFFER = 2 * 1024 * 1024;
+    private static final int MAX_PACKET_BUFFER = 4 * 1024 * 1024;
     private static final int EXTRA_LIGHT_SECTIONS = 2;
     private static final int LIGHT_SECTION_OFFSET = 1;
-
-    private static final boolean REMAP_CHAIN_TO_IRON_CHAIN =
-            BuiltInRegistries.BLOCK.keySet().stream()
-                    .noneMatch(key -> "minecraft:chain".equals(key.toString()));
 
     private DiskChunkSerializer() {}
 
@@ -64,13 +56,18 @@ public final class DiskChunkSerializer {
             return null;
         }
 
-      return serializeFromTag(rootTag, level, chunkX, chunkZ, hasSkyLight);
+        return serializeFromTag(rootTag, level, chunkX, chunkZ, hasSkyLight);
     }
 
     private static ByteBuf serializeFromTag(
             CompoundTag rootTag, ServerLevel level,
             int chunkX, int chunkZ, boolean hasSkyLight
     ) {
+        int currentDataVersion = SharedConstants.getCurrentVersion().dataVersion().version();
+        if (!isCompatibleChunkTag(rootTag, chunkX, chunkZ, currentDataVersion)) {
+            return null;
+        }
+
         int sectionsCount  = level.getSectionsCount();
         int minSectionY    = level.getMinSectionY();
         int lightSections  = sectionsCount + EXTRA_LIGHT_SECTIONS;
@@ -81,62 +78,43 @@ public final class DiskChunkSerializer {
         byte[][] blockLight = new byte[lightSections][];
         byte[][] skyLight   = hasSkyLight ? new byte[lightSections][] : null;
 
-        var sectionTagsOpt = rootTag.getList(SerializableChunkData.SECTIONS_TAG);
-        if (sectionTagsOpt.isEmpty()) {
-            LOGGER.debug("No sections tag for chunk [{}, {}]", chunkX, chunkZ);
+        if (shouldRemapChain()) {
+            remapLegacyPalettes(rootTag);
+        }
+
+        SerializableChunkData chunkData;
+        try {
+            chunkData = SerializableChunkData.parse(level, factory, rootTag);
+        } catch (Throwable throwable) {
+            LOGGER.debug("Direct chunk parse failed for [{}, {}], using Paper fallback: {}",
+                chunkX, chunkZ, throwable.getMessage());
             return null;
         }
-        ListTag sectionTags = sectionTagsOpt.get();
 
-        boolean onlyAir = true;
-        for (int i = 0; i < sectionTags.size(); i++) {
-            var sectionTagOpt = sectionTags.getCompound(i);
-            if (sectionTagOpt.isEmpty()) continue;
-            CompoundTag sectionTag = sectionTagOpt.get();
+        if (chunkData == null || !chunkData.lightCorrect()) {
+            LOGGER.debug("Chunk [{}, {}] has stale or incomplete light data, using Paper fallback", chunkX, chunkZ);
+            return null;
+        }
 
-            var yOpt = sectionTag.getByte("Y");
-            if (yOpt.isEmpty()) continue;
-            int y = yOpt.get().intValue();
-
+        for (SerializableChunkData.SectionData sectionData : chunkData.sectionData()) {
+            int y = sectionData.y();
             int sectionIndex = y - minSectionY;
-            if (sectionIndex >= 0 && sectionIndex < sectionsCount) {
-                try {
-                    PalettedContainer<BlockState> blocks;
-                    if (sectionTag.get("block_states") instanceof CompoundTag blockTag) {
-                        if (REMAP_CHAIN_TO_IRON_CHAIN) remapChainInPalette(blockTag);
-                        blocks = factory.blockStatesContainerCodec().parse(NbtOps.INSTANCE, blockTag)
-                                .resultOrPartial(err -> LOGGER.debug("Partial block parse in chunk [{}, {}]: {}", chunkX, chunkZ, err))
-                                .orElseGet(factory::createForBlockStates);
-                    } else {
-                        blocks = factory.createForBlockStates();
-                    }
-
-                    PalettedContainer<Holder<Biome>> biomes =
-                            sectionTag.get("biomes") instanceof CompoundTag biomeTag
-                            ? factory.biomeContainerRWCodec().parse(NbtOps.INSTANCE, biomeTag)
-                                    .resultOrPartial(err -> LOGGER.debug("Partial biome parse in chunk [{}, {}]: {}", chunkX, chunkZ, err))
-                                    .orElseGet(factory::createForBiomes)
-                            : factory.createForBiomes();
-
-                    LevelChunkSection section = new LevelChunkSection(blocks, biomes);
-                    sections[sectionIndex] = section;
-                    if (!section.hasOnlyAir()) {
-                        onlyAir = false;
-                    }
-                } catch (Exception e) {
-                    LOGGER.warn("Failed to parse section y={} for chunk [{}, {}]: {}",
-                            y, chunkX, chunkZ, e.getMessage());
-                }
+            LevelChunkSection section = sectionData.chunkSection();
+            if (section != null && sectionIndex >= 0 && sectionIndex < sectionsCount) {
+                sections[sectionIndex] = section;
             }
 
-            int lightIdx = y - minLightSection;
-            if (lightIdx >= 0 && lightIdx < lightSections) {
-                if (sectionTag.get(SerializableChunkData.BLOCK_LIGHT_TAG) instanceof ByteArrayTag blt) {
-                    blockLight[lightIdx] = blt.getAsByteArray();
-                }
-                if (hasSkyLight && sectionTag.get(SerializableChunkData.SKY_LIGHT_TAG) instanceof ByteArrayTag slt) {
-                    skyLight[lightIdx] = slt.getAsByteArray();
-                }
+            int lightIndex = y - minLightSection;
+            if (lightIndex < 0 || lightIndex >= lightSections) {
+                continue;
+            }
+            DataLayer blockLayer = sectionData.blockLight();
+            if (blockLayer != null) {
+                blockLight[lightIndex] = blockLayer.getData();
+            }
+            DataLayer skyLayer = sectionData.skyLight();
+            if (hasSkyLight && skyLayer != null) {
+                skyLight[lightIndex] = skyLayer.getData();
             }
         }
 
@@ -152,6 +130,29 @@ public final class DiskChunkSerializer {
         }
 
         return writePacket(chunkX, chunkZ, sections, blockLight, skyLight, level);
+    }
+
+    static boolean isCompatibleChunkTag(
+            CompoundTag rootTag,
+            int chunkX,
+            int chunkZ,
+            int currentDataVersion
+    ) {
+        int storedDataVersion = rootTag.getIntOr(SharedConstants.DATA_VERSION_TAG, -1);
+        if (storedDataVersion != currentDataVersion) {
+            LOGGER.debug("Chunk [{}, {}] DataVersion {} differs from server {}, using Paper fallback",
+                chunkX, chunkZ, storedDataVersion, currentDataVersion);
+            return false;
+        }
+        if (rootTag.getIntOr(SerializableChunkData.X_POS_TAG, Integer.MIN_VALUE) != chunkX
+            || rootTag.getIntOr(SerializableChunkData.Z_POS_TAG, Integer.MIN_VALUE) != chunkZ) {
+            LOGGER.debug("Chunk coordinates do not match requested [{}, {}], using Paper fallback", chunkX, chunkZ);
+            return false;
+        }
+        String status = rootTag.getStringOr("Status", "");
+        int namespaceSeparator = status.lastIndexOf(':');
+        String statusPath = namespaceSeparator >= 0 ? status.substring(namespaceSeparator + 1) : status;
+        return "full".equals(statusPath);
     }
 
     private static ByteBuf writePacket(
@@ -303,5 +304,27 @@ public final class DiskChunkSerializer {
                 entry.putString("Name", "minecraft:iron_chain");
             }
         }
+    }
+
+    private static void remapLegacyPalettes(CompoundTag rootTag) {
+        var sectionsOpt = rootTag.getList(SerializableChunkData.SECTIONS_TAG);
+        if (sectionsOpt.isEmpty()) {
+            return;
+        }
+        ListTag sections = sectionsOpt.get();
+        for (int i = 0; i < sections.size(); i++) {
+            var sectionOpt = sections.getCompound(i);
+            if (sectionOpt.isEmpty()) {
+                continue;
+            }
+            if (sectionOpt.get().get("block_states") instanceof CompoundTag blockStates) {
+                remapChainInPalette(blockStates);
+            }
+        }
+    }
+
+    private static boolean shouldRemapChain() {
+        return BuiltInRegistries.BLOCK.keySet().stream()
+            .noneMatch(key -> "minecraft:chain".equals(key.toString()));
     }
 }

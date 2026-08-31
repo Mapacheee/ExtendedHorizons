@@ -46,7 +46,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     private static final int SECTION_BUFFER_MIN = 64;
     private static final int BIOME_BUFFER_SIZE = 64;
     private static final int MIN_PACKET_SIZE = 2048;
-    private static final int MAX_PACKET_BUFFER = 2 * 1024 * 1024;
+    private static final int MAX_PACKET_BUFFER = 4 * 1024 * 1024;
     private static final int SECTION_MAX_BUFFER = 256 * 1024;
     private static final int HEIGHTMAP_BUFFER_INITIAL = 256;
     private static final int HEIGHTMAP_BUFFER_MAX = 64 * 1024;

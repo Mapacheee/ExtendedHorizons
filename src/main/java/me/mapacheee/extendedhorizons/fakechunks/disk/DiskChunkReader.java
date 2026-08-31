@@ -86,7 +86,7 @@ public final class DiskChunkReader {
         }
 
         ServerLevel level = ((CraftWorld) world).getHandle();
-        boolean hasSky = world.getEnvironment() == World.Environment.NORMAL;
+        boolean hasSky = level.dimensionType().hasSkyLight();
 
         ByteBuf packet = DiskChunkSerializer.serialize(nbtBytes, level, chunkX, chunkZ, hasSky);
         if (packet == null) {

@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.zip.GZIPInputStream;
@@ -62,6 +63,10 @@ public final class RegionFileReader {
     private static final int SECTOR_OFFSET_SHIFT = 8;
     private static final int SECTOR_COUNT_MASK = 0xFF;
     private static final int MIN_SECTOR_OFFSET = 2;
+    private static final int EXTERNAL_STREAM_FLAG = 0x80;
+    private static final int COMPRESSION_TYPE_MASK = 0x7F;
+    private static final int MAX_EXTERNAL_CHUNK_BYTES = 64 * 1024 * 1024;
+    private static final int MAX_DECOMPRESSED_CHUNK_BYTES = 64 * 1024 * 1024;
 
     /**
      * Reusable direct ByteBuffers for the fixed-size reads (location entry + chunk header).
@@ -149,8 +154,7 @@ public final class RegionFileReader {
 
             ByteBuffer buf = LOCATION_BUF.get();
             buf.clear();
-            int bytesRead = channel.read(buf, locationIndex);
-            if (bytesRead < 4) {
+            if (!readFully(channel, buf, locationIndex)) {
                 return null;
             }
             buf.flip();
@@ -162,7 +166,7 @@ public final class RegionFileReader {
             int sectorOffset = (locationValue >> SECTOR_OFFSET_SHIFT) & 0xFFFFFF;
             int sectorCount = locationValue & SECTOR_COUNT_MASK;
 
-            if (sectorOffset < MIN_SECTOR_OFFSET) {
+            if (sectorOffset < MIN_SECTOR_OFFSET || sectorCount <= 0) {
                 LOGGER.warn("Invalid sector offset {} for chunk [{}, {}] in {}",
                     sectorOffset, chunkX, chunkZ, regionFile.getName());
                 return null;
@@ -177,17 +181,45 @@ public final class RegionFileReader {
 
             ByteBuffer headerBuf = CHUNK_HEADER_BUF.get();
             headerBuf.clear();
-            int headerRead = channel.read(headerBuf, dataStart);
-            if (headerRead < CHUNK_HEADER_BYTES) {
+            if (!readFully(channel, headerBuf, dataStart)) {
                 return null;
             }
             headerBuf.flip();
             int dataLength = headerBuf.getInt();
-            int compressionType = headerBuf.get() & 0xFF;
+            int compressionByte = headerBuf.get() & 0xFF;
+            int compressionType = compressionByte & COMPRESSION_TYPE_MASK;
+            boolean externalStream = (compressionByte & EXTERNAL_STREAM_FLAG) != 0;
 
             if (dataLength <= 0) {
                 LOGGER.warn("Invalid data length {} for chunk [{}, {}] in {}",
                     dataLength, chunkX, chunkZ, regionFile.getName());
+                return null;
+            }
+
+            if (externalStream) {
+                if (dataLength != 1) {
+                    LOGGER.warn("Invalid external chunk stub length {} for chunk [{}, {}] in {}",
+                        dataLength, chunkX, chunkZ, regionFile.getName());
+                    return null;
+                }
+                File externalFile = new File(regionFolder, "c." + chunkX + "." + chunkZ + ".mcc");
+                if (!externalFile.isFile()) {
+                    LOGGER.warn("External chunk file does not exist: {}", externalFile.getAbsolutePath());
+                    return null;
+                }
+                long externalSize = Files.size(externalFile.toPath());
+                if (externalSize <= 0 || externalSize > MAX_EXTERNAL_CHUNK_BYTES) {
+                    LOGGER.warn("Invalid external chunk size {} for chunk [{}, {}]", externalSize, chunkX, chunkZ);
+                    return null;
+                }
+                byte[] externalData = Files.readAllBytes(externalFile.toPath());
+                return decompress(externalData, compressionType, sectorCount, chunkX, chunkZ, externalFile.getName());
+            }
+
+            int allocatedBytes = sectorCount * SECTOR_SIZE - Integer.BYTES;
+            if (dataLength > allocatedBytes) {
+                LOGGER.warn("Chunk data length {} exceeds allocated space {} for chunk [{}, {}] in {}",
+                    dataLength, allocatedBytes, chunkX, chunkZ, regionFile.getName());
                 return null;
             }
 
@@ -199,8 +231,7 @@ public final class RegionFileReader {
             }
 
             ByteBuffer dataBuf = ByteBuffer.allocate(compressedLength);
-            int dataRead = channel.read(dataBuf, dataStart + CHUNK_HEADER_BYTES);
-            if (dataRead < compressedLength) {
+            if (!readFully(channel, dataBuf, dataStart + CHUNK_HEADER_BYTES)) {
                 LOGGER.warn("Compressed payload read truncated for chunk [{}, {}] in {}",
                     chunkX, chunkZ, regionFile.getName());
                 return null;
@@ -212,7 +243,7 @@ public final class RegionFileReader {
             CHANNEL_CACHE.invalidate(regionFile.getAbsolutePath());
             LOGGER.debug("FileChannel closed for {}, invalidating cache", regionFile.getName());
             return null;
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             CHANNEL_CACHE.invalidate(regionFile.getAbsolutePath());
             LOGGER.error("Failed to read chunk [{}, {}] from FileChannel: {}", chunkX, chunkZ, e.getMessage());
             return null;
@@ -278,8 +309,23 @@ public final class RegionFileReader {
         byte[] buffer = DECOMPRESSION_BUF.get();
         int len;
         while ((len = is.read(buffer)) != -1) {
+            if (bos.size() > MAX_DECOMPRESSED_CHUNK_BYTES - len) {
+                throw new IOException("Decompressed chunk exceeds " + MAX_DECOMPRESSED_CHUNK_BYTES + " bytes");
+            }
             bos.write(buffer, 0, len);
         }
         return bos.toByteArray();
+    }
+
+    private static boolean readFully(FileChannel channel, ByteBuffer buffer, long position) throws IOException {
+        long currentPosition = position;
+        while (buffer.hasRemaining()) {
+            int read = channel.read(buffer, currentPosition);
+            if (read <= 0) {
+                return false;
+            }
+            currentPosition += read;
+        }
+        return true;
     }
 }
