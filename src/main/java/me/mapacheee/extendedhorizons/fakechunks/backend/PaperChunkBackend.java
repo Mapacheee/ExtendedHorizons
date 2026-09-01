@@ -281,12 +281,14 @@ public final class PaperChunkBackend implements ChunkBackend {
                 serializationFuture.whenComplete((packetData, throwable) -> {
                     if (throwable != null) {
                         ReferenceCountUtil.release(packetData);
+                        LOGGER.warn("Chunk serialization failed for [{}, {}]", chunkX, chunkZ, throwable);
                         future.complete(null);
                         return;
                     }
                     completeOwned(future, packetData);
                 });
             } catch (Throwable throwable) {
+                LOGGER.warn("Chunk snapshot preparation failed for [{}, {}]", chunkX, chunkZ, throwable);
                 future.complete(null);
             }
         };
@@ -590,6 +592,12 @@ public final class PaperChunkBackend implements ChunkBackend {
                 sectionSnapshots
             );
         } catch (Throwable throwable) {
+            LOGGER.warn(
+                "Anti-xray snapshot capture failed for [{}, {}]",
+                ChunkKeyCodec.x(chunkKey),
+                ChunkKeyCodec.z(chunkKey),
+                throwable
+            );
             if (sectionSnapshots != null) {
                 for (AntiXraySectionSnapshot sectionSnapshot : sectionSnapshots) {
                     if (sectionSnapshot != null) {
@@ -652,6 +660,7 @@ public final class PaperChunkBackend implements ChunkBackend {
                 out.writeBytes(snapshot.light(), snapshot.light().readerIndex(), snapshot.light().readableBytes());
                 return raw;
             } catch (Throwable throwable) {
+                LOGGER.warn("Anti-xray packet assembly failed for [{}, {}]", chunkX, chunkZ, throwable);
                 raw.release();
                 return null;
             }
