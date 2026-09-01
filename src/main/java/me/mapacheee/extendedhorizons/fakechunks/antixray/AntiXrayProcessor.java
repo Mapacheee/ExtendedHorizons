@@ -201,12 +201,11 @@ public final class AntiXrayProcessor {
                     throw new IllegalStateException("Invalid zero-sized storage length");
                 }
             }
-            return new StorageState(storageReaderIndex, 0L, 0, 0, EMPTY_LONG_ARRAY);
+            return new StorageState(storageReaderIndex, 0L, 0, EMPTY_LONG_ARRAY);
         }
 
         long entryMask = (1L << paletteStorageBits) - 1L;
         int valuesPerWord = Long.SIZE / paletteStorageBits;
-        int valuesPerWordShift = Integer.numberOfTrailingZeros(valuesPerWord);
         int wordCount = (STORAGE_SIZE_3D + valuesPerWord - 1) / valuesPerWord;
         if (storageLength) {
             int bufWordCount = VarIntUtil.readVarInt(buf);
@@ -219,29 +218,24 @@ public final class AntiXrayProcessor {
         for (int i = 0; i < wordCount; i++) {
             storage[i] = buf.readLong();
         }
-        return new StorageState(storageReaderIndex, entryMask, valuesPerWord, valuesPerWordShift, storage);
+        return new StorageState(storageReaderIndex, entryMask, valuesPerWord, storage);
     }
 
     private RemappedStorage remapStorage(PaletteState paletteState, StorageState storageState) {
         boolean resize = paletteState.paletteStorageBits() != paletteState.newPaletteBits();
         int newValuesPerWord;
-        int newValuesPerWordShift;
         long[] newStorage;
 
         if (!resize) {
             newValuesPerWord = storageState.valuesPerWord();
-            newValuesPerWordShift = storageState.valuesPerWordShift();
             newStorage = storageState.storage();
         } else {
             newValuesPerWord = Long.SIZE / paletteState.newPaletteBits();
-            newValuesPerWordShift = Integer.numberOfTrailingZeros(newValuesPerWord);
             int newWordCount = (STORAGE_SIZE_3D + newValuesPerWord - 1) / newValuesPerWord;
             newStorage = new long[newWordCount];
         }
 
         int srcValuesPerWord = storageState.valuesPerWord();
-        int srcShift = storageState.valuesPerWordShift();
-        int srcMask = srcValuesPerWord - 1;
         int paletteBits = paletteState.paletteStorageBits();
         long entryMask = storageState.entryMask();
 
@@ -253,8 +247,8 @@ public final class AntiXrayProcessor {
                 long word;
                 int value;
                 if (paletteBits != 0) {
-                    wordIndex = blockIndex >>> srcShift;
-                    bitIndex = (blockIndex & srcMask) * paletteBits;
+                    wordIndex = blockIndex / srcValuesPerWord;
+                    bitIndex = (blockIndex % srcValuesPerWord) * paletteBits;
                     word = storageState.storage()[wordIndex];
                     value = (int) ((word >> bitIndex) & entryMask);
                 } else {
@@ -281,8 +275,8 @@ public final class AntiXrayProcessor {
                 }
 
                 if (resize) {
-                    int newWordIndex = blockIndex >>> newValuesPerWordShift;
-                    int newBitIndex = (blockIndex & (newValuesPerWord - 1)) * paletteState.newPaletteBits();
+                    int newWordIndex = blockIndex / newValuesPerWord;
+                    int newBitIndex = (blockIndex % newValuesPerWord) * paletteState.newPaletteBits();
                     newStorage[newWordIndex] |= (long) newValue << newBitIndex;
                 }
             }
@@ -348,7 +342,6 @@ public final class AntiXrayProcessor {
         int storageReaderIndex,
         long entryMask,
         int valuesPerWord,
-        int valuesPerWordShift,
         long[] storage
     ) {}
 
