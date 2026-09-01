@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.fakechunks.session;
 
 import io.netty.buffer.ByteBuf;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkSendQueueEntry;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -110,6 +111,34 @@ class PlayerSessionDispatchTest {
 
         assertTrue(future.isCancelled());
         assertEquals(0L, session.beginChunkSend(chunkKey));
+    }
+
+    @Test
+    void dimensionResetAllowsPreviouslyLoadedChunkToBeSentAgain() {
+        PlayerSession session = readySession();
+        long chunkKey = nextChunk(session);
+        long firstAttempt = session.beginChunkSend(chunkKey);
+        session.onChunkSent(chunkKey, firstAttempt);
+        session.lastAdvertisedDistance(12);
+        session.lastAdvertisedChunkKey(ChunkKeyCodec.pack(0, 0));
+        long previousEpoch = session.epoch();
+
+        session.handleDimensionReset();
+
+        assertEquals(previousEpoch + 1L, session.epoch());
+        assertFalse(session.enabled());
+        assertFalse(session.isEhLoaded(chunkKey));
+        assertEquals(-1, session.lastAdvertisedDistance());
+        assertEquals(
+            ChunkKeyCodec.pack(Integer.MIN_VALUE, Integer.MIN_VALUE),
+            session.lastAdvertisedChunkKey()
+        );
+        assertEquals(chunkKey, nextChunk(session));
+
+        long secondAttempt = session.beginChunkSend(chunkKey);
+        assertTrue(secondAttempt > firstAttempt);
+        session.onChunkSent(chunkKey, secondAttempt);
+        assertTrue(session.isEhLoaded(chunkKey));
     }
 
     private static PlayerSession readySession() {
