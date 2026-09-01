@@ -133,6 +133,8 @@ class PlayerSessionDispatchTest {
             ChunkKeyCodec.pack(Integer.MIN_VALUE, Integer.MIN_VALUE),
             session.lastAdvertisedChunkKey()
         );
+        session.onChunkSent(chunkKey, firstAttempt);
+        assertFalse(session.isEhLoaded(chunkKey));
         assertEquals(chunkKey, nextChunk(session));
 
         long secondAttempt = session.beginChunkSend(chunkKey);
