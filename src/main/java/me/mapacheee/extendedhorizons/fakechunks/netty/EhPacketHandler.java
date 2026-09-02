@@ -17,6 +17,7 @@ import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
 import net.minecraft.world.level.ChunkPos;
@@ -24,6 +25,8 @@ import net.minecraft.world.level.ChunkPos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -62,7 +65,14 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             if (trackingSession != null) {
                 this.captureEntityTracking(ctx, msg, trackingSession);
             }
-            if (this.handle(msg)) {
+            if (trackingSession != null && trackingSession.enabled() && msg instanceof BundlePacket<?> bundle) {
+                List<Packet<?>> filteredPackets = this.filterBundle(bundle);
+                if (filteredPackets != null) {
+                    this.writeFilteredBundle(ctx, filteredPackets, promise);
+                    ReferenceCountUtil.release(msg);
+                    return;
+                }
+            } else if (this.handle(msg)) {
                 ReferenceCountUtil.release(msg);
                 promise.trySuccess();
                 return;
@@ -75,23 +85,6 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
                     ReferenceCountUtil.release(msg);
                     promise.trySuccess();
                     return;
-                }
-            }
-            if (msg instanceof BundlePacket<?> bundle) {
-                PlayerSession session = this.session;
-                if (session != null && session.enabled()) {
-                    if (hasRadiusPacket(bundle)) {
-                        session.lastAdvertisedDistance(-1);
-                        try {
-                            writeBundleWithoutRadius(ctx, bundle, promise);
-                        } catch (Throwable throwable) {
-                            promise.tryFailure(throwable);
-                            LOGGER.error("Failed to filter radius packet from bundle", throwable);
-                        } finally {
-                            ReferenceCountUtil.release(msg);
-                        }
-                        return;
-                    }
                 }
             }
         } catch (Throwable throwable) {
@@ -144,25 +137,31 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         throw new IllegalArgumentException("VarInt too big");
     }
 
-    private static boolean hasRadiusPacket(BundlePacket<?> bundle) {
+    private List<Packet<?>> filterBundle(BundlePacket<?> bundle) {
+        boolean changed = false;
+        List<Packet<?>> filteredPackets = new ArrayList<>();
         for (Packet<?> sub : bundle.subPackets()) {
-            if (sub instanceof ClientboundSetChunkCacheRadiusPacket) {
-                return true;
+            if (this.handle(sub)) {
+                changed = true;
+            } else {
+                filteredPackets.add(sub);
             }
         }
-        return false;
+        return changed ? filteredPackets : null;
     }
 
-    private static void writeBundleWithoutRadius(
+    private void writeFilteredBundle(
         ChannelHandlerContext ctx,
-        BundlePacket<?> bundle,
+        List<Packet<?>> packets,
         ChannelPromise promise
     ) {
+        if (packets.isEmpty()) {
+            promise.trySuccess();
+            return;
+        }
         PromiseCombiner combiner = new PromiseCombiner(ctx.executor());
-        for (Packet<?> sub : bundle.subPackets()) {
-            if (!(sub instanceof ClientboundSetChunkCacheRadiusPacket)) {
-                combiner.add(ctx.write(sub));
-            }
+        for (Packet<?> packet : packets) {
+            combiner.add(ctx.write(packet));
         }
         combiner.finish(promise);
     }
@@ -205,6 +204,10 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             case ClientboundSetChunkCacheRadiusPacket ignored -> {
                 session.lastAdvertisedDistance(-1);
                 yield true;
+            }
+            case ClientboundSetChunkCacheCenterPacket ignored -> {
+                session.invalidateAdvertisedChunkKey();
+                yield false;
             }
             default -> false;
         };

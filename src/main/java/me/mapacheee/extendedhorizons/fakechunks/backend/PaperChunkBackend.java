@@ -141,15 +141,19 @@ public final class PaperChunkBackend implements ChunkBackend {
         };
 
         boolean chunkLoaded = world.isChunkLoaded(chunkX, chunkZ);
-        boolean useDiskReader = this.configContainer.get().diskReaderEnabled() && !chunkLoaded;
+        boolean useDiskReader = this.configContainer.get().diskReaderEnabled()
+            && !chunkLoaded
+            && DiskChunkReader.shouldAttemptDirectRead(world, chunkX, chunkZ);
         if (useDiskReader) {
             CompletableFuture<ByteBuf> diskFuture = this.serializationExecutorService.submit(
                 () -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ)
             );
             cancelWhenParentCancelled(future, diskFuture);
             diskFuture.whenComplete((diskPayload, throwable) -> {
-                if (diskFuture.isCancelled() || throwable instanceof CancellationException) {
-                    future.complete(null);
+                if (diskFuture.isCancelled() || isCancellation(throwable)) {
+                    if (!future.isDone()) {
+                        future.complete(null);
+                    }
                     return;
                 }
                 if (diskPayload != null) {
@@ -281,6 +285,12 @@ public final class PaperChunkBackend implements ChunkBackend {
                 serializationFuture.whenComplete((packetData, throwable) -> {
                     if (throwable != null) {
                         ReferenceCountUtil.release(packetData);
+                        if (isCancellation(throwable)) {
+                            if (!future.isDone()) {
+                                future.complete(null);
+                            }
+                            return;
+                        }
                         LOGGER.warn("Chunk serialization failed for [{}, {}]", chunkX, chunkZ, throwable);
                         future.complete(null);
                         return;
@@ -436,6 +446,21 @@ public final class PaperChunkBackend implements ChunkBackend {
         out.readerIndex(preReaderIndex);
 
         section.getBiomes().write(out, null, 0);
+    }
+
+    private static boolean isCancellation(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof CancellationException) {
+                return true;
+            }
+            Throwable cause = current.getCause();
+            if (cause == current) {
+                break;
+            }
+            current = cause;
+        }
+        return false;
     }
 
     private void writeVanillaChunkAndLight(

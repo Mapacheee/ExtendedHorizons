@@ -22,27 +22,30 @@ public final class PlayerSession {
     private static final double DIRECTION_WEIGHT = 0.3d;
     private static final long FAST_MOVEMENT_NANOS = 400_000_000L;
     private static final long BUILD_FAILED_RETRY_NANOS = 1_000_000_000L;
+    private static final long NO_BUILD_RETRY_NANOS = Long.MAX_VALUE;
     private static final int STORAGE_RADIUS_PADDING = 3;
     private static final int UNSET_COORD = 0;
     private static final int PERMISSION_CAP_UNINITIALIZED = -2;
     private static final int OVERRIDE_DISTANCE_UNSET = -1;
+    private static final long UNADVERTISED_CHUNK_KEY = ChunkKeyCodec.pack(Integer.MIN_VALUE, Integer.MIN_VALUE);
 
     private final UUID playerId;
     private volatile UUID worldId;
     private final AtomicLong epoch = new AtomicLong(0L);
     private final AtomicLong sendAttemptSequence = new AtomicLong();
-    private volatile long chunkKey = ChunkKeyCodec.pack(Integer.MIN_VALUE, Integer.MIN_VALUE);
+    private volatile long chunkKey = UNADVERTISED_CHUNK_KEY;
     private volatile int distance;
     private volatile int storageRadius;
     private volatile int storageDiameter;
     private volatile int iterationIndex;
+    private volatile long nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
     private volatile int trackingTicker = 0;
     private volatile boolean enabled;
     private volatile boolean initiated;
     private volatile long[] chunksInDistance = EMPTY_LONG_ARRAY;
     private volatile ChunkState[] chunkStates = new ChunkState[0];
     private volatile int lastAdvertisedDistance = OVERRIDE_DISTANCE_UNSET;
-    private volatile long lastAdvertisedChunkKey = ChunkKeyCodec.pack(Integer.MIN_VALUE, Integer.MIN_VALUE);
+    private volatile long lastAdvertisedChunkKey = UNADVERTISED_CHUNK_KEY;
     private volatile int serverViewDistance = 2;
     private volatile int playerOverrideDistance = OVERRIDE_DISTANCE_UNSET;
     private volatile boolean bandwidthLimiterEnabled;
@@ -159,6 +162,10 @@ public final class PlayerSession {
         this.lastAdvertisedChunkKey = key;
     }
 
+    public void invalidateAdvertisedChunkKey() {
+        this.lastAdvertisedChunkKey = UNADVERTISED_CHUNK_KEY;
+    }
+
     public int serverViewDistance() {
         return this.serverViewDistance;
     }
@@ -236,6 +243,22 @@ public final class PlayerSession {
         return this.chunkQueue;
     }
 
+    public synchronized boolean hasPendingChunkWork() {
+        if (!this.enabled) {
+            return false;
+        }
+        if (!this.chunkQueue.isEmpty() || this.iterationIndex < this.chunksInDistance.length) {
+            return true;
+        }
+        long retryAt = this.nextBuildRetryNanos;
+        if (retryAt != NO_BUILD_RETRY_NANOS && System.nanoTime() - retryAt >= 0L) {
+            this.iterationIndex = 0;
+            this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
+            return true;
+        }
+        return false;
+    }
+
     public boolean enqueueChunk(ChunkSendQueueEntry entry, UUID expectedWorldId, long expectedEpoch) {
         synchronized (this.dispatchLock) {
             if (this.closed || !this.enabled
@@ -270,6 +293,7 @@ public final class PlayerSession {
         this.storageDiameter = this.storageRadius * 2 + 1;
         this.chunksInDistance = ChunkPlannerService.radiusIterationList(this.distance);
         this.iterationIndex = 0;
+        this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
 
         if (this.hasMovementDirection) {
             this.rebuildDirectionalOrder();
@@ -329,6 +353,7 @@ public final class PlayerSession {
             }
             this.clearChunkQueue();
             this.iterationIndex = 0;
+            this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
             this.enabled = false;
             this.hasMovementDirection = false;
             return;
@@ -355,6 +380,18 @@ public final class PlayerSession {
             }
             int stateX = state.chunkX();
             int stateZ = state.chunkZ();
+            if (!this.canStore(stateX, stateZ, chunkX, chunkZ)) {
+                ChunkLifecycle lifecycle = state.lifecycle();
+                if (lifecycle == ChunkLifecycle.EH_QUEUED) {
+                    this.purgeQueuedChunk(stateX, stateZ);
+                }
+                if (lifecycle == ChunkLifecycle.EH_LOADED || lifecycle == ChunkLifecycle.EH_SENDING) {
+                    this.pendingUnloads.add(ChunkKeyCodec.pack(stateX, stateZ));
+                }
+                state.reset();
+                cleanedAny = true;
+                continue;
+            }
             if (ChunkPlannerService.isWithinRange(stateX - chunkX, stateZ - chunkZ, this.distance)) {
                 continue;
             }
@@ -438,10 +475,13 @@ public final class PlayerSession {
                 state.set(chunkX, chunkZ, ChunkLifecycle.EH_QUEUED);
                 return ChunkKeyCodec.pack(chunkX, chunkZ);
             }
-            if (state.lifecycle() == ChunkLifecycle.BUILD_FAILED
-                && System.nanoTime() - state.failedAtNanos() > BUILD_FAILED_RETRY_NANOS) {
-                state.set(chunkX, chunkZ, ChunkLifecycle.EH_QUEUED);
-                return ChunkKeyCodec.pack(chunkX, chunkZ);
+            if (state.lifecycle() == ChunkLifecycle.BUILD_FAILED) {
+                long retryAt = state.failedAtNanos() + BUILD_FAILED_RETRY_NANOS;
+                if (System.nanoTime() - retryAt >= 0L) {
+                    state.set(chunkX, chunkZ, ChunkLifecycle.EH_QUEUED);
+                    return ChunkKeyCodec.pack(chunkX, chunkZ);
+                }
+                this.scheduleBuildRetry(retryAt);
             }
         }
         return null;
@@ -454,6 +494,7 @@ public final class PlayerSession {
                 || state.lifecycle() == ChunkLifecycle.EH_SENDING) {
                 state.markBuildFailed();
                 this.iterationIndex = 0;
+                this.scheduleBuildRetry(state.failedAtNanos() + BUILD_FAILED_RETRY_NANOS);
             }
         }
     }
@@ -488,6 +529,7 @@ public final class PlayerSession {
             if (state.lifecycle() == ChunkLifecycle.EH_SENDING && state.sendAttempt() == sendAttempt) {
                 state.markBuildFailed();
                 this.iterationIndex = 0;
+                this.scheduleBuildRetry(state.failedAtNanos() + BUILD_FAILED_RETRY_NANOS);
             }
         }
     }
@@ -598,6 +640,7 @@ public final class PlayerSession {
         }
         this.clearChunkQueue();
         this.usedFarEntityIdBuffer.clear();
+        this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
     }
 
     public synchronized void handleDimensionReset() {
@@ -614,8 +657,9 @@ public final class PlayerSession {
         this.lastChunkCrossNanos = 0L;
         this.resetBandwidthLimiter();
         this.iterationIndex = 0;
+        this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
         this.lastAdvertisedDistance = OVERRIDE_DISTANCE_UNSET;
-        this.lastAdvertisedChunkKey = ChunkKeyCodec.pack(Integer.MIN_VALUE, Integer.MIN_VALUE);
+        this.lastAdvertisedChunkKey = UNADVERTISED_CHUNK_KEY;
     }
 
     public void clearDispatchState() {
@@ -626,9 +670,10 @@ public final class PlayerSession {
         this.serverTrackedEntityIds.clear();
         this.resetBandwidthLimiter();
         this.lastAdvertisedDistance = OVERRIDE_DISTANCE_UNSET;
-        this.lastAdvertisedChunkKey = ChunkKeyCodec.pack(Integer.MIN_VALUE, Integer.MIN_VALUE);
+        this.lastAdvertisedChunkKey = UNADVERTISED_CHUNK_KEY;
         this.initiated = false;
         this.iterationIndex = 0;
+        this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
     }
 
     public synchronized void close() {
@@ -725,6 +770,12 @@ public final class PlayerSession {
                 }
                 return false;
             });
+        }
+    }
+
+    private void scheduleBuildRetry(long retryAtNanos) {
+        if (retryAtNanos < this.nextBuildRetryNanos) {
+            this.nextBuildRetryNanos = retryAtNanos;
         }
     }
 

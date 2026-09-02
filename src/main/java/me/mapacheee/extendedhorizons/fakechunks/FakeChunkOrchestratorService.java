@@ -112,14 +112,16 @@ public final class FakeChunkOrchestratorService {
         int serverDistance = this.resolveServerDistance(player);
 
         boolean chunkChanged = session.hasChunkChanged(chunkX, chunkZ);
+        boolean centerChanged = session.lastAdvertisedChunkKey() != ChunkKeyCodec.pack(chunkX, chunkZ);
         boolean distanceChanged = (session.lastAdvertisedDistance() != targetDistance || session.distance() != targetDistance);
         boolean farPlayersEnabled = this.configContainer.get().farPlayersEnabled();
         int moveTicks = this.configContainer.get().farPlayerMoveTicks();
         boolean isFarPlayerTick = farPlayersEnabled && session.enabled() && (Bukkit.getCurrentTick() % moveTicks == 0);
-        boolean needsQueueProcessing = !session.chunkQueue().isEmpty();
+        boolean needsQueueProcessing = session.hasPendingChunkWork();
 
         boolean shouldTick = !session.initiated()
             || chunkChanged
+            || centerChanged
             || distanceChanged
             || needsQueueProcessing
             || isFarPlayerTick;

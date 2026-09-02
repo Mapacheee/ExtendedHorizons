@@ -1,6 +1,8 @@
 package me.mapacheee.extendedhorizons.fakechunks.disk;
 
 import io.netty.buffer.ByteBuf;
+import me.mapacheee.lib.caffeine.cache.Cache;
+import me.mapacheee.lib.caffeine.cache.Caffeine;
 import net.minecraft.server.level.ServerLevel;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftWorld;
@@ -8,6 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.time.Duration;
+import java.util.UUID;
 
 /**
  * High-level orchestrator that reads a chunk directly from disk and produces
@@ -28,6 +32,12 @@ import java.io.File;
 public final class DiskChunkReader {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DiskChunkReader.class);
+    private static final int REGION_COORD_SHIFT = 5;
+    private static final int INCOMPATIBLE_REGION_CACHE_SIZE = 4096;
+    private static final Cache<RegionKey, Boolean> INCOMPATIBLE_REGIONS = Caffeine.newBuilder()
+        .maximumSize(INCOMPATIBLE_REGION_CACHE_SIZE)
+        .expireAfterAccess(Duration.ofMinutes(30))
+        .build();
 
     /**
      * The classloader that loaded this class (the plugin's classloader).
@@ -50,6 +60,9 @@ public final class DiskChunkReader {
     public static ByteBuf readAndSerialize(World world, int chunkX, int chunkZ) {
         if (world == null) {
             LOGGER.warn("Cannot read chunk [{}, {}]: world is null", chunkX, chunkZ);
+            return null;
+        }
+        if (!shouldAttemptDirectRead(world, chunkX, chunkZ)) {
             return null;
         }
 
@@ -90,11 +103,39 @@ public final class DiskChunkReader {
 
         ByteBuf packet = DiskChunkSerializer.serialize(nbtBytes, level, chunkX, chunkZ, hasSky);
         if (packet == null) {
-            LOGGER.warn("Failed to serialize packet for chunk [{}, {}] in world '{}'",
-                chunkX, chunkZ, world.getName());
+            if (markRegionIncompatible(world.getUID(), chunkX, chunkZ)) {
+                LOGGER.debug(
+                    "Direct disk serialization is incompatible with region [{}, {}] in world '{}'; using Paper fallback",
+                    chunkX >> REGION_COORD_SHIFT,
+                    chunkZ >> REGION_COORD_SHIFT,
+                    world.getName()
+                );
+            }
             return null;
         }
 
         return packet;
     }
+
+    public static boolean shouldAttemptDirectRead(World world, int chunkX, int chunkZ) {
+        return world != null && shouldAttemptDirectRead(world.getUID(), chunkX, chunkZ);
+    }
+
+    static boolean shouldAttemptDirectRead(UUID worldId, int chunkX, int chunkZ) {
+        return INCOMPATIBLE_REGIONS.getIfPresent(regionKey(worldId, chunkX, chunkZ)) == null;
+    }
+
+    static boolean markRegionIncompatible(UUID worldId, int chunkX, int chunkZ) {
+        return INCOMPATIBLE_REGIONS.asMap().putIfAbsent(regionKey(worldId, chunkX, chunkZ), Boolean.TRUE) == null;
+    }
+
+    static void clearIncompatibleRegions() {
+        INCOMPATIBLE_REGIONS.invalidateAll();
+    }
+
+    private static RegionKey regionKey(UUID worldId, int chunkX, int chunkZ) {
+        return new RegionKey(worldId, chunkX >> REGION_COORD_SHIFT, chunkZ >> REGION_COORD_SHIFT);
+    }
+
+    private record RegionKey(UUID worldId, int regionX, int regionZ) {}
 }

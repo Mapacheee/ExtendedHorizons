@@ -141,11 +141,6 @@ public final class ChunkDispatchService {
             if (!entry.buildFuture().isDone()) {
                 if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
                     session.onChunkBuildFailed(entry.chunkKey());
-                    this.cacheService.cancelBuild(
-                        entry.worldId(),
-                        entry.chunkKey(),
-                        entry.cacheGeneration()
-                    );
                     this.cacheService.markUnavailable(
                         entry.worldId(),
                         entry.chunkKey(),

@@ -31,7 +31,7 @@ public final class ChunkSerializationExecutorService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ChunkSerializationExecutorService.class);
     private static final String THREAD_PREFIX = "EH-ChunkSerializer-";
-    private static final int MAX_QUEUED_PER_WORKER = 4;
+    private static final int MAX_QUEUED_PER_WORKER = 8;
     private static final int SHUTDOWN_WAIT_SECONDS = 5;
     private static final long WARN_THROTTLE_NANOS = TimeUnit.SECONDS.toNanos(10);
     private static final Runnable NOOP = () -> {};
@@ -123,12 +123,12 @@ public final class ChunkSerializationExecutorService {
             int suppressed = this.suppressedWarns.getAndSet(0);
             if (suppressed > 0) {
                 LOGGER.warn(
-                    "Chunk serialization queue full ({}), running on caller thread ({} similar warnings suppressed in the last 10s)",
+                    "Chunk serialization queue full ({}); deferring chunk until retry ({} similar warnings suppressed in the last 10s)",
                     queueCapacity, suppressed
                 );
             } else {
                 LOGGER.warn(
-                    "Chunk serialization queue full ({}), running on caller thread",
+                    "Chunk serialization queue full ({}); deferring chunk until retry",
                     queueCapacity
                 );
             }
@@ -180,7 +180,7 @@ public final class ChunkSerializationExecutorService {
                     } catch (RejectedExecutionException exception) {
                         if (this.active && !this.executor.isShutdown()) {
                             ChunkSerializationExecutorService.this.logQueueFullWarning(this.queueCapacity);
-                            runOnCaller = true;
+                            task.cancel();
                         } else {
                             task.cancel();
                         }
