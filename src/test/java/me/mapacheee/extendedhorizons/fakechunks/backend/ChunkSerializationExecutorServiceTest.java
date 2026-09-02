@@ -6,6 +6,8 @@ import me.mapacheee.extendedhorizons.TestContainers;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -120,6 +122,49 @@ class ChunkSerializationExecutorServiceTest {
         assertTrue(submitted.get().isCancelled());
         assertNotNull(produced.get());
         assertEquals(0, produced.get().refCnt());
+    }
+
+    @Test
+    void defaultDispatchBurstStaysOffCallerThread() throws Exception {
+        ChunkSerializationExecutorService service = new ChunkSerializationExecutorService(
+            TestContainers.containing(configWithWorkers(1))
+        );
+        CountDownLatch running = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        AtomicBoolean ranOnCaller = new AtomicBoolean();
+        Thread caller = Thread.currentThread();
+
+        CompletableFuture<ByteBuf> first = service.submit(() -> {
+            running.countDown();
+            awaitIgnoringInterrupts(finish);
+            return Unpooled.buffer().writeByte(1);
+        });
+        assertTrue(running.await(5, TimeUnit.SECONDS));
+
+        List<CompletableFuture<ByteBuf>> queued = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            queued.add(service.submit(() -> {
+                ranOnCaller.compareAndSet(false, Thread.currentThread() == caller);
+                return Unpooled.buffer().writeByte(2);
+            }));
+        }
+        assertFalse(ranOnCaller.get());
+        AtomicBoolean overflowRan = new AtomicBoolean();
+        CompletableFuture<ByteBuf> overflow = service.submit(() -> {
+            overflowRan.set(true);
+            return Unpooled.buffer().writeByte(3);
+        });
+        assertTrue(overflow.isCancelled());
+        assertFalse(overflowRan.get());
+
+        finish.countDown();
+        ByteBuf firstPayload = first.get(5, TimeUnit.SECONDS);
+        firstPayload.release();
+        for (CompletableFuture<ByteBuf> future : queued) {
+            ByteBuf payload = future.get(5, TimeUnit.SECONDS);
+            payload.release();
+        }
+        service.onDisable();
     }
 
     private static EhConfig configWithWorkers(int workers) {

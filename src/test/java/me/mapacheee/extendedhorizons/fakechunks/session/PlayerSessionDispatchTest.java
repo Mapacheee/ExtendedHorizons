@@ -114,6 +114,48 @@ class PlayerSessionDispatchTest {
     }
 
     @Test
+    void serverChunkReplacementKeepsPlannerAwake() {
+        PlayerSession session = readySession();
+        long chunkKey = nextChunk(session);
+        CompletableFuture<ByteBuf> future = new CompletableFuture<>();
+        ChunkSendQueueEntry entry = new ChunkSendQueueEntry(
+            chunkKey,
+            session.worldId(),
+            session.epoch(),
+            1L,
+            future
+        );
+        assertTrue(session.enqueueChunk(entry, session.worldId(), session.epoch()));
+
+        session.serverChunkAdd(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey));
+
+        assertTrue(future.isCancelled());
+        assertTrue(session.chunkQueue().isEmpty());
+        assertTrue(session.hasPendingChunkWork());
+        assertNotNull(session.pollNextChunkKey());
+    }
+
+    @Test
+    void movementClearsServerStateOutsideStorageWindow() {
+        PlayerSession session = readySession();
+        session.serverChunkAdd(0, 0);
+
+        session.moveTo(3, 0, 0.0f);
+        session.moveTo(6, 0, 0.0f);
+        session.moveTo(9, 0, 0.0f);
+        session.moveTo(10, 0, 0.0f);
+
+        boolean queuedCollidingCoordinate = false;
+        Long chunkKey;
+        while ((chunkKey = session.pollNextChunkKey()) != null) {
+            if (ChunkKeyCodec.x(chunkKey) == 13 && ChunkKeyCodec.z(chunkKey) == 0) {
+                queuedCollidingCoordinate = true;
+            }
+        }
+        assertTrue(queuedCollidingCoordinate);
+    }
+
+    @Test
     void dimensionResetAllowsPreviouslyLoadedChunkToBeSentAgain() {
         PlayerSession session = readySession();
         long chunkKey = nextChunk(session);
