@@ -58,30 +58,28 @@ final class FastLightDataWriter {
 
     static boolean hasInitialisedLight(LevelChunk chunk) {
         SWMRNibbleArray[] blockNibbles = chunk.starlight$getBlockNibbles();
-        if (blockNibbles != null) {
-            for (SWMRNibbleArray layer : blockNibbles) {
-                if (layer != null && layer.isInitialisedVisible()) {
-                    return true;
-                }
-            }
+      for (SWMRNibbleArray layer : blockNibbles) {
+        if (layer != null && layer.isInitialisedVisible()) {
+          return true;
         }
-        SWMRNibbleArray[] skyNibbles = chunk.starlight$getSkyNibbles();
-        if (skyNibbles != null) {
-            for (SWMRNibbleArray layer : skyNibbles) {
-                if (layer != null && layer.isInitialisedVisible()) {
-                    return true;
-                }
-            }
+      }
+      SWMRNibbleArray[] skyNibbles = chunk.starlight$getSkyNibbles();
+      for (SWMRNibbleArray layer : skyNibbles) {
+        if (layer != null && layer.isInitialisedVisible()) {
+          return true;
         }
-        return false;
+      }
+      return false;
     }
 
-    static void writeSyntheticFullBrightLight(FriendlyByteBuf out, LevelChunk chunk) {
-        SWMRNibbleArray[] blockNibbles = chunk.starlight$getBlockNibbles();
-        boolean hasSky = chunk.starlight$getSkyNibbles() != null;
-        int sectionCount = blockNibbles != null ? blockNibbles.length : chunk.getSectionsCount() + EXTRA_LIGHT_SECTIONS;
+    static void writeSyntheticFullBrightLight(
+        FriendlyByteBuf out,
+        int chunkSectionCount,
+        boolean hasSkyLight
+    ) {
+        int sectionCount = chunkSectionCount + EXTRA_LIGHT_SECTIONS;
 
-        if (hasSky) {
+        if (hasSkyLight) {
             BitSet notSkyEmpty = new BitSet(sectionCount);
             notSkyEmpty.set(0, sectionCount);
             BitSet notBlockEmpty = new BitSet(sectionCount);

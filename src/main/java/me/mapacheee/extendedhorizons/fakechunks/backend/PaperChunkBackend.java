@@ -372,7 +372,11 @@ public final class PaperChunkBackend implements ChunkBackend {
                         RegistryFriendlyByteBuf registryBuf = new RegistryFriendlyByteBuf(raw, level.registryAccess());
                         chunkData.write(registryBuf);
                     }
-                    FastLightDataWriter.writeSyntheticFullBrightLight(buf, chunk);
+                    FastLightDataWriter.writeSyntheticFullBrightLight(
+                        buf,
+                        chunk.getSectionsCount(),
+                        level.dimensionType().hasSkyLight()
+                    );
                     return raw;
                 } catch (Throwable throwable) {
                     LOGGER.warn("Synthetic light path failed for chunk [{}, {}]: {}", chunkX, chunkZ, throwable.getMessage(), throwable);

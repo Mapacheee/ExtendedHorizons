@@ -39,11 +39,22 @@ final class FastChunkDataWriter {
     static void writeChunkData(FriendlyByteBuf out, LevelChunk chunk) {
         writeHeightmaps(out, chunk);
 
+        writeSections(out, chunk.getSections());
+
+        VarIntUtil.writeVarInt(out, 0);
+    }
+
+    static void writeSections(FriendlyByteBuf out, LevelChunkSection[] sections) {
+        writeSections(out, sections.length, (sectionOut, index) ->
+            sections[index].write(sectionOut, null, 0));
+    }
+
+    static void writeSections(FriendlyByteBuf out, int sectionCount, SectionWriter sectionWriter) {
         ByteBuf sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(SECTION_BUFFER_INITIAL, SECTION_BUFFER_MAX);
         try {
             FriendlyByteBuf sectionBuf = new FriendlyByteBuf(sectionBuffer);
-            for (LevelChunkSection section : chunk.getSections()) {
-                section.write(sectionBuf, null, 0);
+            for (int index = 0; index < sectionCount; index++) {
+                sectionWriter.write(sectionBuf, index);
             }
             int sectionBytes = sectionBuffer.readableBytes();
             VarIntUtil.writeVarInt(out, sectionBytes);
@@ -51,11 +62,14 @@ final class FastChunkDataWriter {
         } finally {
             sectionBuffer.release();
         }
-
-        VarIntUtil.writeVarInt(out, 0);
     }
 
     private static void writeHeightmaps(FriendlyByteBuf out, LevelChunk chunk) {
         HeightmapWriter.writeHeightmaps(out, chunk);
+    }
+
+    @FunctionalInterface
+    interface SectionWriter {
+        void write(FriendlyByteBuf out, int index);
     }
 }
