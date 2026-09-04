@@ -62,6 +62,28 @@ class EhPacketHandlerTest {
         assertFalse(channel.finishAndReleaseAll());
     }
 
+    @Test
+    void bundledForgetUpdatesTrackingWhileFakeChunksAreDisabled() {
+        PlayerSession session = readySession(5, 6);
+        long chunkKey = ChunkKeyCodec.pack(5, 6);
+        session.serverChunkAdd(5, 6);
+        session.enabled(false);
+        EhPacketHandler handler = new EhPacketHandler();
+        handler.setSession(session);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
+        ClientboundForgetLevelChunkPacket forget = new ClientboundForgetLevelChunkPacket(new ChunkPos(5, 6));
+        ClientboundBlockChangedAckPacket survivor = new ClientboundBlockChangedAckPacket(7);
+        List<Packet<? super ClientGamePacketListener>> packets = List.of(forget, survivor);
+
+        assertTrue(channel.writeOutbound(new ClientboundBundlePacket(packets)));
+
+        assertInstanceOf(ClientboundBundlePacket.class, channel.readOutbound());
+        assertNull(channel.readOutbound());
+        session.enabled(true);
+        assertEquals(chunkKey, session.pollNextChunkKey());
+        assertFalse(channel.finishAndReleaseAll());
+    }
+
     private static PlayerSession readySession(int chunkX, int chunkZ) {
         PlayerSession session = new PlayerSession(UUID.randomUUID(), UUID.randomUUID());
         session.setChunkPos(chunkX, chunkZ);

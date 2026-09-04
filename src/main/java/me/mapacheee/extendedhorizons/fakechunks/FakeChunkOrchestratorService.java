@@ -93,6 +93,7 @@ public final class FakeChunkOrchestratorService {
         String worldName = world.getName();
 
         PlayerSession session = this.sessionRegistry.ensureFor(player, false);
+        long sessionEpoch = session.epoch();
         Channel channel = this.channelInjectionService.resolveChannel(player);
 
         if (!this.configContainer.get().fakeChunksEnabledForWorld(worldName)) {
@@ -159,6 +160,7 @@ public final class FakeChunkOrchestratorService {
             loc.getYaw(),
             targetDistance,
             serverDistance,
+            sessionEpoch,
             visibleCandidates
         );
         this.channelInjectionService.executeOnEventLoop(channel, () -> this.processOnNetty(channel, session, snapshot));
@@ -171,7 +173,8 @@ public final class FakeChunkOrchestratorService {
     }
 
     private void processCurrentSnapshot(Channel channel, PlayerSession session, TickSnapshot snapshot) {
-        if (session.closed() || !snapshot.worldId().equals(session.worldId())) {
+        if (session.closed() || !snapshot.worldId().equals(session.worldId())
+            || snapshot.sessionEpoch() != session.epoch()) {
             return;
         }
         session.serverViewDistance(snapshot.serverDistance());
@@ -306,7 +309,7 @@ public final class FakeChunkOrchestratorService {
         }
 
         int base;
-        if (session != null && session.playerOverrideDistance() > 0) {
+        if (session.playerOverrideDistance() > 0) {
             base = session.playerOverrideDistance();
         } else {
             base = worldDistance;
@@ -412,6 +415,7 @@ public final class FakeChunkOrchestratorService {
         float yaw,
         int targetDistance,
         int serverDistance,
+        long sessionEpoch,
         Collection<FarPlayerState> visibleCandidates
     ) {}
 

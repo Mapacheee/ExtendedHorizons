@@ -65,7 +65,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             if (trackingSession != null) {
                 this.captureEntityTracking(ctx, msg, trackingSession);
             }
-            if (trackingSession != null && trackingSession.enabled() && msg instanceof BundlePacket<?> bundle) {
+            if (trackingSession != null && msg instanceof BundlePacket<?> bundle) {
                 List<Packet<?>> filteredPackets = this.filterBundle(bundle);
                 if (filteredPackets != null) {
                     this.writeFilteredBundle(ctx, filteredPackets, promise);
@@ -171,9 +171,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
         if (session == null) {
             return false;
         }
-        if (!session.enabled()) {
-            return false;
-        }
+        boolean fakeChunksEnabled = session.enabled();
         return switch (input) {
             case ClientboundLevelChunkWithLightPacket packet -> {
                 session.serverChunkAdd(packet.getX(), packet.getZ());
@@ -182,9 +180,10 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
             case ClientboundForgetLevelChunkPacket packet -> {
                 ChunkPos pos = packet.pos();
                 try {
-                    yield session.serverChunkRemove(
+                    boolean replacedByFakeChunk = session.serverChunkRemove(
                         (int) CHUNK_POS_X_GETTER.invokeExact(pos),
                         (int) CHUNK_POS_Z_GETTER.invokeExact(pos));
+                    yield fakeChunksEnabled && replacedByFakeChunk;
                 } catch (Throwable e) {
                     yield false;
                 }
@@ -202,6 +201,9 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
                 yield false;
             }
             case ClientboundSetChunkCacheRadiusPacket ignored -> {
+                if (!fakeChunksEnabled) {
+                    yield false;
+                }
                 session.lastAdvertisedDistance(-1);
                 yield true;
             }

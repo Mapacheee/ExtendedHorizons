@@ -59,6 +59,7 @@ public final class PlayerSession {
     private final Set<UUID> trackingBuffer = ConcurrentHashMap.newKeySet();
     private final Set<Integer> usedFarEntityIdBuffer = ConcurrentHashMap.newKeySet();
     private final Set<Integer> serverTrackedEntityIds = ConcurrentHashMap.newKeySet();
+    private final Set<Long> serverLoadedChunks = ConcurrentHashMap.newKeySet();
     private volatile double moveDirX;
     private volatile double moveDirZ;
     private volatile boolean hasMovementDirection;
@@ -337,13 +338,13 @@ public final class PlayerSession {
         this.chunkKey = newKey;
         this.iterationIndex = 0;
 
-        if (!this.enabled || this.chunkStates.length == 0) {
+        if (this.chunkStates.length == 0) {
             return;
         }
 
         int prevX = ChunkKeyCodec.x(previous);
         int prevZ = ChunkKeyCodec.z(previous);
-        if (distanceSquared(prevX, prevZ, chunkX, chunkZ) > this.distance * this.distance) {
+        if (distanceSquared(prevX, prevZ, chunkX, chunkZ) > (long) this.distance * this.distance) {
             for (ChunkState state : this.chunkStates) {
                 if (state.lifecycle() == ChunkLifecycle.EH_LOADED
                     || state.lifecycle() == ChunkLifecycle.EH_SENDING) {
@@ -422,10 +423,14 @@ public final class PlayerSession {
     }
 
     public void serverChunkAdd(int chunkX, int chunkZ) {
+        this.serverLoadedChunks.add(ChunkKeyCodec.pack(chunkX, chunkZ));
         if (this.chunkStates.length == 0 || !this.canStore(chunkX, chunkZ)) {
             return;
         }
         ChunkState state = this.getState(chunkX, chunkZ);
+        if (state.hasCoords() && !state.matches(chunkX, chunkZ)) {
+            state.reset();
+        }
         if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
             this.purgeQueuedChunk(chunkX, chunkZ);
         }
@@ -433,6 +438,7 @@ public final class PlayerSession {
     }
 
     public boolean serverChunkRemove(int chunkX, int chunkZ) {
+        this.serverLoadedChunks.remove(ChunkKeyCodec.pack(chunkX, chunkZ));
         if (this.chunkStates.length == 0) {
             return false;
         }
@@ -440,11 +446,17 @@ public final class PlayerSession {
         int centerZ = ChunkKeyCodec.z(this.chunkKey);
         if (!ChunkPlannerService.isWithinRange(chunkX - centerX, chunkZ - centerZ, this.distance)) {
             if (this.canStore(chunkX, chunkZ, centerX, centerZ)) {
-                this.getState(chunkX, chunkZ).reset();
+                ChunkState state = this.getState(chunkX, chunkZ);
+                if (state.matches(chunkX, chunkZ)) {
+                    state.reset();
+                }
             }
             return false;
         }
         ChunkState state = this.getState(chunkX, chunkZ);
+        if (!state.matches(chunkX, chunkZ)) {
+            return false;
+        }
         ChunkLifecycle lc = state.lifecycle();
         if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_SENDING) {
             return true;
@@ -471,6 +483,13 @@ public final class PlayerSession {
             }
 
             ChunkState state = this.getState(chunkX, chunkZ);
+            if (this.serverLoadedChunks.contains(ChunkKeyCodec.pack(chunkX, chunkZ))) {
+                state.set(chunkX, chunkZ, ChunkLifecycle.SERVER_LOADED);
+                continue;
+            }
+            if (state.hasCoords() && !state.matches(chunkX, chunkZ)) {
+                state.reset();
+            }
             if (state.lifecycle() == ChunkLifecycle.UNLOADED) {
                 state.set(chunkX, chunkZ, ChunkLifecycle.EH_QUEUED);
                 return ChunkKeyCodec.pack(chunkX, chunkZ);
@@ -653,6 +672,7 @@ public final class PlayerSession {
         this.trackingBuffer.clear();
         this.usedFarEntityIdBuffer.clear();
         this.serverTrackedEntityIds.clear();
+        this.serverLoadedChunks.clear();
         this.hasMovementDirection = false;
         this.lastChunkCrossNanos = 0L;
         this.resetBandwidthLimiter();
@@ -683,6 +703,7 @@ public final class PlayerSession {
         this.closed = true;
         this.bumpEpoch();
         this.clearDispatchState();
+        this.serverLoadedChunks.clear();
     }
 
     private void updateLookDirection(double newDirX, double newDirZ) {
@@ -794,7 +815,8 @@ public final class PlayerSession {
         if (this.chunkStates.length == 0 || !this.canStore(chunkX, chunkZ)) {
             return DUMMY_STATE;
         }
-        return this.getState(chunkX, chunkZ);
+        ChunkState state = this.getState(chunkX, chunkZ);
+        return !state.hasCoords() || state.matches(chunkX, chunkZ) ? state : DUMMY_STATE;
     }
 
     private ChunkState getState(int chunkX, int chunkZ) {
@@ -811,16 +833,17 @@ public final class PlayerSession {
     }
 
     private boolean canStore(int chunkX, int chunkZ, int centerX, int centerZ) {
-        return Math.abs(chunkX - centerX) <= this.storageRadius && Math.abs(chunkZ - centerZ) <= this.storageRadius;
+        return Math.abs((long) chunkX - centerX) <= this.storageRadius
+            && Math.abs((long) chunkZ - centerZ) <= this.storageRadius;
     }
 
     private static int calcIndex(int chunkX, int chunkZ, int storageDiameter) {
         return Math.floorMod(chunkX, storageDiameter) * storageDiameter + Math.floorMod(chunkZ, storageDiameter);
     }
 
-    private static int distanceSquared(int x1, int z1, int x2, int z2) {
-        int dx = x1 - x2;
-        int dz = z1 - z2;
+    private static long distanceSquared(int x1, int z1, int x2, int z2) {
+        long dx = (long) x1 - x2;
+        long dz = (long) z1 - z2;
         return dx * dx + dz * dz;
     }
 
@@ -888,6 +911,10 @@ public final class PlayerSession {
 
         public boolean hasCoords() {
             return this.lifecycle != ChunkLifecycle.UNLOADED || this.chunkX != UNSET_COORD || this.chunkZ != UNSET_COORD;
+        }
+
+        private boolean matches(int chunkX, int chunkZ) {
+            return this.chunkX == chunkX && this.chunkZ == chunkZ;
         }
     }
 }

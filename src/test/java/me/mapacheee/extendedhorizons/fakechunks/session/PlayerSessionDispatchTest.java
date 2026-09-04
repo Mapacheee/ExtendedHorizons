@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -136,6 +137,18 @@ class PlayerSessionDispatchTest {
     }
 
     @Test
+    void serverChunksReceivedBeforeInitializationAreNotPlannedAsFake() {
+        PlayerSession session = new PlayerSession(UUID.randomUUID(), UUID.randomUUID());
+        long serverChunkKey = ChunkKeyCodec.pack(0, 0);
+        session.serverChunkAdd(0, 0);
+        session.setChunkPos(0, 0);
+        session.updateDistance(3);
+        session.enabled(true);
+
+        assertNotEquals(serverChunkKey, nextChunk(session));
+    }
+
+    @Test
     void movementClearsServerStateOutsideStorageWindow() {
         PlayerSession session = readySession();
         session.serverChunkAdd(0, 0);
@@ -153,6 +166,18 @@ class PlayerSessionDispatchTest {
             }
         }
         assertTrue(queuedCollidingCoordinate);
+    }
+
+    @Test
+    void movementWhileDisabledClearsServerStateFromPreviousLocation() {
+        PlayerSession session = readySession();
+        session.serverChunkAdd(0, 0);
+        session.enabled(false);
+
+        session.moveTo(13, 0, 0.0f);
+        session.enabled(true);
+
+        assertEquals(ChunkKeyCodec.pack(13, 0), nextChunk(session));
     }
 
     @Test
