@@ -153,10 +153,10 @@ class PlayerSessionDispatchTest {
         PlayerSession session = readySession();
         session.serverChunkAdd(0, 0);
 
-        session.moveTo(3, 0, 0.0f);
-        session.moveTo(6, 0, 0.0f);
-        session.moveTo(9, 0, 0.0f);
-        session.moveTo(10, 0, 0.0f);
+        session.moveTo(3, 0);
+        session.moveTo(6, 0);
+        session.moveTo(9, 0);
+        session.moveTo(10, 0);
 
         boolean queuedCollidingCoordinate = false;
         Long chunkKey;
@@ -174,10 +174,32 @@ class PlayerSessionDispatchTest {
         session.serverChunkAdd(0, 0);
         session.enabled(false);
 
-        session.moveTo(13, 0, 0.0f);
+        session.moveTo(13, 0);
         session.enabled(true);
 
         assertEquals(ChunkKeyCodec.pack(13, 0), nextChunk(session));
+    }
+
+    @Test
+    void movementPrunesNativeChunksFromPreviousClientWindow() {
+        PlayerSession session = readySession();
+        session.serverChunkAdd(0, 0);
+
+        session.moveTo(10, 0);
+        session.enabled(true);
+        session.moveTo(0, 0);
+        session.enabled(true);
+
+        assertEquals(ChunkKeyCodec.pack(0, 0), nextChunk(session));
+    }
+
+    @Test
+    void bandwidthLimiterAllowsPayloadLargerThanBurstCapacity() {
+        PlayerSession session = readySession();
+        session.configureBandwidthLimiter(true, 100L, 100L);
+
+        assertTrue(session.tryConsumeBandwidth(101L));
+        assertFalse(session.tryConsumeBandwidth(1L));
     }
 
     @Test
