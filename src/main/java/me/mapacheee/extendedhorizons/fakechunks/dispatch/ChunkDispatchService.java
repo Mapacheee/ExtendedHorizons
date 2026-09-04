@@ -311,16 +311,10 @@ public final class ChunkDispatchService {
                 removeEntry = true;
                 return true;
             }
-            if (!channel.isWritable()) {
+            if (shouldDeferWrite(channel)) {
                 return false;
             }
             long payloadBytes = payload.readableBytes();
-            try {
-                long beforeUnwritable = channel.bytesBeforeUnwritable();
-                if (beforeUnwritable > 0 && beforeUnwritable < payloadBytes) {
-                    return false;
-                }
-            } catch (AbstractMethodError ignored) {}
             if (!session.tryConsumeBandwidth(payloadBytes)) {
                 return false;
             }
@@ -416,5 +410,9 @@ public final class ChunkDispatchService {
         int centerX = ChunkKeyCodec.x(centerKey);
         int centerZ = ChunkKeyCodec.z(centerKey);
         return ChunkPlannerService.isWithinRange(chunkX - centerX, chunkZ - centerZ, session.distance());
+    }
+
+    static boolean shouldDeferWrite(Channel channel) {
+        return !channel.isWritable();
     }
 }

@@ -212,10 +212,11 @@ public final class PlayerSession {
             return true;
         }
         this.refillBandwidthTokens(System.nanoTime());
-        if (this.bandwidthTokens < bytes) {
+        long requiredTokens = Math.min(bytes, this.bandwidthCapacityBytes);
+        if (this.bandwidthTokens < requiredTokens) {
             return false;
         }
-        this.bandwidthTokens -= bytes;
+        this.bandwidthTokens -= requiredTokens;
         return true;
     }
 
@@ -329,7 +330,7 @@ public final class PlayerSession {
         this.chunkStates = newStates;
     }
 
-    public void moveTo(int chunkX, int chunkZ, float yaw) {
+    public void moveTo(int chunkX, int chunkZ) {
         long newKey = ChunkKeyCodec.pack(chunkX, chunkZ);
         long previous = this.chunkKey;
         if (newKey == previous) {
@@ -337,6 +338,7 @@ public final class PlayerSession {
         }
         this.chunkKey = newKey;
         this.iterationIndex = 0;
+        this.pruneServerLoadedChunks(chunkX, chunkZ);
 
         if (this.chunkStates.length == 0) {
             return;
@@ -366,8 +368,10 @@ public final class PlayerSession {
         this.lastChunkCrossNanos = now;
 
         if (movingFast) {
-            double radians = Math.toRadians(yaw);
-            this.updateLookDirection(-Math.sin(radians), Math.cos(radians));
+            double moveX = (double) chunkX - prevX;
+            double moveZ = (double) chunkZ - prevZ;
+            double length = Math.hypot(moveX, moveZ);
+            this.updateLookDirection(moveX / length, moveZ / length);
         } else if (this.hasMovementDirection) {
             this.hasMovementDirection = false;
             this.chunksInDistance = ChunkPlannerService.radiusIterationList(this.distance);
@@ -486,6 +490,9 @@ public final class PlayerSession {
             if (this.serverLoadedChunks.contains(ChunkKeyCodec.pack(chunkX, chunkZ))) {
                 state.set(chunkX, chunkZ, ChunkLifecycle.SERVER_LOADED);
                 continue;
+            }
+            if (state.lifecycle() == ChunkLifecycle.SERVER_LOADED) {
+                state.reset();
             }
             if (state.hasCoords() && !state.matches(chunkX, chunkZ)) {
                 state.reset();
@@ -798,6 +805,14 @@ public final class PlayerSession {
         if (retryAtNanos < this.nextBuildRetryNanos) {
             this.nextBuildRetryNanos = retryAtNanos;
         }
+    }
+
+    private void pruneServerLoadedChunks(int centerX, int centerZ) {
+        int retentionRadius = this.serverViewDistance + STORAGE_RADIUS_PADDING;
+        this.serverLoadedChunks.removeIf(key ->
+            Math.abs((long) ChunkKeyCodec.x(key) - centerX) > retentionRadius
+                || Math.abs((long) ChunkKeyCodec.z(key) - centerZ) > retentionRadius
+        );
     }
 
     private void clearChunkQueue() {

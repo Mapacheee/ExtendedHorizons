@@ -18,7 +18,7 @@ public final class ChunkPlannerService {
     static {
         for (int radius = 0; radius < RADIUS_ITERATION_LIST.length; radius++) {
             int current = radius;
-            List<Integer> range = IntStream.rangeClosed(-radius, radius).boxed().toList();
+            List<Integer> range = IntStream.rangeClosed(-radius - 1, radius + 1).boxed().toList();
             RADIUS_ITERATION_LIST[radius] = range.stream()
                 .flatMap(x -> range.stream().map(z -> ChunkKeyCodec.pack(x, z)))
                 .filter(key -> isWithinRange(ChunkKeyCodec.x(key), ChunkKeyCodec.z(key), current))

@@ -157,7 +157,6 @@ public final class FakeChunkOrchestratorService {
             player.getUniqueId(),
             chunkX,
             chunkZ,
-            loc.getYaw(),
             targetDistance,
             serverDistance,
             sessionEpoch,
@@ -178,7 +177,7 @@ public final class FakeChunkOrchestratorService {
             return;
         }
         session.serverViewDistance(snapshot.serverDistance());
-        session.moveTo(snapshot.chunkX(), snapshot.chunkZ(), snapshot.yaw());
+        session.moveTo(snapshot.chunkX(), snapshot.chunkZ());
         for (long key : session.drainPendingUnloads()) {
             this.dispatchService.sendUnload(channel, session, key);
         }
@@ -412,7 +411,6 @@ public final class FakeChunkOrchestratorService {
         UUID viewerId,
         int chunkX,
         int chunkZ,
-        float yaw,
         int targetDistance,
         int serverDistance,
         long sessionEpoch,
