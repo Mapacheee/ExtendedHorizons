@@ -61,7 +61,9 @@ public final class PlayerLifecycleListener implements Listener {
     public void onTeleport(PlayerTeleportEvent event) {
         Player player = event.getPlayer();
         this.fakeChunkOrchestratorService.invalidatePermissionCache(player.getUniqueId());
-        PlayerSession session = this.sessionRegistry.ensureFor(player, true);
+        // Teleport events fire before the move and do not reset the client's world.
+        // Respawn packets and the subsequent world change perform dimension resets.
+        PlayerSession session = this.sessionRegistry.ensureFor(player, false);
         this.channelInjectionService.inject(player, session);
     }
 
