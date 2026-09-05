@@ -74,6 +74,34 @@ class AntiXrayProcessorTest {
         return data;
     }
 
+    @Test
+    void expansionToGlobalPaletteUsesRegistryIdsAndRegistryBitWidth() {
+        ByteBuf data = createPaletteData(8, 256);
+        try {
+            // Make local IDs differ from registry IDs to catch incomplete index conversion.
+            ByteBuf input = Unpooled.buffer();
+            try {
+                input.writeByte(8);
+                VarIntUtil.writeVarInt(input, 256);
+                for (int i = 0; i < 256; i++) VarIntUtil.writeVarInt(input, i + 1000);
+                data.skipBytes(1);
+                int size = VarIntUtil.readVarInt(data);
+                for (int i = 0; i < size; i++) VarIntUtil.readVarInt(data);
+                input.writeBytes(data);
+                new AntiXrayProcessor(ReplacementStrategy.STATIC_ZERO,
+                    ReplacementPresets.createStatic(3000), new int[]{1255}, 32768)
+                    .process(input, 0, false);
+                assertEquals(15, input.readUnsignedByte());
+                assertStorage(input, 15, i -> i % 256 == 255 ? 3000 : 1000 + i % 256);
+                assertEquals(((BLOCK_COUNT + 3) / 4) * 8, input.readableBytes());
+            } finally {
+                input.release();
+            }
+        } finally {
+            data.release();
+        }
+    }
+
     private static void assertPalette(ByteBuf data, int expectedSize, ExpectedValue expectedValue) {
         assertEquals(expectedSize, VarIntUtil.readVarInt(data));
         for (int index = 0; index < expectedSize; index++) {

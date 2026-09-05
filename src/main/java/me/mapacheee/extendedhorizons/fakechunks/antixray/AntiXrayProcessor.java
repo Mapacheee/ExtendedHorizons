@@ -189,6 +189,9 @@ public final class AntiXrayProcessor {
             newPaletteBits = java.lang.Math.max(predictedBits, newPaletteBits);
         }
 
+        if (newPaletteBits > 8) {
+            newPaletteBits = MathUtil.ceilLog2(this.stateRegistrySize);
+        }
         return new PaletteExpansion(newPaletteBits, newPalette, obfuscatedPalette, presetPalette);
     }
 
@@ -272,6 +275,11 @@ public final class AntiXrayProcessor {
                     }
                 } else {
                     newValue = value;
+                }
+
+                // Crossing the local-palette limit changes the meaning of every stored value.
+                if (!paletteState.obfuscatedPaletteIsGlobal() && paletteState.newPaletteBits() > 8) {
+                    newValue = paletteState.newPalette()[newValue];
                 }
 
                 if (resize) {
