@@ -19,11 +19,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
+import java.util.Locale;
 
 @ListenerComponent
 public final class CommandInvalidationListener implements Listener {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CommandInvalidationListener.class);
+    static final long MAX_COMMAND_CHUNKS = 4096L;
+    private static final int WORLD_LIMIT = 30_000_000;
 
     private final BulkChunkInvalidationService bulkChunkInvalidationService;
     private final Container<EhConfig> configContainer;
@@ -50,13 +53,17 @@ public final class CommandInvalidationListener implements Listener {
     }
 
     private void handleVanillaCommand(CommandSender sender, String commandLine) {
-        String lowerCmd = commandLine.toLowerCase();
+        String lowerCmd = commandLine.toLowerCase(Locale.ROOT);
         if (!lowerCmd.startsWith("/fill ") && !lowerCmd.startsWith("/clone ")) {
             return;
         }
 
-        String[] args = commandLine.split(" ");
-        if (args.length < 7) {
+        boolean clone = lowerCmd.startsWith("/clone ");
+        if (!sender.hasPermission(clone ? "minecraft.command.clone" : "minecraft.command.fill")) {
+            return;
+        }
+        String[] args = commandLine.trim().split("\\s+");
+        if (args.length < (clone ? 10 : 8)) {
             return;
         }
 
@@ -92,6 +99,17 @@ public final class CommandInvalidationListener implements Listener {
             int minChunkZ = minZ >> 4;
             int maxChunkZ = maxZ >> 4;
 
+            long sourceCount = chunkCount(minX, maxX, minZ, maxZ);
+            int dx = clone ? parseCoordinate(args[7], sourceLoc.getX()) : 0;
+            int dz = clone ? parseCoordinate(args[9], sourceLoc.getZ()) : 0;
+            long dMaxX = (long) dx + maxX - minX;
+            long dMaxZ = (long) dz + maxZ - minZ;
+            long destinationCount = clone ? chunkCount(dx, dMaxX, dz, dMaxZ) : 0;
+            if (sourceCount < 0 || destinationCount < 0
+                || sourceCount + destinationCount > MAX_COMMAND_CHUNKS) {
+                return;
+            }
+
             UUID worldId = world.getUID();
 
             for (int cx = minChunkX; cx <= maxChunkX; cx++) {
@@ -101,17 +119,11 @@ public final class CommandInvalidationListener implements Listener {
                 }
             }
 
-            if (lowerCmd.startsWith("/clone ") && args.length >= 10) {
-                int dx = this.parseCoordinate(args[7], sourceLoc.getX());
-                int dz = this.parseCoordinate(args[9], sourceLoc.getZ());
-
-                int dMaxX = dx + (maxX - minX);
-                int dMaxZ = dz + (maxZ - minZ);
-
+            if (clone) {
                 int dMinChunkX = dx >> 4;
-                int dMaxChunkX = dMaxX >> 4;
+                int dMaxChunkX = (int) (dMaxX >> 4);
                 int dMinChunkZ = dz >> 4;
-                int dMaxChunkZ = dMaxZ >> 4;
+                int dMaxChunkZ = (int) (dMaxZ >> 4);
 
                 for (int cx = dMinChunkX; cx <= dMaxChunkX; cx++) {
                     for (int cz = dMinChunkZ; cz <= dMaxChunkZ; cz++) {
@@ -126,14 +138,20 @@ public final class CommandInvalidationListener implements Listener {
         }
     }
 
-    private int parseCoordinate(String arg, double sourceCoord) throws NumberFormatException {
-        if (arg.startsWith("~") || arg.startsWith("^")) {
-            if (arg.length() == 1) {
-                return (int) Math.floor(sourceCoord);
-            }
-            return (int) Math.floor(sourceCoord + Double.parseDouble(arg.substring(1)));
-        } else {
-            return (int) Math.floor(Double.parseDouble(arg));
+    static long chunkCount(long minX, long maxX, long minZ, long maxZ) {
+        if (minX < -WORLD_LIMIT || minZ < -WORLD_LIMIT || maxX > WORLD_LIMIT
+            || maxZ > WORLD_LIMIT || minX > maxX || minZ > maxZ) return -1;
+        return ((maxX >> 4) - (minX >> 4) + 1) * ((maxZ >> 4) - (minZ >> 4) + 1);
+    }
+
+    static int parseCoordinate(String arg, double sourceCoord) throws NumberFormatException {
+        if (arg.startsWith("^")) throw new NumberFormatException("Local coordinates require command context");
+        double value = arg.startsWith("~")
+            ? sourceCoord + (arg.length() == 1 ? 0 : Double.parseDouble(arg.substring(1)))
+            : Double.parseDouble(arg);
+        if (!Double.isFinite(value) || value < -WORLD_LIMIT || value > WORLD_LIMIT) {
+            throw new NumberFormatException("Coordinate outside world bounds");
         }
+        return (int) Math.floor(value);
     }
 }
