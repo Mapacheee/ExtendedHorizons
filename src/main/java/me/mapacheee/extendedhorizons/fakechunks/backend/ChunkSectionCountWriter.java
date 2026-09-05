@@ -7,14 +7,14 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 
-final class ChunkSectionCountWriter {
+public final class ChunkSectionCountWriter {
 
     private static final MethodHandle GET_NON_EMPTY_BLOCK_COUNT = createGetter("nonEmptyBlockCount");
     private static final MethodHandle GET_FLUID_COUNT = createGetter("fluidCount");
 
     private ChunkSectionCountWriter() {}
 
-    static void write(FriendlyByteBuf out, LevelChunkSection section) {
+    public static void write(FriendlyByteBuf out, LevelChunkSection section) {
         write(out, nonEmptyBlockCount(section), fluidCount(section));
     }
 

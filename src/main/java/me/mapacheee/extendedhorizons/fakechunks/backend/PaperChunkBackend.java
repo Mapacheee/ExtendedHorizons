@@ -99,6 +99,10 @@ public final class PaperChunkBackend implements ChunkBackend {
             return CompletableFuture.completedFuture(null);
         }
         CompletableFuture<ByteBuf> future = new CompletableFuture<>();
+        AntiXrayProcessor diskAntiXray = this.antiXrayService.resolve(world);
+        if (this.configContainer.get().antiXrayEnabled(world.getName()) && diskAntiXray == null) {
+            return CompletableFuture.completedFuture(null);
+        }
         long lightCacheGeneration = this.lightPayloadCacheService.generation();
         Consumer<Chunk> task = createChunkTask(world, chunkX, chunkZ, lightCacheGeneration, future);
 
@@ -146,7 +150,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             && DiskChunkReader.shouldAttemptDirectRead(world, chunkX, chunkZ);
         if (useDiskReader) {
             CompletableFuture<ByteBuf> diskFuture = this.serializationExecutorService.submit(
-                () -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ)
+                () -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ, diskAntiXray)
             );
             cancelWhenParentCancelled(future, diskFuture);
             diskFuture.whenComplete((diskPayload, throwable) -> {
@@ -215,6 +219,10 @@ public final class PaperChunkBackend implements ChunkBackend {
                     return;
                 }
                 AntiXrayProcessor antiXrayProcessor = this.antiXrayService.resolve(world);
+                if (this.configContainer.get().antiXrayEnabled(world.getName()) && antiXrayProcessor == null) {
+                    future.complete(null);
+                    return;
+                }
                 UUID worldId = world.getUID();
                 long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
 
@@ -344,6 +352,19 @@ public final class PaperChunkBackend implements ChunkBackend {
             VarInt.write(buf, PacketIdRegistry.getLevelChunkWithLightId());
             buf.writeInt(chunkX);
             buf.writeInt(chunkZ);
+
+            // Protection is mandatory regardless of serializer preference or light availability.
+            // Any failure escapes to the outer catch; never fall back to unprotected data.
+            if (antiXrayProcessor != null) {
+                this.writeChunkDataWithAntiXray(buf, chunk, antiXrayProcessor);
+                if (hasLight) {
+                    this.writeFastLightWithCache(buf, chunk, worldId, chunkKey, lightCacheGeneration);
+                } else {
+                    FastLightDataWriter.writeSyntheticFullBrightLight(buf, chunk.getSectionsCount(),
+                        level.dimensionType().hasSkyLight());
+                }
+                return raw;
+            }
 
             if (useFast) {
                 int payloadStart = buf.writerIndex();

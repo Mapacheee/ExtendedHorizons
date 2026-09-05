@@ -2,6 +2,8 @@ package me.mapacheee.extendedhorizons.fakechunks.disk;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayProcessor;
+import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkSectionCountWriter;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -40,6 +42,11 @@ public final class DiskChunkSerializer {
             byte[] nbtBytes, ServerLevel level,
             int chunkX, int chunkZ, boolean hasSkyLight
     ) {
+        return serialize(nbtBytes, level, chunkX, chunkZ, hasSkyLight, null);
+    }
+
+    public static ByteBuf serialize(byte[] nbtBytes, ServerLevel level,
+            int chunkX, int chunkZ, boolean hasSkyLight, AntiXrayProcessor antiXray) {
         if (nbtBytes == null || nbtBytes.length < 2) {
             return null;
         }
@@ -56,12 +63,12 @@ public final class DiskChunkSerializer {
             return null;
         }
 
-        return serializeFromTag(rootTag, level, chunkX, chunkZ, hasSkyLight);
+        return serializeFromTag(rootTag, level, chunkX, chunkZ, hasSkyLight, antiXray);
     }
 
     private static ByteBuf serializeFromTag(
             CompoundTag rootTag, ServerLevel level,
-            int chunkX, int chunkZ, boolean hasSkyLight
+            int chunkX, int chunkZ, boolean hasSkyLight, AntiXrayProcessor antiXray
     ) {
         int currentDataVersion = SharedConstants.getCurrentVersion().dataVersion().version();
         if (!isCompatibleChunkTag(rootTag, chunkX, chunkZ, currentDataVersion)) {
@@ -129,7 +136,7 @@ public final class DiskChunkSerializer {
             }
         }
 
-        return writePacket(chunkX, chunkZ, sections, blockLight, skyLight, level);
+        return writePacket(chunkX, chunkZ, sections, blockLight, skyLight, level, antiXray);
     }
 
     static boolean isCompatibleChunkTag(
@@ -159,7 +166,7 @@ public final class DiskChunkSerializer {
             int chunkX, int chunkZ,
             LevelChunkSection[] sections,
             byte[][] blockLight, byte[][] skyLight,
-            ServerLevel level
+            ServerLevel level, AntiXrayProcessor antiXray
     ) {
         ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(MIN_PACKET_SIZE, MAX_PACKET_BUFFER);
         try {
@@ -167,7 +174,11 @@ public final class DiskChunkSerializer {
             raw.writeInt(chunkX);
             raw.writeInt(chunkZ);
             VarInt.write(raw, 0);
-            writeSections(raw, sections);
+            if (antiXray == null) {
+                writeSections(raw, sections);
+            } else {
+                writeProtectedSections(raw, sections, level.getMinSectionY(), antiXray);
+            }
             VarInt.write(raw, 0);
             writeLightData(raw, blockLight, skyLight);
 
@@ -303,6 +314,28 @@ public final class DiskChunkSerializer {
             if (nameOpt.isPresent() && "minecraft:chain".equals(nameOpt.get())) {
                 entry.putString("Name", "minecraft:iron_chain");
             }
+        }
+    }
+
+    static void writeProtectedSections(ByteBuf raw, LevelChunkSection[] sections, int minSectionY,
+                                       AntiXrayProcessor antiXray) {
+        ByteBuf data = PooledByteBufAllocator.DEFAULT.buffer(4096, MAX_PACKET_BUFFER);
+        try {
+            FriendlyByteBuf out = new FriendlyByteBuf(data);
+            for (int i = 0; i < sections.length; i++) {
+                LevelChunkSection section = sections[i];
+                ChunkSectionCountWriter.write(out, section);
+                int statesStart = out.writerIndex();
+                section.getStates().write(out, null, 0);
+                out.readerIndex(statesStart);
+                antiXray.process(out, minSectionY + i, false);
+                out.readerIndex(0);
+                section.getBiomes().write(out, null, 0);
+            }
+            VarInt.write(raw, data.readableBytes());
+            raw.writeBytes(data, data.readerIndex(), data.readableBytes());
+        } finally {
+            data.release();
         }
     }
 

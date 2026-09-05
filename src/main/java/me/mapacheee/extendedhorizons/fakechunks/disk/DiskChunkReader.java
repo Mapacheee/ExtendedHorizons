@@ -1,6 +1,7 @@
 package me.mapacheee.extendedhorizons.fakechunks.disk;
 
 import io.netty.buffer.ByteBuf;
+import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayProcessor;
 import me.mapacheee.lib.caffeine.cache.Cache;
 import me.mapacheee.lib.caffeine.cache.Caffeine;
 import net.minecraft.server.level.ServerLevel;
@@ -58,6 +59,10 @@ public final class DiskChunkReader {
      *         The caller is responsible for releasing the returned ByteBuf.
      */
     public static ByteBuf readAndSerialize(World world, int chunkX, int chunkZ) {
+        return readAndSerialize(world, chunkX, chunkZ, null);
+    }
+
+    public static ByteBuf readAndSerialize(World world, int chunkX, int chunkZ, AntiXrayProcessor antiXray) {
         if (world == null) {
             LOGGER.warn("Cannot read chunk [{}, {}]: world is null", chunkX, chunkZ);
             return null;
@@ -82,7 +87,7 @@ public final class DiskChunkReader {
         }
 
         try {
-            return readAndSerializeInternal(world, chunkX, chunkZ, worldFolder);
+            return readAndSerializeInternal(world, chunkX, chunkZ, worldFolder, antiXray);
         } finally {
             if (swapped) {
                 currentThread.setContextClassLoader(originalClassLoader);
@@ -90,7 +95,8 @@ public final class DiskChunkReader {
         }
     }
 
-    private static ByteBuf readAndSerializeInternal(World world, int chunkX, int chunkZ, File worldFolder) {
+    private static ByteBuf readAndSerializeInternal(World world, int chunkX, int chunkZ, File worldFolder,
+                                                   AntiXrayProcessor antiXray) {
         byte[] nbtBytes = RegionFileReader.readChunkBytes(worldFolder, chunkX, chunkZ);
         if (nbtBytes == null) {
             LOGGER.debug("Chunk [{}, {}] not found on disk for world '{}'",
@@ -101,7 +107,7 @@ public final class DiskChunkReader {
         ServerLevel level = ((CraftWorld) world).getHandle();
         boolean hasSky = level.dimensionType().hasSkyLight();
 
-        ByteBuf packet = DiskChunkSerializer.serialize(nbtBytes, level, chunkX, chunkZ, hasSky);
+        ByteBuf packet = DiskChunkSerializer.serialize(nbtBytes, level, chunkX, chunkZ, hasSky, antiXray);
         if (packet == null) {
             if (markRegionIncompatible(world.getUID(), chunkX, chunkZ)) {
                 LOGGER.debug(
