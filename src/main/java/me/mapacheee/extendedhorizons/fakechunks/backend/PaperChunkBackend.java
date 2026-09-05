@@ -226,9 +226,9 @@ public final class PaperChunkBackend implements ChunkBackend {
                 UUID worldId = world.getUID();
                 long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
 
-                boolean offloadSerialization = useAsyncSerialization && antiXrayProcessor == null;
                 CompletableFuture<ByteBuf> serializationFuture;
-                if (antiXrayProcessor != null && useAsyncSerialization) {
+                if (useAsyncSerialization && (antiXrayProcessor != null
+                    || this.configContainer.get().serializerMode() == EhConfig.SerializerMode.FAST)) {
                     long snapshotStart = System.nanoTime();
                     AntiXrayChunkSnapshot snapshot = this.captureAntiXraySnapshot(
                         resolvedChunk,
@@ -237,7 +237,9 @@ public final class PaperChunkBackend implements ChunkBackend {
                         chunkKey,
                         lightCacheGeneration
                     );
-                    this.metricsService.recordAntiXraySnapshot(System.nanoTime() - snapshotStart);
+                    if (antiXrayProcessor != null) {
+                        this.metricsService.recordAntiXraySnapshot(System.nanoTime() - snapshotStart);
+                    }
                     if (snapshot == null) {
                         ByteBuf fallback = this.serializeLevelChunkWithLight(
                             level,
@@ -255,26 +257,17 @@ public final class PaperChunkBackend implements ChunkBackend {
                     serializationFuture = this.serializationExecutorService.submit(() -> {
                         long asyncStart = System.nanoTime();
                         ByteBuf payload = this.serializeAntiXraySnapshot(chunkX, chunkZ, snapshot);
-                        this.metricsService.recordAntiXrayAsync(System.nanoTime() - asyncStart);
-                        if (payload == null) {
+                        if (antiXrayProcessor != null) {
+                            this.metricsService.recordAntiXrayAsync(System.nanoTime() - asyncStart);
+                        }
+                        if (payload == null && antiXrayProcessor != null) {
                             this.metricsService.recordAntiXrayFallback();
                         }
                         return payload;
                     }, snapshot::release);
-                } else if (offloadSerialization) {
-                    serializationFuture = this.serializationExecutorService.submit(
-                        () -> this.serializeLevelChunkWithLight(
-                            level,
-                            resolvedChunk,
-                            chunkX,
-                            chunkZ,
-                            worldId,
-                            chunkKey,
-                            lightCacheGeneration,
-                            null
-                        )
-                    );
                 } else {
+                    // Vanilla reads block entities and other live state. Keep it in the owning
+                    // region; FAST workers only receive the detached buffers captured above.
                     ByteBuf packetData = this.serializeLevelChunkWithLight(
                         level,
                         resolvedChunk,
@@ -677,7 +670,9 @@ public final class PaperChunkBackend implements ChunkBackend {
                 ByteBuf states = section.states().retainedDuplicate();
                 try {
                     int preReader = states.readerIndex();
-                    snapshot.antiXrayProcessor().process(states, section.sectionY(), false);
+                    if (snapshot.antiXrayProcessor() != null) {
+                        snapshot.antiXrayProcessor().process(states, section.sectionY(), false);
+                    }
                     states.readerIndex(preReader);
                     sectionOut.writeBytes(states, states.readerIndex(), states.readableBytes());
                 } finally {
