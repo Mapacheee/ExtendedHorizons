@@ -17,6 +17,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PlayerSessionDispatchTest {
 
     @Test
+    void dimensionResetDiscardsFarEntitiesAndOldWorldUnloads() {
+        PlayerSession session = readySession();
+        session.trackedFarPlayers().put(UUID.randomUUID(), 1_000_000_001);
+        long key = nextChunk(session);
+        long attempt = session.beginChunkSend(key);
+        session.onChunkSent(key, attempt);
+        session.moveTo(1000, 1000);
+        session.handleDimensionReset();
+        assertTrue(session.trackedFarPlayers().isEmpty());
+        assertTrue(session.drainPendingUnloads().isEmpty());
+    }
+
+    @Test
     void chunkBecomesLoadedOnlyAfterWriteSuccess() {
         PlayerSession session = readySession();
         long chunkKey = nextChunk(session);

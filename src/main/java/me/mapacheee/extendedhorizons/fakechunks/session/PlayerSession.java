@@ -692,6 +692,8 @@ public final class PlayerSession {
     public void clearDispatchState() {
         this.enabled = false;
         this.clearChunkQueue();
+        this.trackedFarPlayers.clear();
+        this.pendingUnloads.clear();
         this.trackingBuffer.clear();
         this.usedFarEntityIdBuffer.clear();
         this.serverTrackedEntityIds.clear();
