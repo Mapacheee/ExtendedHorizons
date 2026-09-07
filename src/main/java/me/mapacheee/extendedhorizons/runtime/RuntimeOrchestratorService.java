@@ -34,9 +34,6 @@ import com.mojang.datafixers.util.Pair;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public final class RuntimeOrchestratorService {
@@ -59,7 +56,6 @@ public final class RuntimeOrchestratorService {
     private final LightPayloadCacheService lightPayloadCacheService;
     private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
 
-    private final Map<UUID, List<Pair<EquipmentSlot, ItemStack>>> lastEquipment = new ConcurrentHashMap<>();
     private final List<Player> playerBuffer = new ArrayList<>();
 
     private volatile ScheduledTask runtimeTask;
@@ -102,6 +98,7 @@ public final class RuntimeOrchestratorService {
     @OnDisable
     public void onDisable() {
         this.cancelTask();
+        this.playerBuffer.clear();
     }
 
     private void runtimeTick() {
@@ -146,8 +143,8 @@ public final class RuntimeOrchestratorService {
                         }
                         List<Pair<EquipmentSlot, ItemStack>> equipment;
 
-                        if (pollEquipment) {
-                            List<Pair<EquipmentSlot, ItemStack>> prevEquipment = this.lastEquipment.get(player.getUniqueId());
+                        if (pollEquipment || oldState == null) {
+                            List<Pair<EquipmentSlot, ItemStack>> prevEquipment = oldState == null ? null : oldState.equipment();
                             boolean changed = prevEquipment == null || prevEquipment.size() != EQUIPMENT_SLOT_COUNT;
                             if (!changed) {
                                 for (int i = 0; i < EQUIPMENT_SLOT_COUNT; i++) {
@@ -165,17 +162,17 @@ public final class RuntimeOrchestratorService {
                                     ItemStack item = nmsPlayer.getItemBySlot(slot);
                                     equipment.add(Pair.of(slot, item.copy()));
                                 }
-                                this.lastEquipment.put(player.getUniqueId(), new ArrayList<>(equipment));
-                                this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
                             } else {
                                 equipment = prevEquipment;
                             }
                         } else {
-                            equipment = this.farPlayerCacheService.getEquipment(player.getUniqueId());
+                            equipment = oldState.equipment();
                             if (equipment == null) {
                                 equipment = Collections.emptyList();
                             }
                         }
+
+                        this.farPlayerCacheService.updateEquipment(player.getUniqueId(), equipment);
 
                         ClientboundPlayerInfoUpdatePacket.Entry playerInfo = oldState == null || oldState.playerInfo() == null
                             ? ClientboundPlayerInfoUpdatePacket.createSinglePlayerInitializing(nmsPlayer, false)

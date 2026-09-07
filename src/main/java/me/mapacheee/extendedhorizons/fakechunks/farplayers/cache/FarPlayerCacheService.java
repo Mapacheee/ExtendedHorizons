@@ -4,6 +4,7 @@ import com.google.inject.Inject;
 import com.mojang.datafixers.util.Pair;
 import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.annotation.Service;
+import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
@@ -120,6 +121,15 @@ public final class FarPlayerCacheService {
         UUID worldId = this.playerLastWorld.remove(playerId);
         Long regionKey = this.playerLastRegion.remove(playerId);
         removeFromSpatialIndex(playerId, worldId, regionKey);
+    }
+
+    @OnDisable
+    public void onDisable() {
+        this.statesCache.invalidateAll();
+        this.equipmentCache.invalidateAll();
+        this.spatialIndex.clear();
+        this.playerLastRegion.clear();
+        this.playerLastWorld.clear();
     }
 
     public Collection<FarPlayerState> getNearbyPlayers(UUID worldId, int chunkX, int chunkZ, int radiusChunks) {
