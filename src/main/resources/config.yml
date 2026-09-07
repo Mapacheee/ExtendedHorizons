@@ -23,7 +23,9 @@ fake-chunks:
   serializer-mode: FAST
 
   # Number of serializer workers.
-  # 0 = inline, 1-16 = async pool threads (used for non anti-xray serialization).
+  # 0 = serialize live chunks in their owning region; 1-16 = snapshot worker pool.
+  # Disk reads always use a bounded worker pool (at least one thread), including with 0.
+  # VANILLA serialization stays in the owning region; FAST and anti-xray can use snapshots.
   serialization-workers: 1
 
   bandwidth:

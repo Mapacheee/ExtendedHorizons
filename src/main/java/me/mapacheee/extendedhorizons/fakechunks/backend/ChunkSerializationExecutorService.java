@@ -57,6 +57,15 @@ public final class ChunkSerializationExecutorService {
      * The discard action releases resources captured by a task that never starts.
      */
     public CompletableFuture<ByteBuf> submit(Supplier<ByteBuf> supplier, Runnable discardAction) {
+        return this.submit(supplier, discardAction, false);
+    }
+
+    /** Disk reads and decompression must never run on a network/region caller. */
+    public CompletableFuture<ByteBuf> submitIo(Supplier<ByteBuf> supplier) {
+        return this.submit(supplier, NOOP, true);
+    }
+
+    private CompletableFuture<ByteBuf> submit(Supplier<ByteBuf> supplier, Runnable discardAction, boolean forceAsync) {
         if (supplier == null) {
             return CompletableFuture.completedFuture(null);
         }
@@ -68,7 +77,7 @@ public final class ChunkSerializationExecutorService {
         if (current == null) {
             return cancelledFuture(cleanup);
         }
-        return current.submit(supplier, cleanup);
+        return current.submit(supplier, cleanup, forceAsync);
     }
 
     public void rebuild() {
@@ -140,17 +149,15 @@ public final class ChunkSerializationExecutorService {
     private final class ExecutorGeneration {
 
         private final ThreadPoolExecutor executor;
+        private final boolean inlineSerialization;
         private final int queueCapacity;
         private final Set<TrackedTask> tasks = new HashSet<>();
         private volatile boolean active = true;
         private boolean closed;
 
         private ExecutorGeneration(int workers) {
-            if (workers <= 0) {
-                this.executor = null;
-                this.queueCapacity = 0;
-                return;
-            }
+            this.inlineSerialization = workers <= 0;
+            workers = Math.max(1, workers);
             this.queueCapacity = workers * MAX_QUEUED_PER_WORKER;
             this.executor = new ThreadPoolExecutor(
                 workers,
@@ -163,7 +170,7 @@ public final class ChunkSerializationExecutorService {
             );
         }
 
-        private CompletableFuture<ByteBuf> submit(Supplier<ByteBuf> supplier, Runnable cleanup) {
+        private CompletableFuture<ByteBuf> submit(Supplier<ByteBuf> supplier, Runnable cleanup, boolean forceAsync) {
             TrackedTask task = new TrackedTask(this, supplier, cleanup);
             boolean runOnCaller = false;
             synchronized (this) {
@@ -172,7 +179,7 @@ public final class ChunkSerializationExecutorService {
                     return task.future();
                 }
                 this.tasks.add(task);
-                if (this.executor == null) {
+                if (this.inlineSerialization && !forceAsync) {
                     runOnCaller = true;
                 } else {
                     try {
@@ -205,22 +212,18 @@ public final class ChunkSerializationExecutorService {
                 }
                 this.closed = true;
                 this.active = false;
-                if (this.executor != null) {
-                    this.executor.shutdownNow();
-                }
+                this.executor.shutdownNow();
                 accepted = new ArrayList<>(this.tasks);
             }
             for (TrackedTask task : accepted) {
                 task.cancel();
             }
-            if (this.executor != null) {
-                try {
-                    if (!this.executor.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
-                        LOGGER.warn("Chunk serialization workers did not stop within {} seconds", SHUTDOWN_WAIT_SECONDS);
-                    }
-                } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
+            try {
+                if (!this.executor.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
+                    LOGGER.warn("Chunk serialization workers did not stop within {} seconds", SHUTDOWN_WAIT_SECONDS);
                 }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
             }
         }
 
@@ -233,9 +236,7 @@ public final class ChunkSerializationExecutorService {
         }
 
         private synchronized void cancelBeforeStart(TrackedTask task) {
-            if (this.executor != null) {
-                this.executor.remove(task);
-            }
+            this.executor.remove(task);
             this.tasks.remove(task);
         }
     }

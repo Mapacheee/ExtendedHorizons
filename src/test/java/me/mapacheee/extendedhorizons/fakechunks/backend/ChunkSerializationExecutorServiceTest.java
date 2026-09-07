@@ -23,6 +23,52 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ChunkSerializationExecutorServiceTest {
 
     @Test
+    void diskIoWithZeroWorkersNeverRunsOnCallerEvenWhenQueueIsFull() throws Exception {
+        ChunkSerializationExecutorService service = new ChunkSerializationExecutorService(
+            TestContainers.containing(configWithWorkers(0))
+        );
+        Thread caller = Thread.currentThread();
+        CountDownLatch running = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        AtomicReference<Thread> ioThread = new AtomicReference<>();
+        AtomicBoolean overflowRan = new AtomicBoolean();
+        try {
+            CompletableFuture<ByteBuf> first = service.submitIo(() -> {
+                ioThread.set(Thread.currentThread());
+                running.countDown();
+                awaitIgnoringInterrupts(finish);
+                return null;
+            });
+            assertTrue(running.await(5, TimeUnit.SECONDS));
+            assertFalse(ioThread.get() == caller);
+            List<CompletableFuture<ByteBuf>> queued = new ArrayList<>();
+            for (int i = 0; i < 8; i++) queued.add(service.submitIo(() -> null));
+            assertTrue(service.submitIo(() -> {
+                overflowRan.set(true);
+                return null;
+            }).isCancelled());
+            assertFalse(overflowRan.get());
+            finish.countDown();
+            first.get(5, TimeUnit.SECONDS);
+            for (var task : queued) task.get(5, TimeUnit.SECONDS);
+            service.rebuild();
+            service.submitIo(() -> {
+                ioThread.set(Thread.currentThread());
+                return null;
+            }).get(5, TimeUnit.SECONDS);
+            assertFalse(ioThread.get() == caller);
+        } finally {
+            finish.countDown();
+            service.onDisable();
+        }
+        assertTrue(service.submitIo(() -> {
+            overflowRan.set(true);
+            return null;
+        }).isCancelled());
+        assertFalse(overflowRan.get());
+    }
+
+    @Test
     void rebuildLeavesWorkerGenerationEnabled() throws Exception {
         ChunkSerializationExecutorService service = new ChunkSerializationExecutorService(
             TestContainers.containing(configWithWorkers(1))

@@ -149,7 +149,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             && !chunkLoaded
             && DiskChunkReader.shouldAttemptDirectRead(world, chunkX, chunkZ);
         if (useDiskReader) {
-            CompletableFuture<ByteBuf> diskFuture = this.serializationExecutorService.submit(
+            CompletableFuture<ByteBuf> diskFuture = this.serializationExecutorService.submitIo(
                 () -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ, diskAntiXray)
             );
             cancelWhenParentCancelled(future, diskFuture);
