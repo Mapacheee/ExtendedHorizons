@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.fakechunks.session;
 
+import it.unimi.dsi.fastutil.ints.IntArrays;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkSendQueueEntry;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
@@ -766,16 +767,12 @@ public final class PlayerSession {
             }
         }
 
-        for (int i = 1; i < len; i++) {
-            int current = indices[i];
-            double currentKey = keys[current];
-            int j = i - 1;
-            while (j >= 0 && keys[indices[j]] > currentKey) {
-                indices[j + 1] = indices[j];
-                j--;
-            }
-            indices[j + 1] = current;
-        }
+        // Merge sort bounds direction changes to O(n log n), including worst-case input.
+        // Original indices preserve the planner's tie order without boxing every chunk.
+        IntArrays.mergeSort(indices, (left, right) -> {
+            int order = Double.compare(keys[left], keys[right]);
+            return order != 0 ? order : Integer.compare(left, right);
+        });
 
         long[] sorted = new long[len];
         for (int i = 0; i < len; i++) {
