@@ -36,6 +36,7 @@ public final class BulkChunkInvalidationService {
     private final PendingChunkInvalidations pendingInvalidations = new PendingChunkInvalidations();
 
     private volatile ScheduledTask processorTask;
+    private int refreshTicks;
 
     @Inject
     public BulkChunkInvalidationService(
@@ -84,6 +85,10 @@ public final class BulkChunkInvalidationService {
     }
 
     private void processPending() {
+        if (++this.refreshTicks >= 20) {
+            this.refreshTicks = 0;
+            this.queuePeriodicRefreshes();
+        }
         for (Map.Entry<UUID, List<Long>> entry : this.pendingInvalidations
             .drain(System.nanoTime(), MAX_INVALIDATIONS_PER_TICK).entrySet()) {
             UUID worldId = entry.getKey();
@@ -120,6 +125,23 @@ public final class BulkChunkInvalidationService {
             });
         }
 
+    }
+
+    private void queuePeriodicRefreshes() {
+        this.sessionRegistry.forEachSession(session -> {
+            if (!session.enabled() || session.closed()) return;
+            UUID worldId = session.worldId();
+            long epoch = session.epoch();
+            Player player = Bukkit.getPlayer(session.playerId());
+            if (player == null) return;
+            Channel channel = this.channelInjectionService.resolveChannel(player);
+            if (channel == null || !channel.isActive()) return;
+            this.channelInjectionService.executeForSession(channel, session, worldId, epoch, () -> {
+                if (!session.enabled()) return;
+                Long key = session.pollChunkForRefresh(System.nanoTime());
+                if (key != null) this.queueInvalidation(worldId, key);
+            });
+        });
     }
 }
 

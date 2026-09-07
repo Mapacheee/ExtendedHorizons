@@ -17,6 +17,36 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PlayerSessionDispatchTest {
 
     @Test
+    void periodicRefreshRevisitsStationaryChunksWithoutRefreshingNewPayloads() {
+        PlayerSession session = readySession();
+        long key = nextChunk(session);
+        session.onChunkSent(key, session.beginChunkSend(key));
+        long now = System.nanoTime();
+        for (int i = 0; i < 100; i++) {
+            assertEquals(null, session.pollChunkForRefresh(now));
+        }
+        Long selected = null;
+        for (int i = 0; i < 100 && selected == null; i++) {
+            selected = session.pollChunkForRefresh(now + 31_000_000_000L);
+        }
+        assertEquals(Long.valueOf(key), selected);
+        assertTrue(session.invalidateChunk(selected));
+        assertFalse(session.isEhLoaded(key));
+        assertTrue(session.hasPendingChunkWork());
+    }
+
+    @Test
+    void periodicRefreshDiscardsOldDimensionState() {
+        PlayerSession session = readySession();
+        long key = nextChunk(session);
+        session.onChunkSent(key, session.beginChunkSend(key));
+        session.handleDimensionReset();
+        for (int i = 0; i < 100; i++) {
+            assertEquals(null, session.pollChunkForRefresh(System.nanoTime() + 31_000_000_000L));
+        }
+    }
+
+    @Test
     void dimensionResetDiscardsFarEntitiesAndOldWorldUnloads() {
         PlayerSession session = readySession();
         session.trackedFarPlayers().put(UUID.randomUUID(), 1_000_000_001);

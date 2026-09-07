@@ -8,6 +8,14 @@
 ExtendedHorizons is a high-performance view-distance extension plugin for modern Paper/Folia servers.  
 It renders distant terrain using optimized fake chunks and optional far-player sync, so players can see farther than vanilla without the usual server overhead.
 
+Distant terrain is refreshed from complete snapshots, including lighting and configured anti-xray.
+Block edits, explosions, pistons, fluids and growth queue a rebuild of the affected chunk and its light neighbors,
+coalesced after 100 ms without further edits. Up to 256 chunk invalidations are processed per tick.
+For changes made without Bukkit events, each player's session also checks up to 64 stored chunk slots per second
+and selects at most one snapshot older than 30 seconds for refresh. This is a gradual sweep, not a promise that
+every distant chunk updates within 30 seconds; larger distances and send budgets increase the delay.
+Plugins making bulk changes can request prompt updates through `BulkChunkInvalidationService.queueInvalidationBatch`.
+
 ---
 ## Dependencies
 

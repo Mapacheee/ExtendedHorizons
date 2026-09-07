@@ -38,6 +38,7 @@ public final class PlayerSession {
     private volatile int storageRadius;
     private volatile int storageDiameter;
     private volatile int iterationIndex;
+    private int refreshIndex;
     private volatile long nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
     private volatile int trackingTicker = 0;
     private volatile boolean enabled;
@@ -549,6 +550,21 @@ public final class PlayerSession {
         }
     }
 
+    /** Called on the channel event loop once per second; work is bounded even at large radii. */
+    public Long pollChunkForRefresh(long nowNanos) {
+        ChunkState[] states = this.chunkStates;
+        int scans = Math.min(64, states.length);
+        for (int i = 0; i < scans; i++) {
+            if (this.refreshIndex >= states.length) this.refreshIndex = 0;
+            ChunkState state = states[this.refreshIndex++];
+            if (state.lifecycle() == ChunkLifecycle.EH_LOADED
+                && nowNanos - state.loadedAtNanos >= 30_000_000_000L) {
+                return ChunkKeyCodec.pack(state.chunkX(), state.chunkZ());
+            }
+        }
+        return null;
+    }
+
     public void onChunkSendFailed(long chunkKey, long sendAttempt) {
         ChunkState state = this.getStateByKey(chunkKey);
         synchronized (state) {
@@ -879,6 +895,7 @@ public final class PlayerSession {
         private volatile int chunkZ;
         private volatile ChunkLifecycle lifecycle = ChunkLifecycle.UNLOADED;
         private volatile long failedAtNanos;
+        private volatile long loadedAtNanos;
         private volatile long sendAttempt;
 
         public int chunkX() {
@@ -905,6 +922,7 @@ public final class PlayerSession {
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
             this.lifecycle = lifecycle;
+            this.loadedAtNanos = lifecycle == ChunkLifecycle.EH_LOADED ? System.nanoTime() : 0L;
             this.sendAttempt = 0L;
         }
 

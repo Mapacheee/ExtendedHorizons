@@ -2,109 +2,111 @@ package me.mapacheee.extendedhorizons.fakechunks.listener;
 
 import com.google.inject.Inject;
 import com.thewinterframework.paper.listener.ListenerComponent;
-import io.netty.channel.Channel;
-import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
-import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
-import net.minecraft.core.BlockPos;
-import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
-import net.minecraft.world.level.block.state.BlockState;
-import org.bukkit.Bukkit;
-import org.bukkit.Material;
+import me.mapacheee.extendedhorizons.hooks.worldedit.BulkChunkInvalidationService;
 import org.bukkit.block.Block;
-import org.bukkit.block.data.BlockData;
-import org.bukkit.craftbukkit.block.data.CraftBlockData;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
-
-import java.util.UUID;
+import org.bukkit.event.block.*;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.world.StructureGrowEvent;
 
 @ListenerComponent
 public final class ChunkInvalidationListener implements Listener {
-
-    private static final int CHUNK_SHIFT = 4;
-
-    private final ChunkBuildCacheService chunkBuildCacheService;
-    private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
-    private final LightPayloadCacheService lightPayloadCacheService;
-    private final SessionRegistry sessionRegistry;
-    private final ChannelInjectionService channelInjectionService;
+    private final BulkChunkInvalidationService invalidations;
 
     @Inject
-    public ChunkInvalidationListener(
-        ChunkBuildCacheService chunkBuildCacheService,
-        AntiXrayPayloadCacheService antiXrayPayloadCacheService,
-        LightPayloadCacheService lightPayloadCacheService,
-        SessionRegistry sessionRegistry,
-        ChannelInjectionService channelInjectionService
-    ) {
-        this.chunkBuildCacheService = chunkBuildCacheService;
-        this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
-        this.lightPayloadCacheService = lightPayloadCacheService;
-        this.sessionRegistry = sessionRegistry;
-        this.channelInjectionService = channelInjectionService;
+    public ChunkInvalidationListener(BulkChunkInvalidationService invalidations) {
+        this.invalidations = invalidations;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onBreak(BlockBreakEvent event) {
-        Block block = event.getBlock();
-        this.invalidateCaches(block);
-        this.broadcastBlockChange(block, Material.AIR.createBlockData());
-    }
+    public void onBreak(BlockBreakEvent event) { invalidate(event.getBlock()); }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
-        Block placed = event.getBlockPlaced();
-        this.invalidateCaches(placed);
-        this.broadcastBlockChange(placed, placed.getBlockData());
+        invalidate(event.getBlockPlaced());
+        if (event instanceof BlockMultiPlaceEvent multi) {
+            multi.getReplacedBlockStates().forEach(state -> invalidate(state.getBlock()));
+        }
     }
 
-    private void invalidateCaches(Block block) {
-        int chunkX = block.getX() >> CHUNK_SHIFT;
-        int chunkZ = block.getZ() >> CHUNK_SHIFT;
-        long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
-        UUID worldId = block.getWorld().getUID();
-        this.chunkBuildCacheService.invalidate(worldId, chunkKey);
-        this.antiXrayPayloadCacheService.invalidateChunk(worldId, chunkKey);
-        this.lightPayloadCacheService.invalidate(worldId, chunkKey);
-        this.sessionRegistry.forEachSession(session -> {
-            if (worldId.equals(session.worldId())) {
-                session.invalidatePendingChunk(chunkKey);
-            }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityExplosion(EntityExplodeEvent event) { event.blockList().forEach(this::invalidate); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockExplosion(BlockExplodeEvent event) {
+        invalidate(event.getBlock());
+        event.blockList().forEach(this::invalidate);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPistonExtend(BlockPistonExtendEvent event) {
+        invalidate(event.getBlock());
+        event.getBlocks().forEach(block -> {
+            invalidate(block);
+            invalidate(block.getRelative(event.getDirection()));
         });
     }
 
-    private void broadcastBlockChange(Block block, BlockData blockData) {
-        UUID worldId = block.getWorld().getUID();
-        int chunkX = block.getX() >> CHUNK_SHIFT;
-        int chunkZ = block.getZ() >> CHUNK_SHIFT;
-        long chunkKey = ChunkKeyCodec.pack(chunkX, chunkZ);
-
-        BlockPos pos = new BlockPos(block.getX(), block.getY(), block.getZ());
-        BlockState nmsState = ((CraftBlockData) blockData).getState();
-        ClientboundBlockUpdatePacket packet = new ClientboundBlockUpdatePacket(pos, nmsState);
-
-        this.sessionRegistry.forEachSession(session -> {
-            if (!worldId.equals(session.worldId())) {
-                return;
-            }
-            if (session.shouldReceiveBlockUpdate(chunkKey)) {
-                Player player = Bukkit.getPlayer(session.playerId());
-                if (player != null) {
-                    Channel channel = this.channelInjectionService.resolveChannel(player);
-                    if (channel != null && channel.isActive()) {
-                        this.channelInjectionService.writeBypass(channel, packet);
-                        this.channelInjectionService.flush(channel);
-                    }
-                }
-            }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPistonRetract(BlockPistonRetractEvent event) {
+        invalidate(event.getBlock());
+        event.getBlocks().forEach(block -> {
+            invalidate(block);
+            invalidate(block.getRelative(event.getDirection()));
         });
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onFlow(BlockFromToEvent event) {
+        invalidate(event.getBlock());
+        invalidate(event.getToBlock());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBurn(BlockBurnEvent event) { invalidate(event.getBlock()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onGrow(BlockGrowEvent event) { invalidate(event.getBlock()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onForm(BlockFormEvent event) { invalidate(event.getBlock()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onSpread(BlockSpreadEvent event) { invalidate(event.getBlock()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onFade(BlockFadeEvent event) { invalidate(event.getBlock()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onDecay(LeavesDecayEvent event) { invalidate(event.getBlock()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityChange(EntityChangeBlockEvent event) { invalidate(event.getBlock()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onStructureGrow(StructureGrowEvent event) {
+        event.getBlocks().forEach(state -> invalidate(state.getBlock()));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onFertilize(BlockFertilizeEvent event) {
+        event.getBlocks().forEach(state -> invalidate(state.getBlock()));
+    }
+
+    private void invalidate(Block block) {
+        // Read the final snapshot after the event, including light and anti-xray.
+        // Light changes can cross any of the chunk's four edges and corners.
+        int x = block.getX() >> 4;
+        int z = block.getZ() >> 4;
+        var worldId = block.getWorld().getUID();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                invalidations.queueInvalidation(worldId, ChunkKeyCodec.pack(x + dx, z + dz));
+            }
+        }
     }
 }
