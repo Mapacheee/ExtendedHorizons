@@ -40,8 +40,6 @@ public final class BulkChunkInvalidationService {
     private final ConcurrentHashMap<UUID, Set<Long>> pendingInvalidations = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, Long> cooldownMap = new ConcurrentHashMap<>();
 
-    private final List<Long> unloadBuffer = new ArrayList<>();
-
     private volatile ScheduledTask processorTask;
 
     @Inject
@@ -136,16 +134,7 @@ public final class BulkChunkInvalidationService {
                 if (!worldId.equals(session.worldId())) {
                     return;
                 }
-                this.unloadBuffer.clear();
-                for (int i = 0; i < count; i++) {
-                    boolean wasLoaded = session.invalidateChunk(keyArray[i]);
-                    if (wasLoaded) {
-                        this.unloadBuffer.add(keyArray[i]);
-                    }
-                }
-                if (this.unloadBuffer.isEmpty()) {
-                    return;
-                }
+                long epoch = session.epoch();
                 Player player = Bukkit.getPlayer(session.playerId());
                 if (player == null) {
                     return;
@@ -154,14 +143,14 @@ public final class BulkChunkInvalidationService {
                 if (channel == null || !channel.isActive()) {
                     return;
                 }
-                long[] toUnload = new long[this.unloadBuffer.size()];
-                for (int i = 0; i < toUnload.length; i++) {
-                    toUnload[i] = this.unloadBuffer.get(i);
-                }
-                this.channelInjectionService.executeOnEventLoop(channel, () -> {
-                    for (long key : toUnload) {
-                        this.dispatchService.sendUnload(channel, session, key);
+                this.channelInjectionService.executeForSession(channel, session, worldId, epoch, () -> {
+                    for (int i = 0; i < count; i++) {
+                        long key = keyArray[i];
+                        if (session.invalidateChunk(key)) {
+                            this.dispatchService.sendUnload(channel, session, key);
+                        }
                     }
+                    this.channelInjectionService.flush(channel);
                 });
             });
         }

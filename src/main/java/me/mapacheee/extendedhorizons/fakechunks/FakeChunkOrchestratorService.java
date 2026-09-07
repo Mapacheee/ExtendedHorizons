@@ -97,7 +97,8 @@ public final class FakeChunkOrchestratorService {
         Channel channel = this.channelInjectionService.resolveChannel(player);
 
         if (!this.configContainer.get().fakeChunksEnabledForWorld(worldName)) {
-            this.clearSessionState(channel, session);
+            this.channelInjectionService.executeForSession(channel, session, session.worldId(), sessionEpoch,
+                () -> this.clearSessionState(channel, session));
             return;
         }
         if (channel == null || !channel.isActive()) {

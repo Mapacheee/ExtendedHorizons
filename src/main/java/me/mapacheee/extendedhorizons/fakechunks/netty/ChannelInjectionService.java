@@ -21,6 +21,7 @@ import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -265,6 +266,17 @@ public final class ChannelInjectionService {
             return;
         }
         eventLoop.execute(action);
+    }
+
+    public void executeForSession(Channel channel, PlayerSession session, UUID worldId, long epoch,
+                                  Runnable action) {
+        this.executeOnEventLoop(channel, () -> {
+            synchronized (session) {
+                if (!session.closed() && session.epoch() == epoch && worldId.equals(session.worldId())) {
+                    action.run();
+                }
+            }
+        });
     }
 
     private static void removeHandlers(Channel channel) {

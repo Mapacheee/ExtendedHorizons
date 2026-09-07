@@ -17,6 +17,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ChannelInjectionServiceTest {
 
+    @org.junit.jupiter.api.Test
+    void sessionActionsRejectOldEpochAndWorld() {
+        var channel = new io.netty.channel.embedded.EmbeddedChannel();
+        var session = new me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession(
+            java.util.UUID.randomUUID(), java.util.UUID.randomUUID());
+        var service = new ChannelInjectionService();
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            long oldEpoch = session.epoch();
+            session.bumpEpoch();
+            service.executeForSession(channel, session, session.worldId(), oldEpoch, calls::incrementAndGet);
+            service.executeForSession(channel, session, java.util.UUID.randomUUID(), session.epoch(), calls::incrementAndGet);
+            org.junit.jupiter.api.Assertions.assertEquals(0, calls.get());
+            service.executeForSession(channel, session, session.worldId(), session.epoch(), calls::incrementAndGet);
+            org.junit.jupiter.api.Assertions.assertEquals(1, calls.get());
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
     @Test
     void thirdPartyMutationDoesNotTouchCanonicalPayload() {
         MutatingEncoder encoder = new MutatingEncoder();
