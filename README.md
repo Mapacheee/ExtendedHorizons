@@ -9,6 +9,8 @@ ExtendedHorizons is a high-performance view-distance extension plugin for modern
 It renders distant terrain using optimized fake chunks and optional far-player sync, so players can see farther than vanilla without the usual server overhead.
 
 Distant terrain is refreshed from complete snapshots, including lighting and configured anti-xray.
+Refreshes keep the previous terrain visible until the replacement arrives; they do not send an unload first.
+Pending or failed refreshes remain tracked so that leaving the view or changing dimensions still clears them.
 Block edits, explosions, pistons, fluids and growth queue a rebuild of the affected chunk and its light neighbors,
 coalesced after 100 ms without further edits. Up to 256 chunk invalidations are processed per tick.
 For changes made without Bukkit events, each player's session also checks up to 64 stored chunk slots per second

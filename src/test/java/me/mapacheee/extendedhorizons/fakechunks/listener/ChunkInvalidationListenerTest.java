@@ -18,7 +18,7 @@ class ChunkInvalidationListenerTest {
     @Test
     void breakRebuildsTheChunkAndItsLightNeighbors() throws Exception {
         UUID world = UUID.randomUUID();
-        BulkChunkInvalidationService service = new BulkChunkInvalidationService(null, null, null, null, null, null);
+        BulkChunkInvalidationService service = new BulkChunkInvalidationService(null, null, null, null, null);
         new ChunkInvalidationListener(service).onBreak(new BlockBreakEvent(block(world, -1, 32), null));
         Map<UUID, List<Long>> pending = drain(service);
         assertEquals(9, pending.get(world).size());
@@ -30,7 +30,7 @@ class ChunkInvalidationListenerTest {
     @Test
     void fluidCrossingAChunkBoundaryInvalidatesBothSides() throws Exception {
         UUID world = UUID.randomUUID();
-        BulkChunkInvalidationService service = new BulkChunkInvalidationService(null, null, null, null, null, null);
+        BulkChunkInvalidationService service = new BulkChunkInvalidationService(null, null, null, null, null);
         new ChunkInvalidationListener(service).onFlow(new BlockFromToEvent(block(world, 15, 0), block(world, 16, 0)));
         List<Long> keys = drain(service).get(world);
         assertEquals(12, keys.size());

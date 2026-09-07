@@ -350,8 +350,7 @@ public final class PlayerSession {
         int prevZ = ChunkKeyCodec.z(previous);
         if (distanceSquared(prevX, prevZ, chunkX, chunkZ) > (long) this.distance * this.distance) {
             for (ChunkState state : this.chunkStates) {
-                if (state.lifecycle() == ChunkLifecycle.EH_LOADED
-                    || state.lifecycle() == ChunkLifecycle.EH_SENDING) {
+                if (state.hasClientChunk()) {
                     this.pendingUnloads.add(ChunkKeyCodec.pack(state.chunkX(), state.chunkZ()));
                 }
                 state.reset();
@@ -392,7 +391,7 @@ public final class PlayerSession {
                 if (lifecycle == ChunkLifecycle.EH_QUEUED) {
                     this.purgeQueuedChunk(stateX, stateZ);
                 }
-                if (lifecycle == ChunkLifecycle.EH_LOADED || lifecycle == ChunkLifecycle.EH_SENDING) {
+                if (state.hasClientChunk()) {
                     this.pendingUnloads.add(ChunkKeyCodec.pack(stateX, stateZ));
                 }
                 state.reset();
@@ -405,8 +404,7 @@ public final class PlayerSession {
             if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
                 this.purgeQueuedChunk(stateX, stateZ);
             }
-            if (state.lifecycle() == ChunkLifecycle.EH_LOADED
-                || state.lifecycle() == ChunkLifecycle.EH_SENDING) {
+            if (state.hasClientChunk()) {
                 this.pendingUnloads.add(ChunkKeyCodec.pack(stateX, stateZ));
             }
             if (state.lifecycle() != ChunkLifecycle.SERVER_LOADED) {
@@ -463,12 +461,18 @@ public final class PlayerSession {
         if (!state.matches(chunkX, chunkZ)) {
             return false;
         }
+        if (!this.enabled) {
+            state.reset();
+            return false;
+        }
         ChunkLifecycle lc = state.lifecycle();
-        if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_SENDING) {
+        if (state.hasClientChunk()) {
             return true;
         }
         if (lc == ChunkLifecycle.SERVER_LOADED) {
             state.set(chunkX, chunkZ, ChunkLifecycle.UNLOADED);
+            // The native unload is suppressed: the client still owns this terrain.
+            state.clientChunkPresent = true;
             this.iterationIndex = 0;
             return true;
         }
@@ -582,7 +586,7 @@ public final class PlayerSession {
         synchronized (state) {
             ChunkLifecycle lc = state.lifecycle();
             if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_SENDING
-                || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED) {
+                || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED || state.hasClientChunk()) {
                 state.reset();
             }
         }
@@ -593,8 +597,8 @@ public final class PlayerSession {
         synchronized (state) {
             ChunkLifecycle lc = state.lifecycle();
             if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_SENDING
-                || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED) {
-                boolean wasLoaded = lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_SENDING;
+                || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED || state.hasClientChunk()) {
+                boolean wasLoaded = state.hasClientChunk();
                 if (lc == ChunkLifecycle.EH_QUEUED) {
                     int cx = ChunkKeyCodec.x(chunkKey);
                     int cz = ChunkKeyCodec.z(chunkKey);
@@ -608,16 +612,35 @@ public final class PlayerSession {
         }
     }
 
+    /** Rebuilds a snapshot without unloading the terrain already present on the client. */
+    public boolean requestChunkRefresh(long chunkKey) {
+        ChunkState state = this.getStateByKey(chunkKey);
+        synchronized (state) {
+            if (state == DUMMY_STATE || state.lifecycle() == ChunkLifecycle.SERVER_LOADED
+                || (state.lifecycle() == ChunkLifecycle.UNLOADED && !state.hasClientChunk())) {
+                return false;
+            }
+            boolean visible = state.hasClientChunk();
+            if (state.lifecycle() == ChunkLifecycle.EH_QUEUED) {
+                this.purgeQueuedChunk(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey));
+            }
+            state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.UNLOADED);
+            state.clientChunkPresent = visible;
+            this.iterationIndex = 0;
+            return true;
+        }
+    }
+
     public void invalidatePendingChunk(long chunkKey) {
         ChunkState state = this.getStateByKey(chunkKey);
         synchronized (state) {
             ChunkLifecycle lifecycle = state.lifecycle();
             if (lifecycle == ChunkLifecycle.EH_QUEUED) {
                 this.purgeQueuedChunk(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey));
-                state.reset();
+                state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.UNLOADED);
                 this.iterationIndex = 0;
             } else if (lifecycle == ChunkLifecycle.BUILD_FAILED) {
-                state.reset();
+                state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.UNLOADED);
                 this.iterationIndex = 0;
             }
         }
@@ -638,13 +661,12 @@ public final class PlayerSession {
         if (dx * dx + dz * dz <= serverDist * serverDist) {
             return true;
         }
-        ChunkLifecycle lifecycle = this.getStateByKey(chunkKey).lifecycle();
-        return lifecycle == ChunkLifecycle.SERVER_LOADED || lifecycle == ChunkLifecycle.EH_LOADED;
+        ChunkState state = this.getStateByKey(chunkKey);
+        return state.lifecycle() == ChunkLifecycle.SERVER_LOADED || state.clientChunkPresent;
     }
 
     public boolean shouldReceiveBlockUpdate(long chunkKey) {
-        ChunkLifecycle lifecycle = this.getStateByKey(chunkKey).lifecycle();
-        return lifecycle == ChunkLifecycle.EH_LOADED || lifecycle == ChunkLifecycle.EH_SENDING;
+        return this.getStateByKey(chunkKey).hasClientChunk();
     }
 
 
@@ -654,8 +676,7 @@ public final class PlayerSession {
         }
         int count = 0;
         for (ChunkState state : this.chunkStates) {
-            if (state.lifecycle() == ChunkLifecycle.EH_LOADED
-                || state.lifecycle() == ChunkLifecycle.EH_SENDING) {
+            if (state.hasClientChunk()) {
                 count++;
             }
         }
@@ -665,8 +686,7 @@ public final class PlayerSession {
         long[] keys = new long[count];
         int index = 0;
         for (ChunkState state : this.chunkStates) {
-            if (state.lifecycle() == ChunkLifecycle.EH_LOADED
-                || state.lifecycle() == ChunkLifecycle.EH_SENDING) {
+            if (state.hasClientChunk()) {
                 keys[index++] = ChunkKeyCodec.pack(state.chunkX(), state.chunkZ());
             }
         }
@@ -677,7 +697,7 @@ public final class PlayerSession {
         for (ChunkState state : this.chunkStates) {
             ChunkLifecycle lc = state.lifecycle();
             if (lc == ChunkLifecycle.EH_LOADED || lc == ChunkLifecycle.EH_SENDING
-                || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED) {
+                || lc == ChunkLifecycle.EH_QUEUED || lc == ChunkLifecycle.BUILD_FAILED || state.hasClientChunk()) {
                 state.reset();
             }
         }
@@ -893,6 +913,8 @@ public final class PlayerSession {
         private volatile ChunkLifecycle lifecycle = ChunkLifecycle.UNLOADED;
         private volatile long failedAtNanos;
         private volatile long loadedAtNanos;
+        // Independent of build lifecycle: a refresh may queue, send or fail while old terrain remains visible.
+        private volatile boolean clientChunkPresent;
         private volatile long sendAttempt;
 
         public int chunkX() {
@@ -920,6 +942,8 @@ public final class PlayerSession {
             this.chunkZ = chunkZ;
             this.lifecycle = lifecycle;
             this.loadedAtNanos = lifecycle == ChunkLifecycle.EH_LOADED ? System.nanoTime() : 0L;
+            if (lifecycle == ChunkLifecycle.EH_LOADED) this.clientChunkPresent = true;
+            else if (lifecycle == ChunkLifecycle.SERVER_LOADED) this.clientChunkPresent = false;
             this.sendAttempt = 0L;
         }
 
@@ -938,11 +962,16 @@ public final class PlayerSession {
 
         public synchronized void reset() {
             this.set(UNSET_COORD, UNSET_COORD, ChunkLifecycle.UNLOADED);
+            this.clientChunkPresent = false;
             this.failedAtNanos = 0L;
         }
 
         public boolean hasCoords() {
-            return this.lifecycle != ChunkLifecycle.UNLOADED || this.chunkX != UNSET_COORD || this.chunkZ != UNSET_COORD;
+            return this.clientChunkPresent || this.lifecycle != ChunkLifecycle.UNLOADED || this.chunkX != UNSET_COORD || this.chunkZ != UNSET_COORD;
+        }
+
+        private boolean hasClientChunk() {
+            return this.clientChunkPresent || this.lifecycle == ChunkLifecycle.EH_SENDING;
         }
 
         private boolean matches(int chunkX, int chunkZ) {

@@ -10,8 +10,8 @@ import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkDispatchService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
+import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import org.bukkit.Bukkit;
@@ -32,7 +32,6 @@ public final class BulkChunkInvalidationService {
     private final LightPayloadCacheService lightPayloadCacheService;
     private final SessionRegistry sessionRegistry;
     private final ChannelInjectionService channelInjectionService;
-    private final ChunkDispatchService dispatchService;
     private final PendingChunkInvalidations pendingInvalidations = new PendingChunkInvalidations();
 
     private volatile ScheduledTask processorTask;
@@ -44,15 +43,13 @@ public final class BulkChunkInvalidationService {
         AntiXrayPayloadCacheService antiXrayPayloadCacheService,
         LightPayloadCacheService lightPayloadCacheService,
         SessionRegistry sessionRegistry,
-        ChannelInjectionService channelInjectionService,
-        ChunkDispatchService dispatchService
+        ChannelInjectionService channelInjectionService
     ) {
         this.cacheService = cacheService;
         this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
         this.lightPayloadCacheService = lightPayloadCacheService;
         this.sessionRegistry = sessionRegistry;
         this.channelInjectionService = channelInjectionService;
-        this.dispatchService = dispatchService;
     }
 
     @OnEnable
@@ -113,18 +110,16 @@ public final class BulkChunkInvalidationService {
                 if (channel == null || !channel.isActive()) {
                     return;
                 }
-                this.channelInjectionService.executeForSession(channel, session, worldId, epoch, () -> {
-                    for (int i = 0; i < count; i++) {
-                        long key = keyArray[i];
-                        if (session.invalidateChunk(key)) {
-                            this.dispatchService.sendUnload(channel, session, key);
-                        }
-                    }
-                    this.channelInjectionService.flush(channel);
-                });
+                this.refreshSession(channel, session, worldId, epoch, keyArray);
             });
         }
 
+    }
+
+    void refreshSession(Channel channel, PlayerSession session, UUID worldId, long epoch, long[] keys) {
+        this.channelInjectionService.executeForSession(channel, session, worldId, epoch, () -> {
+            for (long key : keys) session.requestChunkRefresh(key);
+        });
     }
 
     private void queuePeriodicRefreshes() {

@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -30,9 +31,88 @@ class PlayerSessionDispatchTest {
             selected = session.pollChunkForRefresh(now + 31_000_000_000L);
         }
         assertEquals(Long.valueOf(key), selected);
-        assertTrue(session.invalidateChunk(selected));
+        assertTrue(session.requestChunkRefresh(selected));
         assertFalse(session.isEhLoaded(key));
+        assertArrayEquals(new long[]{key}, session.loadedBvChunkKeys());
         assertTrue(session.hasPendingChunkWork());
+    }
+
+    @Test
+    void refreshKeepsTerrainAndFarEntitiesVisibleThroughFailureAndRetry() {
+        PlayerSession session = readySession();
+        long key = ChunkKeyCodec.pack(3, 0);
+        while (nextChunk(session) != key) { }
+        session.onChunkSent(key, session.beginChunkSend(key));
+        assertTrue(session.requestChunkRefresh(key));
+        assertTrue(session.isChunkReadyForEntities(key));
+        assertTrue(session.drainPendingUnloads().isEmpty());
+        assertEquals(key, nextChunk(session));
+        long attempt = session.beginChunkSend(key);
+        session.onChunkSendFailed(key, attempt);
+        assertArrayEquals(new long[]{key}, session.loadedBvChunkKeys());
+        assertTrue(session.isChunkReadyForEntities(key));
+        assertTrue(session.requestChunkRefresh(key));
+        assertEquals(key, nextChunk(session));
+        long retry = session.beginChunkSend(key);
+        session.onChunkSent(key, attempt);
+        assertFalse(session.isEhLoaded(key), "Old write completions cannot finish a new refresh");
+        session.onChunkSent(key, retry);
+        assertTrue(session.isEhLoaded(key));
+        assertArrayEquals(new long[]{key}, session.loadedBvChunkKeys());
+    }
+
+    @Test
+    void refreshPendingAtTeleportStillUnloadsTheOldTerrain() {
+        PlayerSession session = readySession();
+        long key = nextChunk(session);
+        session.onChunkSent(key, session.beginChunkSend(key));
+        session.requestChunkRefresh(key);
+        session.updateDistance(8); // Resizing storage must retain visible terrain, including (0, 0).
+        session.moveTo(1000, 1000);
+        assertEquals(java.util.List.of(key), session.drainPendingUnloads());
+        assertEquals(0, session.loadedBvChunkKeys().length);
+    }
+
+    @Test
+    void vanillaTakeoverCancelsRefreshAndKeepsItsChunkOutOfFakeUnloads() {
+        PlayerSession session = readySession();
+        long key = nextChunk(session);
+        session.onChunkSent(key, session.beginChunkSend(key));
+        session.requestChunkRefresh(key);
+        assertEquals(key, nextChunk(session));
+        var build = new CompletableFuture<ByteBuf>();
+        session.enqueueChunk(new ChunkSendQueueEntry(key, session.worldId(), session.epoch(), 1L, build),
+            session.worldId(), session.epoch());
+        session.serverChunkAdd(ChunkKeyCodec.x(key), ChunkKeyCodec.z(key));
+        assertTrue(build.isCancelled());
+        assertFalse(session.requestChunkRefresh(key));
+        assertEquals(0, session.loadedBvChunkKeys().length);
+        session.moveTo(1000, 1000);
+        assertTrue(session.drainPendingUnloads().isEmpty());
+    }
+
+    @Test
+    void suppressedVanillaUnloadRemainsTrackedDuringRefresh() {
+        PlayerSession session = readySession();
+        long key = ChunkKeyCodec.pack(3, 0);
+        session.serverChunkAdd(3, 0);
+        assertTrue(session.serverChunkRemove(3, 0));
+        assertArrayEquals(new long[]{key}, session.loadedBvChunkKeys());
+        assertTrue(session.isChunkReadyForEntities(key));
+        session.requestChunkRefresh(key);
+        session.handleDimensionReset();
+        assertEquals(0, session.loadedBvChunkKeys().length);
+        assertFalse(session.isChunkReadyForEntities(key));
+    }
+
+    @Test
+    void vanillaUnloadWhileDisabledDoesNotRetainClientTerrain() {
+        PlayerSession session = readySession();
+        session.serverChunkAdd(3, 0);
+        session.enabled(false);
+        assertFalse(session.serverChunkRemove(3, 0));
+        assertEquals(0, session.loadedBvChunkKeys().length);
+        assertFalse(session.isChunkReadyForEntities(ChunkKeyCodec.pack(3, 0)));
     }
 
     @Test
