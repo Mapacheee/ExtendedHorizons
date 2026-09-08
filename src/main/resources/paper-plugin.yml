@@ -13,6 +13,9 @@ dependencies:
     WorldEdit:
       load: BEFORE
       required: false
+    FastAsyncWorldEdit:
+      load: BEFORE
+      required: false
     PlaceholderAPI:
       load: BEFORE
       required: false

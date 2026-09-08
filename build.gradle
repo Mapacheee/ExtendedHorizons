@@ -71,6 +71,8 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("me.mapacheee:MapacheeeLib:1.0.1")
+    testImplementation(platform("com.intellectualsites.bom:bom-newest:1.56"))
+    testImplementation("com.fastasyncworldedit:FastAsyncWorldEdit-Core")
 }
 
 // Workaround: Winter v2 AP reads META-INF/winter/exposed-classes.txt via

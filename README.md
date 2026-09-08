@@ -18,6 +18,13 @@ and selects at most one snapshot older than 30 seconds for refresh. This is a gr
 every distant chunk updates within 30 seconds; larger distances and send budgets increase the delay.
 Plugins making bulk changes can request prompt updates through `BulkChunkInvalidationService.queueInvalidationBatch`.
 
+With `fake-chunks.worldedit.enabled`, WorldEdit changes are published after its commit operation completes;
+FAWE queued edits use a chunk post-processor, including fast edits that bypass per-block extent calls.
+Both refresh the edited chunks and their light neighbors without unloading visible terrain first.
+At startup, the log identifies `WorldEdit extent` or `FAWE chunk post-processor` registration.
+FAWE's non-queued root-extent mode may require allowing the fallback extent in FAWE's own configuration;
+EH logs that case explicitly and does not change FAWE's settings.
+
 ---
 ## Dependencies
 

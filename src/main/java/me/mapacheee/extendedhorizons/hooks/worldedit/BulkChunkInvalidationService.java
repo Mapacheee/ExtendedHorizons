@@ -13,6 +13,7 @@ import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -114,6 +115,14 @@ public final class BulkChunkInvalidationService {
             });
         }
 
+    }
+
+    public void queueInvalidationWithNeighbors(UUID worldId, int chunkX, int chunkZ) {
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                this.queueInvalidation(worldId, ChunkKeyCodec.pack(chunkX + dx, chunkZ + dz));
+            }
+        }
     }
 
     void refreshSession(Channel channel, PlayerSession session, UUID worldId, long epoch, long[] keys) {
