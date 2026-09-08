@@ -10,6 +10,8 @@ import com.sk89q.worldedit.extent.Extent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 /** Loaded only when FAWE is present; plain WorldEdit does not provide these interfaces. */
 final class FaweChunkInvalidationProcessor implements IBatchProcessor {
@@ -38,9 +40,9 @@ final class FaweChunkInvalidationProcessor implements IBatchProcessor {
     public IChunkSet processSet(IChunk chunk, IChunkGet get, IChunkSet set) { return set; }
 
     @Override
-    public void postProcess(IChunk chunk, IChunkGet get, IChunkSet set) {
-        // FAWE calls this from the chunk write finalizer, after applying the block data.
+    public Future<?> postProcessSet(IChunk chunk, IChunkGet get, IChunkSet set) {
         bulkService.queueInvalidationWithNeighbors(worldId, chunk.getX(), chunk.getZ());
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override

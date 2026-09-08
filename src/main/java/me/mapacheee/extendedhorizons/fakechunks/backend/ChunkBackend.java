@@ -19,4 +19,15 @@ public interface ChunkBackend {
         boolean generateMissingChunks,
         ChunkScheduler scheduler
     );
+
+    default CompletableFuture<ByteBuf> buildChunkPayload(
+        World world,
+        int chunkX,
+        int chunkZ,
+        boolean generateMissingChunks,
+        boolean preferFreshData,
+        ChunkScheduler scheduler
+    ) {
+        return this.buildChunkPayload(world, chunkX, chunkZ, generateMissingChunks, scheduler);
+    }
 }

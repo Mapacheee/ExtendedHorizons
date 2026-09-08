@@ -650,6 +650,11 @@ public final class PlayerSession {
         return this.getStateByKey(chunkKey).lifecycle() == ChunkLifecycle.EH_LOADED;
     }
 
+    public boolean isChunkRefresh(long chunkKey) {
+        ChunkState state = this.getStateByKey(chunkKey);
+        return state.clientChunkPresent && state.lifecycle() == ChunkLifecycle.EH_QUEUED;
+    }
+
     public boolean isChunkReadyForEntities(long chunkKey) {
         int targetChunkX = ChunkKeyCodec.x(chunkKey);
         int targetChunkZ = ChunkKeyCodec.z(chunkKey);

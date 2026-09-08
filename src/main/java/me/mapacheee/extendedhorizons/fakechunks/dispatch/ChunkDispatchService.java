@@ -108,7 +108,8 @@ public final class ChunkDispatchService {
                 chunkZ,
                 chunkKey,
                 cacheGeneration,
-                config
+                config,
+                session.isChunkRefresh(chunkKey)
             );
             if (buildFuture.isDone()) {
                 this.generationLimiterService.release();
@@ -183,8 +184,10 @@ public final class ChunkDispatchService {
         int chunkZ,
         long chunkKey,
         long cacheGeneration,
-        EhConfig config
+        EhConfig config,
+        boolean refresh
     ) {
+        boolean preferFreshData = refresh || this.cacheService.shouldBypass(expectedWorldId, chunkKey);
         long antiXrayCacheGeneration = this.antiXrayPayloadCacheService.generation();
         boolean antiXrayEnabled = config.antiXrayEnabled(world.getName());
         String antiXrayProfileHash = antiXrayEnabled
@@ -195,11 +198,11 @@ public final class ChunkDispatchService {
             LOGGER.info(
                 "EH buildChunk: chunk=({}, {}) antiXrayEnabled={} bypassCache={}",
                 chunkX, chunkZ, antiXrayEnabled,
-                antiXrayEnabled || this.cacheService.shouldBypass(expectedWorldId, chunkKey)
+                antiXrayEnabled || preferFreshData
             );
         }
 
-        if (antiXrayProfileHash != null) {
+        if (antiXrayProfileHash != null && !preferFreshData) {
             ByteBuf antiXrayCached = this.antiXrayPayloadCacheService.get(
                 expectedWorldId,
                 chunkKey,
@@ -221,7 +224,7 @@ public final class ChunkDispatchService {
             return CompletableFuture.completedFuture(null);
         }
 
-        boolean bypass = antiXrayEnabled || this.cacheService.shouldBypass(expectedWorldId, chunkKey);
+        boolean bypass = antiXrayEnabled || preferFreshData;
         if (!bypass) {
             ByteBuf cached = this.cacheService.getSerialized(expectedWorldId, chunkKey);
             if (cached != null) {
@@ -241,6 +244,7 @@ public final class ChunkDispatchService {
                 chunkX,
                 chunkZ,
                 config.generateMissingChunks(),
+                preferFreshData,
                 (worldRef, cx, cz, runnable) -> {
                     ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
                     if (plugin == null || !plugin.isEnabled()) {

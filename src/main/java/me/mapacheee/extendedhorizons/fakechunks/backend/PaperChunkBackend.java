@@ -90,6 +90,17 @@ public final class PaperChunkBackend implements ChunkBackend {
         int chunkZ,
         boolean generateMissingChunks,
         ChunkScheduler scheduler) {
+        return this.buildChunkPayload(world, chunkX, chunkZ, generateMissingChunks, false, scheduler);
+    }
+
+    @Override
+    public CompletableFuture<ByteBuf> buildChunkPayload(
+        World world,
+        int chunkX,
+        int chunkZ,
+        boolean generateMissingChunks,
+        boolean preferFreshData,
+        ChunkScheduler scheduler) {
         if (world == null || scheduler == null) {
             LOGGER.debug("buildChunkPayload called with null world or scheduler for chunk [{}, {}]", chunkX, chunkZ);
             return CompletableFuture.completedFuture(null);
@@ -146,6 +157,7 @@ public final class PaperChunkBackend implements ChunkBackend {
 
         boolean chunkLoaded = world.isChunkLoaded(chunkX, chunkZ);
         boolean useDiskReader = this.configContainer.get().diskReaderEnabled()
+            && !preferFreshData
             && !chunkLoaded
             && DiskChunkReader.shouldAttemptDirectRead(world, chunkX, chunkZ);
         if (useDiskReader) {
@@ -173,8 +185,9 @@ public final class PaperChunkBackend implements ChunkBackend {
                 }
             });
         } else {
-            if (this.configContainer.get().debugEnabled() && chunkLoaded) {
-                LOGGER.info("EH chunk [{}, {}] is loaded in memory, using live data", chunkX, chunkZ);
+            if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH chunk [{}, {}] using Paper data: loaded={} refresh={}",
+                    chunkX, chunkZ, chunkLoaded, preferFreshData);
             }
             fallbackLoad.run();
         }
