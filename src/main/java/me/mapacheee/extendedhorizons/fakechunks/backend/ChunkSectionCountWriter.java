@@ -9,8 +9,8 @@ import java.lang.invoke.MethodType;
 
 public final class ChunkSectionCountWriter {
 
-    private static final MethodHandle GET_NON_EMPTY_BLOCK_COUNT = createGetter("nonEmptyBlockCount");
-    private static final MethodHandle GET_FLUID_COUNT = createGetter("fluidCount");
+    private static final MethodHandle GET_NON_EMPTY_BLOCK_COUNT = createGetter("nonEmptyBlockCount", false);
+    private static final MethodHandle GET_FLUID_COUNT = createGetter("fluidCount", true);
 
     private ChunkSectionCountWriter() {}
 
@@ -20,7 +20,13 @@ public final class ChunkSectionCountWriter {
 
     static void write(FriendlyByteBuf out, short nonEmptyBlockCount, short fluidCount) {
         out.writeShort(nonEmptyBlockCount);
-        out.writeShort(fluidCount);
+        if (GET_FLUID_COUNT != null) {
+            out.writeShort(fluidCount);
+        }
+    }
+
+    static int serializedSize() {
+        return GET_FLUID_COUNT == null ? Short.BYTES : Short.BYTES * 2;
     }
 
     static short nonEmptyBlockCount(LevelChunkSection section) {
@@ -28,14 +34,19 @@ public final class ChunkSectionCountWriter {
     }
 
     static short fluidCount(LevelChunkSection section) {
-        return read(GET_FLUID_COUNT, section, "fluid count");
+        return GET_FLUID_COUNT == null ? 0 : read(GET_FLUID_COUNT, section, "fluid count");
     }
 
-    private static MethodHandle createGetter(String fieldName) {
+    private static MethodHandle createGetter(String fieldName, boolean optional) {
         try {
             MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(LevelChunkSection.class, MethodHandles.lookup());
             return lookup.findGetter(LevelChunkSection.class, fieldName, short.class)
                 .asType(MethodType.methodType(short.class, LevelChunkSection.class));
+        } catch (NoSuchFieldException exception) {
+            if (optional) {
+                return null;
+            }
+            throw new ExceptionInInitializerError(exception);
         } catch (ReflectiveOperationException exception) {
             throw new ExceptionInInitializerError(exception);
         }

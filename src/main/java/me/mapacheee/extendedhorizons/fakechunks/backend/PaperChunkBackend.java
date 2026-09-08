@@ -677,8 +677,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             sectionBuffer = PooledByteBufAllocator.DEFAULT.buffer(sectionCapacity, SECTION_MAX_BUFFER);
             FriendlyByteBuf sectionOut = new FriendlyByteBuf(sectionBuffer);
             for (AntiXraySectionSnapshot section : sections) {
-                sectionOut.writeShort(section.nonEmptyBlockCount());
-                sectionOut.writeShort(section.fluidCount());
+                ChunkSectionCountWriter.write(sectionOut, section.nonEmptyBlockCount(), section.fluidCount());
 
                 ByteBuf states = section.states().retainedDuplicate();
                 try {
@@ -734,7 +733,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             if (section == null) {
                 continue;
             }
-            total += 4 + section.states().readableBytes() + section.biomes().readableBytes();
+            total += ChunkSectionCountWriter.serializedSize() + section.states().readableBytes() + section.biomes().readableBytes();
         }
         return total;
     }
