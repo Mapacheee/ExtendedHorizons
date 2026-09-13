@@ -1,256 +1,248 @@
 package me.mapacheee.extendedhorizons.fakechunks.netty;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.PromiseCombiner;
-import io.netty.buffer.ByteBuf;
 import it.unimi.dsi.fastutil.ints.IntList;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.util.NmsCompat;
-import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
-import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
-import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
-import net.minecraft.network.protocol.game.ClientboundLoginPacket;
-import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
-import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
-import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
-import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
+import net.minecraft.network.protocol.game.*;
 import net.minecraft.world.level.ChunkPos;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 
 public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(EhPacketHandler.class);
-    private static final int VARINT_MAX_BYTES = 5;
-    private static final int BUNDLE_VARINT_HEADER_SIZE = 2;
-    private static final int BUNDLE_TRAILER_BYTE_COUNT = 1;
-    private static final MethodHandle CHUNK_POS_X_GETTER;
-    private static final MethodHandle CHUNK_POS_Z_GETTER;
+  private static final Logger LOGGER = LoggerFactory.getLogger(EhPacketHandler.class);
+  private static final int VARINT_MAX_BYTES = 5;
+  private static final int BUNDLE_VARINT_HEADER_SIZE = 2;
+  private static final int BUNDLE_TRAILER_BYTE_COUNT = 1;
+  private static final MethodHandle CHUNK_POS_X_GETTER;
+  private static final MethodHandle CHUNK_POS_Z_GETTER;
 
-    static {
-        try {
-            MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(ChunkPos.class, MethodHandles.lookup());
-            CHUNK_POS_X_GETTER = lookup.findGetter(ChunkPos.class, "x", int.class);
-            CHUNK_POS_Z_GETTER = lookup.findGetter(ChunkPos.class, "z", int.class);
-        } catch (ReflectiveOperationException e) {
-            throw new ExceptionInInitializerError(e);
-        }
+  static {
+    try {
+      MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(ChunkPos.class, MethodHandles.lookup());
+      CHUNK_POS_X_GETTER = lookup.findGetter(ChunkPos.class, "x", int.class);
+      CHUNK_POS_Z_GETTER = lookup.findGetter(ChunkPos.class, "z", int.class);
+    } catch (ReflectiveOperationException e) {
+      throw new ExceptionInInitializerError(e);
     }
+  }
 
-    private volatile PlayerSession session;
+  private volatile PlayerSession session;
 
-    @Override
-    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        try {
-            if (msg instanceof ClientboundLevelChunkWithLightPacket) {
-                PacketIdRegistry.markPendingLevelChunkProbe(ctx.channel());
-            }
-            if (msg instanceof net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket) {
-                PacketIdRegistry.markPendingRadiusProbe(ctx.channel());
-            }
-            PlayerSession trackingSession = this.session;
-            if (trackingSession != null) {
-                this.captureEntityTracking(ctx, msg, trackingSession);
-            }
-            if (trackingSession != null && msg instanceof BundlePacket<?> bundle) {
-                List<Packet<?>> filteredPackets = this.filterBundle(bundle);
-                if (filteredPackets != null) {
-                    this.writeFilteredBundle(ctx, filteredPackets, promise);
-                    ReferenceCountUtil.release(msg);
-                    return;
-                }
-            } else if (this.handle(msg)) {
-                ReferenceCountUtil.release(msg);
-                promise.trySuccess();
-                return;
-            }
-
-            if (msg instanceof ByteBuf buf && this.isPreEncodedRadiusPacket(buf)) {
-                PlayerSession session = this.session;
-                if (session != null && session.enabled()) {
-                    session.lastAdvertisedDistance(-1);
-                    ReferenceCountUtil.release(msg);
-                    promise.trySuccess();
-                    return;
-                }
-            }
-        } catch (Throwable throwable) {
-            String messageType = msg == null ? "null" : msg.getClass().getName();
-            LOGGER.error("Exception while inspecting outbound message: {}", messageType, throwable);
+  @Override
+  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+    try {
+      if (msg instanceof ClientboundLevelChunkWithLightPacket) {
+        PacketIdRegistry.markPendingLevelChunkProbe(ctx.channel());
+      }
+      if (msg instanceof net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket) {
+        PacketIdRegistry.markPendingRadiusProbe(ctx.channel());
+      }
+      PlayerSession trackingSession = this.session;
+      if (trackingSession != null) {
+        this.captureEntityTracking(ctx, msg, trackingSession);
+      }
+      if (trackingSession != null && msg instanceof BundlePacket<?> bundle) {
+        List<Packet<?>> filteredPackets = this.filterBundle(bundle);
+        if (filteredPackets != null) {
+          this.writeFilteredBundle(ctx, filteredPackets, promise);
+          ReferenceCountUtil.release(msg);
+          return;
         }
-        super.write(ctx, msg, promise);
-    }
+      } else if (this.handle(msg)) {
+        ReferenceCountUtil.release(msg);
+        promise.trySuccess();
+        return;
+      }
 
-    private boolean isPreEncodedRadiusPacket(ByteBuf buf) {
-        if (!PacketIdRegistry.hasChunkCacheRadiusId() || !buf.isReadable()) {
-            return false;
-        }
-        int readerIndex = buf.readerIndex();
-        try {
-            int firstVarInt = readVarInt(buf);
-            int targetId = PacketIdRegistry.getChunkCacheRadiusId();
-
-            if (firstVarInt == targetId) {
-                return true;
-            }
-
-            if (firstVarInt == BUNDLE_VARINT_HEADER_SIZE && buf.isReadable()) {
-                int secondVarInt = readVarInt(buf);
-                if (secondVarInt == targetId && buf.readableBytes() == BUNDLE_TRAILER_BYTE_COUNT) {
-                    return true;
-                }
-            }
-        } catch (Exception ignored) {
-        } finally {
-            buf.readerIndex(readerIndex);
-        }
-        return false;
-    }
-
-    private static int readVarInt(ByteBuf buf) {
-        int value = 0;
-        int position = 0;
-        while (position < VARINT_MAX_BYTES) {
-            if (!buf.isReadable()) {
-                throw new IndexOutOfBoundsException();
-            }
-            int currentByte = buf.readByte() & 0xFF;
-            value |= (currentByte & 0x7F) << (position * 7);
-            if ((currentByte & 0x80) == 0) {
-                return value;
-            }
-            position++;
-        }
-        throw new IllegalArgumentException("VarInt too big");
-    }
-
-    private List<Packet<?>> filterBundle(BundlePacket<?> bundle) {
-        boolean changed = false;
-        List<Packet<?>> filteredPackets = new ArrayList<>();
-        for (Packet<?> sub : bundle.subPackets()) {
-            if (this.handle(sub)) {
-                changed = true;
-            } else {
-                filteredPackets.add(sub);
-            }
-        }
-        return changed ? filteredPackets : null;
-    }
-
-    private void writeFilteredBundle(
-        ChannelHandlerContext ctx,
-        List<Packet<?>> packets,
-        ChannelPromise promise
-    ) {
-        if (packets.isEmpty()) {
-            promise.trySuccess();
-            return;
-        }
-        PromiseCombiner combiner = new PromiseCombiner(ctx.executor());
-        for (Packet<?> packet : packets) {
-            combiner.add(ctx.write(packet));
-        }
-        combiner.finish(promise);
-    }
-
-    private boolean handle(Object input) {
+      if (msg instanceof ByteBuf buf && this.isPreEncodedRadiusPacket(buf)) {
         PlayerSession session = this.session;
-        if (session == null) {
-            return false;
+        if (session != null && session.enabled()) {
+          session.lastAdvertisedDistance(-1);
+          ReferenceCountUtil.release(msg);
+          promise.trySuccess();
+          return;
         }
-        boolean fakeChunksEnabled = session.enabled();
-        return switch (input) {
-            case ClientboundLevelChunkWithLightPacket packet -> {
-                session.serverChunkAdd(packet.getX(), packet.getZ());
-                yield false;
-            }
-            case ClientboundForgetLevelChunkPacket packet -> {
-                ChunkPos pos = packet.pos();
-                try {
-                    boolean replacedByFakeChunk = session.serverChunkRemove(
-                        (int) CHUNK_POS_X_GETTER.invokeExact(pos),
-                        (int) CHUNK_POS_Z_GETTER.invokeExact(pos));
-                    yield fakeChunksEnabled && replacedByFakeChunk;
-                } catch (Throwable e) {
-                    yield false;
-                }
-            }
-            case ClientboundLoginPacket ignored -> {
-                session.handleDimensionReset();
-                yield false;
-            }
-            case ClientboundStartConfigurationPacket ignored -> {
-                session.handleDimensionReset();
-                yield false;
-            }
-            case ClientboundRespawnPacket ignored -> {
-                session.handleDimensionReset();
-                yield false;
-            }
-            case ClientboundSetChunkCacheRadiusPacket ignored -> {
-                if (!fakeChunksEnabled) {
-                    yield false;
-                }
-                session.lastAdvertisedDistance(-1);
-                yield true;
-            }
-            case ClientboundSetChunkCacheCenterPacket ignored -> {
-                session.invalidateAdvertisedChunkKey();
-                yield false;
-            }
-            default -> false;
-        };
+      }
+    } catch (Throwable throwable) {
+      String messageType = msg == null ? "null" : msg.getClass().getName();
+      LOGGER.error("Exception while inspecting outbound message: {}", messageType, throwable);
     }
+    super.write(ctx, msg, promise);
+  }
 
-    private void captureEntityTracking(ChannelHandlerContext ctx, Object input, PlayerSession session) {
-        if (input instanceof BundlePacket<?> bundle) {
-            for (Packet<?> packet : bundle.subPackets()) {
-                this.captureEntityTracking(ctx, packet, session);
-            }
-            return;
+  private boolean isPreEncodedRadiusPacket(ByteBuf buf) {
+    if (!PacketIdRegistry.hasChunkCacheRadiusId() || !buf.isReadable()) {
+      return false;
+    }
+    int readerIndex = buf.readerIndex();
+    try {
+      int firstVarInt = readVarInt(buf);
+      int targetId = PacketIdRegistry.getChunkCacheRadiusId();
+
+      if (firstVarInt == targetId) {
+        return true;
+      }
+
+      if (firstVarInt == BUNDLE_VARINT_HEADER_SIZE && buf.isReadable()) {
+        int secondVarInt = readVarInt(buf);
+        if (secondVarInt == targetId && buf.readableBytes() == BUNDLE_TRAILER_BYTE_COUNT) {
+          return true;
         }
-        switch (input) {
-            case ClientboundAddEntityPacket packet -> {
-                if (NmsCompat.isPlayer(packet)) {
-                    session.addServerTrackedEntity(packet.getId());
-                    UUID targetUuid = packet.getUUID();
-                    Integer farEntityId = session.trackedFarPlayers().remove(targetUuid);
-                    if (farEntityId != null) {
-                        ctx.write(new ClientboundRemoveEntitiesPacket(farEntityId));
-                    }
-                }
-            }
-            case ClientboundRemoveEntitiesPacket packet -> {
-                try {
-                    IntList ids = packet.getEntityIds();
-                    for (int i = 0, size = ids.size(); i < size; i++) {
-                        session.removeServerTrackedEntity(ids.getInt(i));
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-            default -> { }
+      }
+    } catch (Exception ignored) {
+    } finally {
+      buf.readerIndex(readerIndex);
+    }
+    return false;
+  }
+
+  private static int readVarInt(ByteBuf buf) {
+    int value = 0;
+    int position = 0;
+    while (position < VARINT_MAX_BYTES) {
+      if (!buf.isReadable()) {
+        throw new IndexOutOfBoundsException();
+      }
+      int currentByte = buf.readByte() & 0xFF;
+      value |= (currentByte & 0x7F) << (position * 7);
+      if ((currentByte & 0x80) == 0) {
+        return value;
+      }
+      position++;
+    }
+    throw new IllegalArgumentException("VarInt too big");
+  }
+
+  private List<Packet<?>> filterBundle(BundlePacket<?> bundle) {
+    boolean changed = false;
+    List<Packet<?>> filteredPackets = new ArrayList<>();
+    for (Packet<?> sub : bundle.subPackets()) {
+      if (this.handle(sub)) {
+        changed = true;
+      } else {
+        filteredPackets.add(sub);
+      }
+    }
+    return changed ? filteredPackets : null;
+  }
+
+  private void writeFilteredBundle(
+    ChannelHandlerContext ctx,
+    List<Packet<?>> packets,
+    ChannelPromise promise
+  ) {
+    if (packets.isEmpty()) {
+      promise.trySuccess();
+      return;
+    }
+    PromiseCombiner combiner = new PromiseCombiner(ctx.executor());
+    for (Packet<?> packet : packets) {
+      combiner.add(ctx.write(packet));
+    }
+    combiner.finish(promise);
+  }
+
+  private boolean handle(Object input) {
+    PlayerSession session = this.session;
+    if (session == null) {
+      return false;
+    }
+    boolean fakeChunksEnabled = session.enabled();
+    return switch (input) {
+      case ClientboundLevelChunkWithLightPacket packet -> {
+        session.serverChunkAdd(packet.getX(), packet.getZ());
+        yield false;
+      }
+      case ClientboundForgetLevelChunkPacket packet -> {
+        ChunkPos pos = packet.pos();
+        try {
+          boolean replacedByFakeChunk = session.serverChunkRemove(
+            (int) CHUNK_POS_X_GETTER.invokeExact(pos),
+            (int) CHUNK_POS_Z_GETTER.invokeExact(pos));
+          yield fakeChunksEnabled && replacedByFakeChunk;
+        } catch (Throwable e) {
+          yield false;
         }
-    }
+      }
+      case ClientboundLoginPacket ignored -> {
+        session.handleDimensionReset();
+        yield false;
+      }
+      case ClientboundStartConfigurationPacket ignored -> {
+        session.handleDimensionReset();
+        yield false;
+      }
+      case ClientboundRespawnPacket ignored -> {
+        session.handleDimensionReset();
+        yield false;
+      }
+      case ClientboundSetChunkCacheRadiusPacket ignored -> {
+        if (!fakeChunksEnabled) {
+          yield false;
+        }
+        session.lastAdvertisedDistance(-1);
+        yield true;
+      }
+      case ClientboundSetChunkCacheCenterPacket ignored -> {
+        session.invalidateAdvertisedChunkKey();
+        yield false;
+      }
+      default -> false;
+    };
+  }
 
-    public void setSession(PlayerSession session) {
-        this.session = session;
+  private void captureEntityTracking(ChannelHandlerContext ctx, Object input, PlayerSession session) {
+    if (input instanceof BundlePacket<?> bundle) {
+      for (Packet<?> packet : bundle.subPackets()) {
+        this.captureEntityTracking(ctx, packet, session);
+      }
+      return;
     }
+    switch (input) {
+      case ClientboundAddEntityPacket packet -> {
+        if (NmsCompat.isPlayer(packet)) {
+          session.addServerTrackedEntity(packet.getId());
+          UUID targetUuid = packet.getUUID();
+          Integer farEntityId = session.trackedFarPlayers().remove(targetUuid);
+          if (farEntityId != null) {
+            ctx.write(new ClientboundRemoveEntitiesPacket(farEntityId));
+          }
+        }
+      }
+      case ClientboundRemoveEntitiesPacket packet -> {
+        try {
+          IntList ids = packet.getEntityIds();
+          for (int i = 0, size = ids.size(); i < size; i++) {
+            session.removeServerTrackedEntity(ids.getInt(i));
+          }
+        } catch (Throwable ignored) {
+        }
+      }
+      default -> {
+      }
+    }
+  }
 
-    PlayerSession session() {
-        return this.session;
-    }
+  public void setSession(PlayerSession session) {
+    this.session = session;
+  }
+
+  PlayerSession session() {
+    return this.session;
+  }
 }

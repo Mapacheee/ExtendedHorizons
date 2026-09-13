@@ -9,14 +9,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ChunkDispatchServiceTest {
 
-    @Test
-    void writableChannelDoesNotDeferPayloadLargerThanHighWaterMark() {
-        EmbeddedChannel channel = new EmbeddedChannel();
-        channel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1, 8));
+  @Test
+  void writableChannelDoesNotDeferPayloadLargerThanHighWaterMark() {
+    EmbeddedChannel channel = new EmbeddedChannel();
+    channel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1, 8));
 
-        assertTrue(channel.isWritable());
-        assertTrue(channel.bytesBeforeUnwritable() < 1_024L);
-        assertFalse(ChunkDispatchService.shouldDeferWrite(channel));
-        assertFalse(channel.finishAndReleaseAll());
-    }
+    assertTrue(channel.isWritable());
+    assertTrue(channel.bytesBeforeUnwritable() < 1_024L);
+    assertFalse(ChunkDispatchService.shouldDeferWrite(channel));
+    assertFalse(channel.finishAndReleaseAll());
+  }
 }

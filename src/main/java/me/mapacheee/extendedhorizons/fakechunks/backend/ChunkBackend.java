@@ -7,27 +7,27 @@ import java.util.concurrent.CompletableFuture;
 
 public interface ChunkBackend {
 
-    @FunctionalInterface
-    interface ChunkScheduler {
-        boolean runAtChunk(World world, int chunkX, int chunkZ, Runnable runnable);
-    }
+  @FunctionalInterface
+  interface ChunkScheduler {
+    boolean runAtChunk(World world, int chunkX, int chunkZ, Runnable runnable);
+  }
 
-    CompletableFuture<ByteBuf> buildChunkPayload(
-        World world,
-        int chunkX,
-        int chunkZ,
-        boolean generateMissingChunks,
-        ChunkScheduler scheduler
-    );
+  CompletableFuture<ByteBuf> buildChunkPayload(
+    World world,
+    int chunkX,
+    int chunkZ,
+    boolean generateMissingChunks,
+    ChunkScheduler scheduler
+  );
 
-    default CompletableFuture<ByteBuf> buildChunkPayload(
-        World world,
-        int chunkX,
-        int chunkZ,
-        boolean generateMissingChunks,
-        boolean preferFreshData,
-        ChunkScheduler scheduler
-    ) {
-        return this.buildChunkPayload(world, chunkX, chunkZ, generateMissingChunks, scheduler);
-    }
+  default CompletableFuture<ByteBuf> buildChunkPayload(
+    World world,
+    int chunkX,
+    int chunkZ,
+    boolean generateMissingChunks,
+    boolean preferFreshData,
+    ChunkScheduler scheduler
+  ) {
+    return this.buildChunkPayload(world, chunkX, chunkZ, generateMissingChunks, scheduler);
+  }
 }

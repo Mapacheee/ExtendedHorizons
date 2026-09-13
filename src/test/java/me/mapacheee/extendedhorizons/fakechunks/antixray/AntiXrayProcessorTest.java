@@ -8,121 +8,121 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class AntiXrayProcessorTest {
 
-    private static final int BLOCK_COUNT = 16 * 16 * 16;
+  private static final int BLOCK_COUNT = 16 * 16 * 16;
 
-    @Test
-    void remapsFiveBitStorageWithoutAssumingPowerOfTwoValuesPerWord() {
-        ByteBuf data = createPaletteData(5, 17);
-        try {
-            AntiXrayProcessor processor = new AntiXrayProcessor(
-                ReplacementStrategy.STATIC_ZERO,
-                ReplacementPresets.createStatic(0),
-                new int[]{16},
-                256
-            );
+  @Test
+  void remapsFiveBitStorageWithoutAssumingPowerOfTwoValuesPerWord() {
+    ByteBuf data = createPaletteData(5, 17);
+    try {
+      AntiXrayProcessor processor = new AntiXrayProcessor(
+        ReplacementStrategy.STATIC_ZERO,
+        ReplacementPresets.createStatic(0),
+        new int[]{16},
+        256
+      );
 
-            processor.process(data, 0, false);
+      processor.process(data, 0, false);
 
-            assertEquals(5, data.readUnsignedByte());
-            assertPalette(data, 17, index -> index);
-            assertStorage(data, 5, index -> index % 17 == 16 ? 0 : index % 17);
-        } finally {
-            data.release();
-        }
+      assertEquals(5, data.readUnsignedByte());
+      assertPalette(data, 17, index -> index);
+      assertStorage(data, 5, index -> index % 17 == 16 ? 0 : index % 17);
+    } finally {
+      data.release();
+    }
+  }
+
+  @Test
+  void remapsStorageWhenPaletteExpansionChangesFromFourToFiveBits() {
+    ByteBuf data = createPaletteData(4, 16);
+    try {
+      AntiXrayProcessor processor = new AntiXrayProcessor(
+        ReplacementStrategy.STATIC_ZERO,
+        ReplacementPresets.createStatic(100),
+        new int[]{15},
+        256
+      );
+
+      processor.process(data, 0, false);
+
+      assertEquals(5, data.readUnsignedByte());
+      assertPalette(data, 17, index -> index == 16 ? 100 : index);
+      assertStorage(data, 5, index -> index % 16 == 15 ? 16 : index % 16);
+    } finally {
+      data.release();
+    }
+  }
+
+  private static ByteBuf createPaletteData(int bits, int paletteSize) {
+    ByteBuf data = Unpooled.buffer();
+    data.writeByte(bits);
+    VarIntUtil.writeVarInt(data, paletteSize);
+    for (int value = 0; value < paletteSize; value++) {
+      VarIntUtil.writeVarInt(data, value);
     }
 
-    @Test
-    void remapsStorageWhenPaletteExpansionChangesFromFourToFiveBits() {
-        ByteBuf data = createPaletteData(4, 16);
-        try {
-            AntiXrayProcessor processor = new AntiXrayProcessor(
-                ReplacementStrategy.STATIC_ZERO,
-                ReplacementPresets.createStatic(100),
-                new int[]{15},
-                256
-            );
-
-            processor.process(data, 0, false);
-
-            assertEquals(5, data.readUnsignedByte());
-            assertPalette(data, 17, index -> index == 16 ? 100 : index);
-            assertStorage(data, 5, index -> index % 16 == 15 ? 16 : index % 16);
-        } finally {
-            data.release();
-        }
+    int valuesPerWord = Long.SIZE / bits;
+    int wordCount = (BLOCK_COUNT + valuesPerWord - 1) / valuesPerWord;
+    long[] storage = new long[wordCount];
+    for (int index = 0; index < BLOCK_COUNT; index++) {
+      int wordIndex = index / valuesPerWord;
+      int bitIndex = (index % valuesPerWord) * bits;
+      storage[wordIndex] |= (long) (index % paletteSize) << bitIndex;
     }
-
-    private static ByteBuf createPaletteData(int bits, int paletteSize) {
-        ByteBuf data = Unpooled.buffer();
-        data.writeByte(bits);
-        VarIntUtil.writeVarInt(data, paletteSize);
-        for (int value = 0; value < paletteSize; value++) {
-            VarIntUtil.writeVarInt(data, value);
-        }
-
-        int valuesPerWord = Long.SIZE / bits;
-        int wordCount = (BLOCK_COUNT + valuesPerWord - 1) / valuesPerWord;
-        long[] storage = new long[wordCount];
-        for (int index = 0; index < BLOCK_COUNT; index++) {
-            int wordIndex = index / valuesPerWord;
-            int bitIndex = (index % valuesPerWord) * bits;
-            storage[wordIndex] |= (long) (index % paletteSize) << bitIndex;
-        }
-        for (long word : storage) {
-            data.writeLong(word);
-        }
-        return data;
+    for (long word : storage) {
+      data.writeLong(word);
     }
+    return data;
+  }
 
-    @Test
-    void expansionToGlobalPaletteUsesRegistryIdsAndRegistryBitWidth() {
-        ByteBuf data = createPaletteData(8, 256);
-        try {
-            // Make local IDs differ from registry IDs to catch incomplete index conversion.
-            ByteBuf input = Unpooled.buffer();
-            try {
-                input.writeByte(8);
-                VarIntUtil.writeVarInt(input, 256);
-                for (int i = 0; i < 256; i++) VarIntUtil.writeVarInt(input, i + 1000);
-                data.skipBytes(1);
-                int size = VarIntUtil.readVarInt(data);
-                for (int i = 0; i < size; i++) VarIntUtil.readVarInt(data);
-                input.writeBytes(data);
-                new AntiXrayProcessor(ReplacementStrategy.STATIC_ZERO,
-                    ReplacementPresets.createStatic(3000), new int[]{1255}, 32768)
-                    .process(input, 0, false);
-                assertEquals(15, input.readUnsignedByte());
-                assertStorage(input, 15, i -> i % 256 == 255 ? 3000 : 1000 + i % 256);
-                assertEquals(((BLOCK_COUNT + 3) / 4) * 8, input.readableBytes());
-            } finally {
-                input.release();
-            }
-        } finally {
-            data.release();
-        }
+  @Test
+  void expansionToGlobalPaletteUsesRegistryIdsAndRegistryBitWidth() {
+    ByteBuf data = createPaletteData(8, 256);
+    try {
+      // Make local IDs differ from registry IDs to catch incomplete index conversion.
+      ByteBuf input = Unpooled.buffer();
+      try {
+        input.writeByte(8);
+        VarIntUtil.writeVarInt(input, 256);
+        for (int i = 0; i < 256; i++) VarIntUtil.writeVarInt(input, i + 1000);
+        data.skipBytes(1);
+        int size = VarIntUtil.readVarInt(data);
+        for (int i = 0; i < size; i++) VarIntUtil.readVarInt(data);
+        input.writeBytes(data);
+        new AntiXrayProcessor(ReplacementStrategy.STATIC_ZERO,
+          ReplacementPresets.createStatic(3000), new int[]{1255}, 32768)
+          .process(input, 0, false);
+        assertEquals(15, input.readUnsignedByte());
+        assertStorage(input, 15, i -> i % 256 == 255 ? 3000 : 1000 + i % 256);
+        assertEquals(((BLOCK_COUNT + 3) / 4) * 8, input.readableBytes());
+      } finally {
+        input.release();
+      }
+    } finally {
+      data.release();
     }
+  }
 
-    private static void assertPalette(ByteBuf data, int expectedSize, ExpectedValue expectedValue) {
-        assertEquals(expectedSize, VarIntUtil.readVarInt(data));
-        for (int index = 0; index < expectedSize; index++) {
-            assertEquals(expectedValue.at(index), VarIntUtil.readVarInt(data), "palette index " + index);
-        }
+  private static void assertPalette(ByteBuf data, int expectedSize, ExpectedValue expectedValue) {
+    assertEquals(expectedSize, VarIntUtil.readVarInt(data));
+    for (int index = 0; index < expectedSize; index++) {
+      assertEquals(expectedValue.at(index), VarIntUtil.readVarInt(data), "palette index " + index);
     }
+  }
 
-    private static void assertStorage(ByteBuf data, int bits, ExpectedValue expectedValue) {
-        int valuesPerWord = Long.SIZE / bits;
-        int storageStart = data.readerIndex();
-        long mask = (1L << bits) - 1L;
-        for (int index = 0; index < BLOCK_COUNT; index++) {
-            int wordIndex = index / valuesPerWord;
-            int bitIndex = (index % valuesPerWord) * bits;
-            long word = data.getLong(storageStart + wordIndex * Long.BYTES);
-            assertEquals(expectedValue.at(index), (word >>> bitIndex) & mask, "block index " + index);
-        }
+  private static void assertStorage(ByteBuf data, int bits, ExpectedValue expectedValue) {
+    int valuesPerWord = Long.SIZE / bits;
+    int storageStart = data.readerIndex();
+    long mask = (1L << bits) - 1L;
+    for (int index = 0; index < BLOCK_COUNT; index++) {
+      int wordIndex = index / valuesPerWord;
+      int bitIndex = (index % valuesPerWord) * bits;
+      long word = data.getLong(storageStart + wordIndex * Long.BYTES);
+      assertEquals(expectedValue.at(index), (word >>> bitIndex) & mask, "block index " + index);
     }
+  }
 
-    @FunctionalInterface
-    private interface ExpectedValue {
-        int at(int index);
-    }
+  @FunctionalInterface
+  private interface ExpectedValue {
+    int at(int index);
+  }
 }

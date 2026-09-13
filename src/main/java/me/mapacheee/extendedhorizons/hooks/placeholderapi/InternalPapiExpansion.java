@@ -11,52 +11,52 @@ import org.jetbrains.annotations.Nullable;
 
 public final class InternalPapiExpansion extends PlaceholderExpansion {
 
-    private final SessionRegistry sessionRegistry;
+  private final SessionRegistry sessionRegistry;
 
-    public InternalPapiExpansion(SessionRegistry sessionRegistry) {
-        this.sessionRegistry = sessionRegistry;
+  public InternalPapiExpansion(SessionRegistry sessionRegistry) {
+    this.sessionRegistry = sessionRegistry;
+  }
+
+  @Override
+  public @NotNull String getIdentifier() {
+    return "extendedhorizons";
+  }
+
+  @Override
+  public @NotNull String getAuthor() {
+    return "Mapacheee";
+  }
+
+  @Override
+  public @NotNull String getVersion() {
+    ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
+    return plugin != null ? plugin.getPluginMeta().getVersion() : "1.0.0";
+  }
+
+  @Override
+  public boolean persist() {
+    return true;
+  }
+
+  @Override
+  public @Nullable String onRequest(OfflinePlayer offlinePlayer, @NotNull String params) {
+    if (offlinePlayer == null || !offlinePlayer.isOnline()) {
+      return null;
     }
 
-    @Override
-    public @NotNull String getIdentifier() {
-        return "extendedhorizons";
+    Player player = offlinePlayer.getPlayer();
+    if (player == null) {
+      return null;
     }
 
-    @Override
-    public @NotNull String getAuthor() {
-        return "Mapacheee";
+    if (params.equalsIgnoreCase("view_distance")) {
+      PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
+      if (session != null) {
+        return String.valueOf(session.distance());
+      }
+      return "0";
     }
 
-    @Override
-    public @NotNull String getVersion() {
-        ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
-        return plugin != null ? plugin.getPluginMeta().getVersion() : "1.0.0";
-    }
-
-    @Override
-    public boolean persist() {
-        return true; 
-    }
-
-    @Override
-    public @Nullable String onRequest(OfflinePlayer offlinePlayer, @NotNull String params) {
-        if (offlinePlayer == null || !offlinePlayer.isOnline()) {
-            return null;
-        }
-
-        Player player = offlinePlayer.getPlayer();
-        if (player == null) {
-            return null;
-        }
-
-        if (params.equalsIgnoreCase("view_distance")) {
-            PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
-            if (session != null) {
-                return String.valueOf(session.distance());
-            }
-            return "0";
-        }
-
-        return null;
-    }
+    return null;
+  }
 }

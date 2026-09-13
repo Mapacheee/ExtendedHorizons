@@ -10,22 +10,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DiskChunkReaderCompatibilityTest {
 
-    @AfterEach
-    void clearCache() {
-        DiskChunkReader.clearIncompatibleRegions();
-    }
+  @AfterEach
+  void clearCache() {
+    DiskChunkReader.clearIncompatibleRegions();
+  }
 
-    @Test
-    void incompatibleRegionDoesNotDisableAdjacentRegionsOrWorlds() {
-        UUID worldId = UUID.randomUUID();
-        UUID otherWorldId = UUID.randomUUID();
+  @Test
+  void incompatibleRegionDoesNotDisableAdjacentRegionsOrWorlds() {
+    UUID worldId = UUID.randomUUID();
+    UUID otherWorldId = UUID.randomUUID();
 
-        assertTrue(DiskChunkReader.markRegionIncompatible(worldId, -1, -1));
-        assertFalse(DiskChunkReader.markRegionIncompatible(worldId, -32, -32));
+    assertTrue(DiskChunkReader.markRegionIncompatible(worldId, -1, -1));
+    assertFalse(DiskChunkReader.markRegionIncompatible(worldId, -32, -32));
 
-        assertFalse(DiskChunkReader.shouldAttemptDirectRead(worldId, -1, -1));
-        assertFalse(DiskChunkReader.shouldAttemptDirectRead(worldId, -32, -32));
-        assertTrue(DiskChunkReader.shouldAttemptDirectRead(worldId, -33, -33));
-        assertTrue(DiskChunkReader.shouldAttemptDirectRead(otherWorldId, -1, -1));
-    }
+    assertFalse(DiskChunkReader.shouldAttemptDirectRead(worldId, -1, -1));
+    assertFalse(DiskChunkReader.shouldAttemptDirectRead(worldId, -32, -32));
+    assertTrue(DiskChunkReader.shouldAttemptDirectRead(worldId, -33, -33));
+    assertTrue(DiskChunkReader.shouldAttemptDirectRead(otherWorldId, -1, -1));
+  }
 }

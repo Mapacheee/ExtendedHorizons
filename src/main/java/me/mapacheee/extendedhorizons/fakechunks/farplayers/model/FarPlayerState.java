@@ -10,16 +10,17 @@ import java.util.List;
 import java.util.UUID;
 
 public record FarPlayerState(
-    int entityId,
-    UUID uuid,
-    UUID worldId,
-    ClientboundPlayerInfoUpdatePacket.Entry playerInfo,
-    double x,
-    double y,
-    double z,
-    float yaw,
-    float pitch,
-    float headYaw,
-    List<Pair<EquipmentSlot, ItemStack>> equipment,
-    List<SynchedEntityData.DataValue<?>> metadata
-) {}
+  int entityId,
+  UUID uuid,
+  UUID worldId,
+  ClientboundPlayerInfoUpdatePacket.Entry playerInfo,
+  double x,
+  double y,
+  double z,
+  float yaw,
+  float pitch,
+  float headYaw,
+  List<Pair<EquipmentSlot, ItemStack>> equipment,
+  List<SynchedEntityData.DataValue<?>> metadata
+) {
+}

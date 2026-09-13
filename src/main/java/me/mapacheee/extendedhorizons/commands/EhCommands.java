@@ -5,12 +5,12 @@ import com.thewinterframework.command.CommandComponent;
 import com.thewinterframework.configurate.Container;
 import com.thewinterframework.service.ReloadServiceManager;
 import me.mapacheee.extendedhorizons.config.EhConfig;
+import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkSerializationExecutorService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
@@ -31,114 +31,114 @@ import java.util.List;
 @CommandComponent
 public class EhCommands {
 
-    @Inject
-    private ReloadServiceManager reloadServiceManager;
-    @Inject
-    private ChunkBuildCacheService chunkBuildCacheService;
-    @Inject
-    private LightPayloadCacheService lightPayloadCacheService;
-    @Inject
-    private AntiXrayPayloadCacheService antiXrayPayloadCacheService;
-    @Inject
-    private AntiXrayService antiXrayService;
-    @Inject
-    private ChunkSerializationExecutorService chunkSerializationExecutorService;
-    @Inject
-    private FakeChunkOrchestratorService fakeChunkOrchestratorService;
-    @Inject
-    private SessionRegistry sessionRegistry;
-    @Inject
-    private MessagesFacade messages;
-    @Inject
-    private Container<EhConfig> configContainer;
-    @Inject
-    private Container<EhMessages> messagesContainer;
+  @Inject
+  private ReloadServiceManager reloadServiceManager;
+  @Inject
+  private ChunkBuildCacheService chunkBuildCacheService;
+  @Inject
+  private LightPayloadCacheService lightPayloadCacheService;
+  @Inject
+  private AntiXrayPayloadCacheService antiXrayPayloadCacheService;
+  @Inject
+  private AntiXrayService antiXrayService;
+  @Inject
+  private ChunkSerializationExecutorService chunkSerializationExecutorService;
+  @Inject
+  private FakeChunkOrchestratorService fakeChunkOrchestratorService;
+  @Inject
+  private SessionRegistry sessionRegistry;
+  @Inject
+  private MessagesFacade messages;
+  @Inject
+  private Container<EhConfig> configContainer;
+  @Inject
+  private Container<EhMessages> messagesContainer;
 
-    private static final int MIN_DISTANCE = 2;
+  private static final int MIN_DISTANCE = 2;
 
-    @Suggestions("online-players")
-    public List<String> suggestOnlinePlayers(CommandContext<?> ctx, CommandInput input) {
-      var online = Bukkit.getOnlinePlayers();
-      String token = input.lastRemainingToken().toLowerCase();
-        return online.stream()
-            .map(Player::getName)
-            .filter(name -> name.toLowerCase().startsWith(token))
-            .toList();
+  @Suggestions("online-players")
+  public List<String> suggestOnlinePlayers(CommandContext<?> ctx, CommandInput input) {
+    var online = Bukkit.getOnlinePlayers();
+    String token = input.lastRemainingToken().toLowerCase();
+    return online.stream()
+      .map(Player::getName)
+      .filter(name -> name.toLowerCase().startsWith(token))
+      .toList();
+  }
+
+  @Command("eh reload")
+  @Permission("extendedhorizons.reload")
+  public void reloadCommand(Source source) {
+    this.chunkBuildCacheService.suspendForReload();
+    try {
+      this.reloadServiceManager.reload();
+      this.configContainer.reload();
+      this.messagesContainer.reload();
+      this.chunkSerializationExecutorService.rebuild();
+      this.lightPayloadCacheService.rebuild();
+      this.antiXrayPayloadCacheService.rebuild();
+      this.antiXrayService.invalidateAllProfiles();
+      this.fakeChunkOrchestratorService.invalidateAllPermissionCache();
+    } finally {
+      this.chunkBuildCacheService.rebuildCaches();
     }
+    source.source().sendMessage(this.messages.reloadSuccess());
+  }
 
-    @Command("eh reload")
-    @Permission("extendedhorizons.reload")
-    public void reloadCommand(Source source) {
-        this.chunkBuildCacheService.suspendForReload();
-        try {
-            this.reloadServiceManager.reload();
-            this.configContainer.reload();
-            this.messagesContainer.reload();
-            this.chunkSerializationExecutorService.rebuild();
-            this.lightPayloadCacheService.rebuild();
-            this.antiXrayPayloadCacheService.rebuild();
-            this.antiXrayService.invalidateAllProfiles();
-            this.fakeChunkOrchestratorService.invalidateAllPermissionCache();
-        } finally {
-            this.chunkBuildCacheService.rebuildCaches();
-        }
-        source.source().sendMessage(this.messages.reloadSuccess());
+  @Command("eh setme <distance>")
+  @Permission("extendedhorizons.setme")
+  public void setMeCommand(Source source, @Argument("distance") int distance) {
+    if (!(source.source() instanceof Player sender)) {
+      return;
     }
+    int clamped = Math.clamp(distance, MIN_DISTANCE, ChunkPlannerService.MAX_CHUNK_DISTANCE);
+    PlayerSession session = this.sessionRegistry.ensureFor(sender, false);
+    session.playerOverrideDistance(clamped);
+    source.source().sendMessage(this.messages.setmeSuccess(clamped));
+  }
 
-    @Command("eh setme <distance>")
-    @Permission("extendedhorizons.setme")
-    public void setMeCommand(Source source, @Argument("distance") int distance) {
-        if (!(source.source() instanceof Player sender)) {
-            return;
-        }
-        int clamped = Math.clamp(distance, MIN_DISTANCE, ChunkPlannerService.MAX_CHUNK_DISTANCE);
-        PlayerSession session = this.sessionRegistry.ensureFor(sender, false);
-        session.playerOverrideDistance(clamped);
-        source.source().sendMessage(this.messages.setmeSuccess(clamped));
+  @Command("eh set <player> <distance>")
+  @Permission("extendedhorizons.set")
+  public void setPlayerCommand(
+    Source source,
+    @Argument(value = "player", suggestions = "online-players") String playerName,
+    @Argument("distance") int distance
+  ) {
+    Player target = Bukkit.getPlayerExact(playerName);
+    if (target == null) {
+      return;
     }
+    int clamped = Math.clamp(distance, MIN_DISTANCE, ChunkPlannerService.MAX_CHUNK_DISTANCE);
+    PlayerSession session = this.sessionRegistry.ensureFor(target, false);
+    session.playerOverrideDistance(clamped);
+    source.source().sendMessage(this.messages.setSuccess(target.getName(), clamped));
+    target.sendMessage(this.messages.setNotify(clamped));
+  }
 
-    @Command("eh set <player> <distance>")
-    @Permission("extendedhorizons.set")
-    public void setPlayerCommand(
-        Source source,
-        @Argument(value = "player", suggestions = "online-players") String playerName,
-        @Argument("distance") int distance
-    ) {
-        Player target = Bukkit.getPlayerExact(playerName);
-        if (target == null) {
-            return;
-        }
-        int clamped = Math.clamp(distance, MIN_DISTANCE, ChunkPlannerService.MAX_CHUNK_DISTANCE);
-        PlayerSession session = this.sessionRegistry.ensureFor(target, false);
-        session.playerOverrideDistance(clamped);
-        source.source().sendMessage(this.messages.setSuccess(target.getName(), clamped));
-        target.sendMessage(this.messages.setNotify(clamped));
+  @Command("eh reset [player]")
+  @Permission("extendedhorizons.reset")
+  public void resetCommand(
+    Source source,
+    @Argument(value = "player", suggestions = "online-players") String playerName
+  ) {
+    if (playerName != null) {
+      Player target = Bukkit.getPlayerExact(playerName);
+      if (target == null) {
+        return;
+      }
+      PlayerSession session = this.sessionRegistry.get(target.getUniqueId());
+      if (session != null) {
+        session.resetPlayerOverrideDistance();
+      }
+      source.source().sendMessage(this.messages.resetSuccess(target.getName()));
+    } else if (source.source() instanceof Player player) {
+      PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
+      if (session != null) {
+        session.resetPlayerOverrideDistance();
+      }
+      player.sendMessage(this.messages.resetSelfSuccess());
+    } else {
+      source.source().sendMessage(this.messages.resetConsoleError());
     }
-
-    @Command("eh reset [player]")
-    @Permission("extendedhorizons.reset")
-    public void resetCommand(
-        Source source,
-        @Argument(value = "player", suggestions = "online-players") String playerName
-    ) {
-        if (playerName != null) {
-            Player target = Bukkit.getPlayerExact(playerName);
-            if (target == null) {
-                return;
-            }
-            PlayerSession session = this.sessionRegistry.get(target.getUniqueId());
-            if (session != null) {
-                session.resetPlayerOverrideDistance();
-            }
-            source.source().sendMessage(this.messages.resetSuccess(target.getName()));
-        } else if (source.source() instanceof Player player) {
-            PlayerSession session = this.sessionRegistry.get(player.getUniqueId());
-            if (session != null) {
-                session.resetPlayerOverrideDistance();
-            }
-            player.sendMessage(this.messages.resetSelfSuccess());
-        } else {
-            source.source().sendMessage(this.messages.resetConsoleError());
-        }
-    }
+  }
 }

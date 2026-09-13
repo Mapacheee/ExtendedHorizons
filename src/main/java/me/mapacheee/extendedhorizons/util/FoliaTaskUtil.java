@@ -11,49 +11,51 @@ import org.slf4j.LoggerFactory;
 
 public final class FoliaTaskUtil {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(FoliaTaskUtil.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(FoliaTaskUtil.class);
 
-    private FoliaTaskUtil() {}
+  private FoliaTaskUtil() {
+  }
 
-    public static ScheduledTask runGlobalTimer(Plugin plugin, Runnable runnable, long initialDelayTicks, long periodTicks) {
-        return Bukkit.getGlobalRegionScheduler().runAtFixedRate(
-            plugin,
-            task -> runnable.run(),
-            Math.max(1L, initialDelayTicks),
-            Math.max(1L, periodTicks)
-        );
+  public static ScheduledTask runGlobalTimer(Plugin plugin, Runnable runnable, long initialDelayTicks,
+    long periodTicks) {
+    return Bukkit.getGlobalRegionScheduler().runAtFixedRate(
+      plugin,
+      task -> runnable.run(),
+      Math.max(1L, initialDelayTicks),
+      Math.max(1L, periodTicks)
+    );
+  }
+
+  public static void runGlobalDelayed(Plugin plugin, Runnable runnable, long delayTicks) {
+    Bukkit.getGlobalRegionScheduler().runDelayed(
+      plugin,
+      task -> runnable.run(),
+      Math.max(1L, delayTicks)
+    );
+  }
+
+  public static void runForPlayer(Player player, Plugin plugin, Runnable runnable) {
+    if (player == null || plugin == null || runnable == null) {
+      return;
     }
-
-    public static void runGlobalDelayed(Plugin plugin, Runnable runnable, long delayTicks) {
-      Bukkit.getGlobalRegionScheduler().runDelayed(
-        plugin,
-        task -> runnable.run(),
-        Math.max(1L, delayTicks)
-      );
+    try {
+      player.getScheduler().run(plugin, task -> runnable.run(), null);
+    } catch (Throwable throwable) {
+      LOGGER.error("Error running task for player", throwable);
     }
+  }
 
-    public static void runForPlayer(Player player, Plugin plugin, Runnable runnable) {
-        if (player == null || plugin == null || runnable == null) {
-            return;
-        }
-        try {
-            player.getScheduler().run(plugin, task -> runnable.run(), null);
-        } catch (Throwable throwable) {
-            LOGGER.error("Error running task for player", throwable);
-        }
+  public static boolean runAtChunk(World world, int chunkX, int chunkZ, Plugin plugin, Runnable runnable) {
+    if (world == null || plugin == null || runnable == null) {
+      return false;
     }
-
-    public static boolean runAtChunk(World world, int chunkX, int chunkZ, Plugin plugin, Runnable runnable) {
-        if (world == null || plugin == null || runnable == null) {
-            return false;
-        }
-        try {
-            Location loc = new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8);
-            Bukkit.getRegionScheduler().execute(plugin, loc, runnable);
-            return true;
-        } catch (Throwable throwable) {
-            LOGGER.error("Error running task for chunk", throwable);
-            return false;
-        }
+    try {
+      Location loc = new Location(world, (chunkX << 4) + 8, 0, (chunkZ << 4) + 8);
+      Bukkit.getRegionScheduler().execute(plugin, loc, runnable);
+      return true;
+    } catch (Throwable throwable) {
+      LOGGER.error("Error running task for chunk", throwable);
+      return false;
     }
+  }
 }

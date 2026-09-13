@@ -6,14 +6,14 @@ folia-supported: true
 description: ${description}
 author: Mapacheee
 website: https://github.com/mapacheee/extendedhorizons
-depend: [MapacheeeLib]
-softdepend: [WorldEdit, FastAsyncWorldEdit, PlaceholderAPI]
+depend: [ MapacheeeLib ]
+softdepend: [ WorldEdit, FastAsyncWorldEdit, PlaceholderAPI ]
 
 commands:
   extendedhorizons:
     description: Main ExtendedHorizons command
     usage: /<command>
-    aliases: [eh]
+    aliases: [ eh ]
     permission: extendedhorizons.use
 
 permissions:

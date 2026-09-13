@@ -9,32 +9,32 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DiskChunkSerializerValidationTest {
 
-    private static final int DATA_VERSION = 5000;
+  private static final int DATA_VERSION = 5000;
 
-    @Test
-    void acceptsCurrentFullChunkAtRequestedCoordinates() {
-        CompoundTag tag = chunkTag(4, -7, DATA_VERSION, "minecraft:full");
+  @Test
+  void acceptsCurrentFullChunkAtRequestedCoordinates() {
+    CompoundTag tag = chunkTag(4, -7, DATA_VERSION, "minecraft:full");
 
-        assertTrue(DiskChunkSerializer.isCompatibleChunkTag(tag, 4, -7, DATA_VERSION));
-    }
+    assertTrue(DiskChunkSerializer.isCompatibleChunkTag(tag, 4, -7, DATA_VERSION));
+  }
 
-    @Test
-    void rejectsChunksThatRequirePaperUpgrade() {
-        CompoundTag oldTag = chunkTag(4, -7, DATA_VERSION - 1, "minecraft:full");
-        CompoundTag wrongCoordinates = chunkTag(5, -7, DATA_VERSION, "minecraft:full");
-        CompoundTag protoChunk = chunkTag(4, -7, DATA_VERSION, "minecraft:light");
+  @Test
+  void rejectsChunksThatRequirePaperUpgrade() {
+    CompoundTag oldTag = chunkTag(4, -7, DATA_VERSION - 1, "minecraft:full");
+    CompoundTag wrongCoordinates = chunkTag(5, -7, DATA_VERSION, "minecraft:full");
+    CompoundTag protoChunk = chunkTag(4, -7, DATA_VERSION, "minecraft:light");
 
-        assertFalse(DiskChunkSerializer.isCompatibleChunkTag(oldTag, 4, -7, DATA_VERSION));
-        assertFalse(DiskChunkSerializer.isCompatibleChunkTag(wrongCoordinates, 4, -7, DATA_VERSION));
-        assertFalse(DiskChunkSerializer.isCompatibleChunkTag(protoChunk, 4, -7, DATA_VERSION));
-    }
+    assertFalse(DiskChunkSerializer.isCompatibleChunkTag(oldTag, 4, -7, DATA_VERSION));
+    assertFalse(DiskChunkSerializer.isCompatibleChunkTag(wrongCoordinates, 4, -7, DATA_VERSION));
+    assertFalse(DiskChunkSerializer.isCompatibleChunkTag(protoChunk, 4, -7, DATA_VERSION));
+  }
 
-    private static CompoundTag chunkTag(int x, int z, int dataVersion, String status) {
-        CompoundTag tag = new CompoundTag();
-        tag.putInt("DataVersion", dataVersion);
-        tag.putInt(SerializableChunkData.X_POS_TAG, x);
-        tag.putInt(SerializableChunkData.Z_POS_TAG, z);
-        tag.putString("Status", status);
-        return tag;
-    }
+  private static CompoundTag chunkTag(int x, int z, int dataVersion, String status) {
+    CompoundTag tag = new CompoundTag();
+    tag.putInt("DataVersion", dataVersion);
+    tag.putInt(SerializableChunkData.X_POS_TAG, x);
+    tag.putInt(SerializableChunkData.Z_POS_TAG, z);
+    tag.putString("Status", status);
+    return tag;
+  }
 }

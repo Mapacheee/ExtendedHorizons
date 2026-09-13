@@ -12,41 +12,41 @@ import org.slf4j.LoggerFactory;
 @Service
 public final class WorldEditInvalidationListener {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(WorldEditInvalidationListener.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(WorldEditInvalidationListener.class);
 
-    private final BulkChunkInvalidationService bulkChunkInvalidationService;
-    private final Container<EhConfig> configContainer;
-    private InternalWorldEditListener internalListener;
+  private final BulkChunkInvalidationService bulkChunkInvalidationService;
+  private final Container<EhConfig> configContainer;
+  private InternalWorldEditListener internalListener;
 
-    @Inject
-    public WorldEditInvalidationListener(
-        BulkChunkInvalidationService bulkChunkInvalidationService,
-        Container<EhConfig> configContainer
-    ) {
-        this.bulkChunkInvalidationService = bulkChunkInvalidationService;
-        this.configContainer = configContainer;
+  @Inject
+  public WorldEditInvalidationListener(
+    BulkChunkInvalidationService bulkChunkInvalidationService,
+    Container<EhConfig> configContainer
+  ) {
+    this.bulkChunkInvalidationService = bulkChunkInvalidationService;
+    this.configContainer = configContainer;
+  }
+
+  @OnEnable
+  public void onEnable() {
+    if (!this.configContainer.get().worldEditEnabled()) {
+      LOGGER.info("WorldEdit hook is disabled via config.");
+      return;
     }
-
-    @OnEnable
-    public void onEnable() {
-        if (!this.configContainer.get().worldEditEnabled()) {
-            LOGGER.info("WorldEdit hook is disabled via config.");
-            return;
-        }
-        try {
-            Class.forName("com.sk89q.worldedit.WorldEdit");
-            this.internalListener = new InternalWorldEditListener(this.bulkChunkInvalidationService);
-            this.internalListener.register();
-        } catch (ClassNotFoundException e) {
-            LOGGER.info("WorldEdit is not present, ignoring event registration.");
-        }
+    try {
+      Class.forName("com.sk89q.worldedit.WorldEdit");
+      this.internalListener = new InternalWorldEditListener(this.bulkChunkInvalidationService);
+      this.internalListener.register();
+    } catch (ClassNotFoundException e) {
+      LOGGER.info("WorldEdit is not present, ignoring event registration.");
     }
+  }
 
-    @OnDisable
-    public void onDisable() {
-        if (this.internalListener != null) {
-            this.internalListener.unregister();
-            this.internalListener = null;
-        }
+  @OnDisable
+  public void onDisable() {
+    if (this.internalListener != null) {
+      this.internalListener.unregister();
+      this.internalListener = null;
     }
+  }
 }
