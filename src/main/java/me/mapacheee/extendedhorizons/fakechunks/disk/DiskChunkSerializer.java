@@ -5,6 +5,7 @@ import io.netty.buffer.PooledByteBufAllocator;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayProcessor;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkSectionCountWriter;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
+import me.mapacheee.extendedhorizons.util.ChunkSerializationCompat;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -15,7 +16,6 @@ import net.minecraft.network.VarInt;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.storage.SerializableChunkData;
 import org.slf4j.Logger;
@@ -30,7 +30,6 @@ public final class DiskChunkSerializer {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(DiskChunkSerializer.class);
 
-  private static final int PROTOCOL_MC296121 = 770;
   private static final int MIN_PACKET_SIZE = 4096;
   private static final int MAX_PACKET_BUFFER = 4 * 1024 * 1024;
   private static final int EXTRA_LIGHT_SECTIONS = 2;
@@ -192,33 +191,16 @@ public final class DiskChunkSerializer {
   }
 
   private static void writeSections(ByteBuf raw, LevelChunkSection[] sections) {
-    boolean applyFix = SharedConstants.getProtocolVersion() == PROTOCOL_MC296121;
-
-    int serializedSize = 0;
-    for (LevelChunkSection section : sections) {
-      serializedSize += section.getSerializedSize();
-      if (applyFix) {
-        serializedSize -= VarInt.getByteSize(
-          section.getStates().data.storage().getRaw().length)
-          + VarInt.getByteSize(
-          ((PalettedContainer<?>) section.getBiomes()).data.storage().getRaw().length);
+    ByteBuf data = PooledByteBufAllocator.DEFAULT.buffer(MIN_PACKET_SIZE, MAX_PACKET_BUFFER);
+    try {
+      FriendlyByteBuf friendly = new FriendlyByteBuf(data);
+      for (LevelChunkSection section : sections) {
+        ChunkSerializationCompat.writeSection(section, friendly);
       }
-    }
-
-    VarInt.write(raw, serializedSize);
-    int expectedEnd = raw.writerIndex() + serializedSize;
-
-    FriendlyByteBuf friendly = new FriendlyByteBuf(raw);
-    for (LevelChunkSection section : sections) {
-      section.write(friendly, null, 0);
-    }
-
-    if (raw.writerIndex() != expectedEnd) {
-      throw new IllegalStateException(
-        "Section size mismatch: expected writerIndex=" + expectedEnd
-          + " but got " + raw.writerIndex()
-          + " (diff=" + (raw.writerIndex() - expectedEnd) + ")"
-      );
+      VarInt.write(raw, data.readableBytes());
+      raw.writeBytes(data, data.readerIndex(), data.readableBytes());
+    } finally {
+      data.release();
     }
   }
 
@@ -327,11 +309,11 @@ public final class DiskChunkSerializer {
         LevelChunkSection section = sections[i];
         ChunkSectionCountWriter.write(out, section);
         int statesStart = out.writerIndex();
-        section.getStates().write(out, null, 0);
+        ChunkSerializationCompat.writePalette(section.getStates(), out);
         out.readerIndex(statesStart);
         antiXray.process(out, minSectionY + i, false);
         out.readerIndex(0);
-        section.getBiomes().write(out, null, 0);
+        ChunkSerializationCompat.writePalette(section.getBiomes(), out);
       }
       VarInt.write(raw, data.readableBytes());
       raw.writeBytes(data, data.readerIndex(), data.readableBytes());

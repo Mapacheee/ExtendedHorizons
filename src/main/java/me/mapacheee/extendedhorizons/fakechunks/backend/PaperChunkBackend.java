@@ -15,6 +15,7 @@ import me.mapacheee.extendedhorizons.fakechunks.disk.DiskChunkReader;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
+import me.mapacheee.extendedhorizons.util.ChunkSerializationCompat;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.VarInt;
@@ -397,7 +398,7 @@ public final class PaperChunkBackend implements ChunkBackend {
             @SuppressWarnings("deprecation")
             ClientboundLevelChunkPacketData chunkData = new ClientboundLevelChunkPacketData(chunk);
             RegistryFriendlyByteBuf registryBuf = new RegistryFriendlyByteBuf(raw, level.registryAccess());
-            chunkData.write(registryBuf);
+            ChunkSerializationCompat.writeChunkData(chunkData, registryBuf);
           }
           FastLightDataWriter.writeSyntheticFullBrightLight(
             buf,
@@ -418,7 +419,7 @@ public final class PaperChunkBackend implements ChunkBackend {
           @SuppressWarnings("deprecation")
           ClientboundLevelChunkPacketData chunkData = new ClientboundLevelChunkPacketData(chunk);
           RegistryFriendlyByteBuf registryBuf = new RegistryFriendlyByteBuf(raw, level.registryAccess());
-          chunkData.write(registryBuf);
+          ChunkSerializationCompat.writeChunkData(chunkData, registryBuf);
           this.writeFastLightWithCache(buf, chunk, worldId, chunkKey, lightCacheGeneration);
           return raw;
         } catch (Throwable throwable) {
@@ -474,13 +475,13 @@ public final class PaperChunkBackend implements ChunkBackend {
 
     int preReaderIndex = out.readerIndex();
     int preWriterIndex = out.writerIndex();
-    section.getStates().write(out, null, 0);
+    ChunkSerializationCompat.writePalette(section.getStates(), out);
 
     out.readerIndex(preWriterIndex);
     antiXrayProcessor.process(out, sectionY, false);
     out.readerIndex(preReaderIndex);
 
-    section.getBiomes().write(out, null, 0);
+    ChunkSerializationCompat.writePalette(section.getBiomes(), out);
   }
 
   private static boolean isCancellation(Throwable throwable) {
@@ -509,7 +510,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     @SuppressWarnings("deprecation") // there isn't a not deprecated way to do this, lol
     ClientboundLevelChunkPacketData chunkData = new ClientboundLevelChunkPacketData(chunk);
     RegistryFriendlyByteBuf registryBuf = new RegistryFriendlyByteBuf(raw, level.registryAccess());
-    chunkData.write(registryBuf);
+    ChunkSerializationCompat.writeChunkData(chunkData, registryBuf);
     this.writeVanillaLight(buf, level, chunkX, chunkZ);
   }
 
@@ -519,7 +520,7 @@ public final class PaperChunkBackend implements ChunkBackend {
       level.getLightEngine(),
       null,
       null);
-    lightData.write(buf);
+    ChunkSerializationCompat.writeLightData(lightData, buf);
   }
 
   private int estimatePacketSize(LevelChunk chunk, AntiXrayProcessor antiXrayProcessor, boolean useFast) {
@@ -607,8 +608,8 @@ public final class PaperChunkBackend implements ChunkBackend {
           FriendlyByteBuf statesOut = new FriendlyByteBuf(states);
           FriendlyByteBuf biomesOut = new FriendlyByteBuf(biomes);
 
-          section.getStates().write(statesOut, null, 0);
-          section.getBiomes().write(biomesOut, null, 0);
+          ChunkSerializationCompat.writePalette(section.getStates(), statesOut);
+          ChunkSerializationCompat.writePalette(section.getBiomes(), biomesOut);
 
           sectionSnapshots[i] = new AntiXraySectionSnapshot(
             i + minSectionY,

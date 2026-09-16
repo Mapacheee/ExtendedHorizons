@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.fakechunks.backend;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
+import me.mapacheee.extendedhorizons.util.ChunkSerializationCompat;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.VarInt;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -47,7 +48,7 @@ final class FastChunkDataWriter {
 
   static void writeSections(FriendlyByteBuf out, LevelChunkSection[] sections) {
     writeSections(out, sections.length, (sectionOut, index) ->
-      sections[index].write(sectionOut, null, 0));
+      ChunkSerializationCompat.writeSection(sections[index], sectionOut));
   }
 
   static void writeSections(FriendlyByteBuf out, int sectionCount, SectionWriter sectionWriter) {

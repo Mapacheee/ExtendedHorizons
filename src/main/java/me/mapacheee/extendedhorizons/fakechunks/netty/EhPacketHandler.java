@@ -165,7 +165,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
     boolean fakeChunksEnabled = session.enabled();
     return switch (input) {
       case ClientboundLevelChunkWithLightPacket packet -> {
-        session.serverChunkAdd(packet.getX(), packet.getZ());
+        session.serverChunkAdd(NmsCompat.chunkX(packet), NmsCompat.chunkZ(packet));
         yield false;
       }
       case ClientboundForgetLevelChunkPacket packet -> {
@@ -226,7 +226,7 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
       }
       case ClientboundRemoveEntitiesPacket packet -> {
         try {
-          IntList ids = packet.getEntityIds();
+          IntList ids = NmsCompat.removedEntityIds(packet);
           for (int i = 0, size = ids.size(); i < size; i++) {
             session.removeServerTrackedEntity(ids.getInt(i));
           }

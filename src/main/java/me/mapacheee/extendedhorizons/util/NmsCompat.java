@@ -1,7 +1,12 @@
 package me.mapacheee.extendedhorizons.util;
 
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
+import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.phys.Vec3;
+import it.unimi.dsi.fastutil.ints.IntList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,6 +23,9 @@ public final class NmsCompat {
   public static final Object PLAYER_ENTITY_TYPE;
   private static final MethodHandle SPAWN_PACKET_CONSTRUCTOR;
   private static final MethodHandle GET_ENTITY_TYPE;
+  private static final MethodHandle CHUNK_X = accessor(ClientboundLevelChunkWithLightPacket.class, "x", "getX");
+  private static final MethodHandle CHUNK_Z = accessor(ClientboundLevelChunkWithLightPacket.class, "z", "getZ");
+  private static final MethodHandle REMOVED_IDS = accessor(ClientboundRemoveEntitiesPacket.class, "entityIds", "getEntityIds");
 
   static {
     Object playerType = null;
@@ -86,6 +94,80 @@ public final class NmsCompat {
       // fallback
     }
     return false;
+  }
+
+  public static int chunkX(ClientboundLevelChunkWithLightPacket packet) {
+    return (int) read(CHUNK_X, packet);
+  }
+
+  public static int chunkZ(ClientboundLevelChunkWithLightPacket packet) {
+    return (int) read(CHUNK_Z, packet);
+  }
+
+  public static IntList removedEntityIds(ClientboundRemoveEntitiesPacket packet) {
+    return (IntList) read(REMOVED_IDS, packet);
+  }
+
+  public static Object createPositionSyncPacket(int entityId, double x, double y, double z, float yaw, float pitch) {
+    try {
+      Vec3 position = new Vec3(x, y, z);
+      if (Movement.POSITION_PATH != null) {
+        return Movement.CONSTRUCTOR.invoke(entityId, Movement.POSITION_PATH.invoke(position), yaw, pitch, true);
+      }
+      return Movement.CONSTRUCTOR.invoke(entityId, new PositionMoveRotation(position, Vec3.ZERO, yaw, pitch), true);
+    } catch (Throwable throwable) {
+      throw new IllegalStateException("Failed to construct player position packet", throwable);
+    }
+  }
+
+  private static MethodHandle accessor(Class<?> type, String name, String legacyName) {
+    try {
+      Method method;
+      try {
+        method = type.getMethod(name);
+      } catch (NoSuchMethodException exception) {
+        method = type.getMethod(legacyName);
+      }
+      return MethodHandles.publicLookup().unreflect(method);
+    } catch (ReflectiveOperationException exception) {
+      throw new IllegalStateException("Unsupported packet accessor: " + type.getName() + "." + name, exception);
+    }
+  }
+
+  private static Object read(MethodHandle accessor, Object packet) {
+    try {
+      return accessor.invoke(packet);
+    } catch (Throwable throwable) {
+      throw new IllegalStateException("Failed to read packet " + packet.getClass().getSimpleName(), throwable);
+    }
+  }
+
+  private static final class Movement {
+    private static final MethodHandle POSITION_PATH;
+    private static final MethodHandle CONSTRUCTOR;
+
+    static {
+      try {
+        MethodHandles.Lookup lookup = MethodHandles.publicLookup();
+        Class<?> pathType;
+        try {
+          pathType = Class.forName("net.minecraft.world.entity.PositionPath");
+        } catch (ClassNotFoundException exception) {
+          pathType = null;
+        }
+        if (pathType != null) {
+          POSITION_PATH = lookup.unreflect(pathType.getMethod("of", Vec3.class));
+          CONSTRUCTOR = lookup.unreflectConstructor(ClientboundEntityPositionSyncPacket.class.getConstructor(
+            int.class, pathType, float.class, float.class, boolean.class));
+        } else {
+          POSITION_PATH = null;
+          CONSTRUCTOR = lookup.unreflectConstructor(ClientboundEntityPositionSyncPacket.class.getConstructor(
+            int.class, PositionMoveRotation.class, boolean.class));
+        }
+      } catch (ReflectiveOperationException exception) {
+        throw new IllegalStateException("Unsupported player position packet", exception);
+      }
+    }
   }
 
   public static Object createAddPlayerPacket(

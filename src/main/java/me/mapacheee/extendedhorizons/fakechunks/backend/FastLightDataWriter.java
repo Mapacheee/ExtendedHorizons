@@ -1,13 +1,15 @@
 package me.mapacheee.extendedhorizons.fakechunks.backend;
 
-import ca.spottedleaf.moonrise.patches.starlight.light.SWMRNibbleArray;
 import io.netty.buffer.ByteBuf;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
+import net.minecraft.core.SectionPos;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.lighting.LayerLightEventListener;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -25,24 +27,13 @@ final class FastLightDataWriter {
     Arrays.fill(FULL_BRIGHT, (byte) 0xFF);
   }
 
-  private static final MethodHandle GET_STORAGE_VISIBLE = createStorageVisibleHandle();
-
-  private static MethodHandle createStorageVisibleHandle() {
-    try {
-      MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(SWMRNibbleArray.class, MethodHandles.lookup());
-      return lookup.findGetter(SWMRNibbleArray.class, "storageVisible", byte[].class);
-    } catch (ReflectiveOperationException exception) {
-      throw new RuntimeException("Unable to access SWMRNibbleArray.storageVisible", exception);
-    }
-  }
-
   private FastLightDataWriter() {
   }
 
   static int estimateLightDataSize(LevelChunk chunk) {
     byte[][] blockLight =
-      java.util.Objects.requireNonNull(convertStarlightToBytes(chunk.starlight$getBlockNibbles(), false));
-    byte[][] skyLight = convertStarlightToBytes(chunk.starlight$getSkyNibbles(), true);
+      java.util.Objects.requireNonNull(readLightLayers(chunk, LightLayer.BLOCK, false));
+    byte[][] skyLight = readLightLayers(chunk, LightLayer.SKY, true);
     if (skyLight == null) {
       return estimateNoSkyLightSize(blockLight);
     }
@@ -59,15 +50,11 @@ final class FastLightDataWriter {
   }
 
   static boolean hasInitialisedLight(LevelChunk chunk) {
-    SWMRNibbleArray[] blockNibbles = chunk.starlight$getBlockNibbles();
-    for (SWMRNibbleArray layer : blockNibbles) {
-      if (layer != null && layer.isInitialisedVisible()) {
-        return true;
-      }
-    }
-    SWMRNibbleArray[] skyNibbles = chunk.starlight$getSkyNibbles();
-    for (SWMRNibbleArray layer : skyNibbles) {
-      if (layer != null && layer.isInitialisedVisible()) {
+    LevelLightEngine engine = chunk.getLevel().getLightEngine();
+    for (int y = engine.getMinLightSection(); y < engine.getMaxLightSection(); y++) {
+      SectionPos section = SectionPos.of(chunk.getPos(), y);
+      if (engine.getLayerListener(LightLayer.BLOCK).getDataLayerData(section) != null
+        || engine.getLayerListener(LightLayer.SKY).getDataLayerData(section) != null) {
         return true;
       }
     }
@@ -122,8 +109,8 @@ final class FastLightDataWriter {
 
   static void writeLightData(FriendlyByteBuf out, LevelChunk chunk) {
     byte[][] blockLight =
-      java.util.Objects.requireNonNull(convertStarlightToBytes(chunk.starlight$getBlockNibbles(), false));
-    byte[][] skyLight = convertStarlightToBytes(chunk.starlight$getSkyNibbles(), true);
+      java.util.Objects.requireNonNull(readLightLayers(chunk, LightLayer.BLOCK, false));
+    byte[][] skyLight = readLightLayers(chunk, LightLayer.SKY, true);
 
     if (skyLight == null) {
       writeNoSkyLightData(out, blockLight);
@@ -140,22 +127,21 @@ final class FastLightDataWriter {
     writeByteArrayList(out, masks.blockData);
   }
 
-  private static byte[][] convertStarlightToBytes(SWMRNibbleArray[] layers, boolean allowEmpty) {
-    try {
-      int layerCount = layers.length;
-      byte[][] byteLayers = new byte[layerCount][];
-      boolean converted = false;
-      for (int i = 0; i < layerCount; i++) {
-        SWMRNibbleArray layer = layers[i];
-        if (layer != null && layer.isInitialisedVisible()) {
-          byteLayers[i] = (byte[]) GET_STORAGE_VISIBLE.invoke(layer);
-          converted = true;
+  private static byte[][] readLightLayers(LevelChunk chunk, LightLayer layer, boolean allowEmpty) {
+    LevelLightEngine engine = chunk.getLevel().getLightEngine();
+    LayerLightEventListener listener = engine.getLayerListener(layer);
+    byte[][] layers = new byte[engine.getLightSectionCount()][];
+    boolean present = false;
+    for (int i = 0; i < layers.length; i++) {
+      DataLayer data = listener.getDataLayerData(SectionPos.of(chunk.getPos(), engine.getMinLightSection() + i));
+      if (data != null) {
+        present = true;
+        if (!data.isEmpty()) {
+          layers[i] = data.getData();
         }
       }
-      return converted || !allowEmpty ? byteLayers : null;
-    } catch (Throwable throwable) {
-      throw new IllegalStateException("Failed to convert starlight nibble arrays", throwable);
     }
+    return present || !allowEmpty ? layers : null;
   }
 
   private static void writeNoSkyLightData(ByteBuf out, byte[][] blockLight) {

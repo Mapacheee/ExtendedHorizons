@@ -9,9 +9,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -53,15 +51,13 @@ public final class PaperFarPlayerBackend implements FarPlayerBackend {
 
   @Override
   public Object createMovePacket(FarPlayerState state) {
-    return new ClientboundEntityPositionSyncPacket(
+    return NmsCompat.createPositionSyncPacket(
       state.entityId(),
-      new PositionMoveRotation(
-        new Vec3(state.x(), state.y(), state.z()),
-        Vec3.ZERO,
-        state.yaw(),
-        state.pitch()
-      ),
-      true
+      state.x(),
+      state.y(),
+      state.z(),
+      state.yaw(),
+      state.pitch()
     );
   }
 
