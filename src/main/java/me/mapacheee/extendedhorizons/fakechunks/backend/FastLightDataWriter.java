@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.fakechunks.backend;
 
 import io.netty.buffer.ByteBuf;
 import me.mapacheee.extendedhorizons.fakechunks.antixray.VarIntUtil;
+import me.mapacheee.extendedhorizons.util.ChunkSerializationCompat;
 import net.minecraft.core.SectionPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.level.LightLayer;
@@ -40,10 +41,10 @@ final class FastLightDataWriter {
 
     LightMasks masks = buildMasks(blockLight, skyLight);
     int size = 0;
-    size += estimateBitSet(masks.notSkyEmpty.toLongArray());
-    size += estimateBitSet(masks.notBlockEmpty.toLongArray());
-    size += estimateBitSet(masks.skyEmpty.toLongArray());
-    size += estimateBitSet(masks.blockEmpty.toLongArray());
+    size += ChunkSerializationCompat.lightMaskSize(masks.notSkyEmpty);
+    size += ChunkSerializationCompat.lightMaskSize(masks.notBlockEmpty);
+    size += ChunkSerializationCompat.lightMaskSize(masks.skyEmpty);
+    size += ChunkSerializationCompat.lightMaskSize(masks.blockEmpty);
     size += estimateByteArrayList(masks.skyData);
     size += estimateByteArrayList(masks.blockData);
     return size;
@@ -76,10 +77,10 @@ final class FastLightDataWriter {
       BitSet blockEmpty = new BitSet(sectionCount);
       blockEmpty.set(0, sectionCount);
 
-      writeBitSet(out, notSkyEmpty.toLongArray());
-      writeBitSet(out, notBlockEmpty.toLongArray());
-      writeBitSet(out, skyEmpty.toLongArray());
-      writeBitSet(out, blockEmpty.toLongArray());
+      ChunkSerializationCompat.writeLightMask(out, notSkyEmpty);
+      ChunkSerializationCompat.writeLightMask(out, notBlockEmpty);
+      ChunkSerializationCompat.writeLightMask(out, skyEmpty);
+      ChunkSerializationCompat.writeLightMask(out, blockEmpty);
 
       VarIntUtil.writeVarInt(out, sectionCount);
       for (int i = 0; i < sectionCount; i++) {
@@ -94,10 +95,10 @@ final class FastLightDataWriter {
       skyEmpty.set(0, sectionCount);
       BitSet blockEmpty = new BitSet(sectionCount);
 
-      writeBitSet(out, notSkyEmpty.toLongArray());
-      writeBitSet(out, notBlockEmpty.toLongArray());
-      writeBitSet(out, skyEmpty.toLongArray());
-      writeBitSet(out, blockEmpty.toLongArray());
+      ChunkSerializationCompat.writeLightMask(out, notSkyEmpty);
+      ChunkSerializationCompat.writeLightMask(out, notBlockEmpty);
+      ChunkSerializationCompat.writeLightMask(out, skyEmpty);
+      ChunkSerializationCompat.writeLightMask(out, blockEmpty);
 
       out.writeByte(0);
       VarIntUtil.writeVarInt(out, sectionCount);
@@ -119,10 +120,10 @@ final class FastLightDataWriter {
 
     LightMasks masks = buildMasks(blockLight, skyLight);
 
-    writeBitSet(out, masks.notSkyEmpty.toLongArray());
-    writeBitSet(out, masks.notBlockEmpty.toLongArray());
-    writeBitSet(out, masks.skyEmpty.toLongArray());
-    writeBitSet(out, masks.blockEmpty.toLongArray());
+    ChunkSerializationCompat.writeLightMask(out, masks.notSkyEmpty);
+    ChunkSerializationCompat.writeLightMask(out, masks.notBlockEmpty);
+    ChunkSerializationCompat.writeLightMask(out, masks.skyEmpty);
+    ChunkSerializationCompat.writeLightMask(out, masks.blockEmpty);
     writeByteArrayList(out, masks.skyData);
     writeByteArrayList(out, masks.blockData);
   }
@@ -149,9 +150,9 @@ final class FastLightDataWriter {
     NoSkyMasks masks = buildNoSkyMasks(blockLight, blockData);
 
     out.writeByte(0);
-    writeBitSet(out, masks.notBlockEmpty().toLongArray());
+    ChunkSerializationCompat.writeLightMask(out, masks.notBlockEmpty());
     out.writeByte(0);
-    writeBitSet(out, masks.blockEmpty().toLongArray());
+    ChunkSerializationCompat.writeLightMask(out, masks.blockEmpty());
     out.writeByte(0);
     writeByteArrayList(out, blockData);
   }
@@ -160,8 +161,8 @@ final class FastLightDataWriter {
     NoSkyMasks masks = buildNoSkyMasks(blockLight, null);
 
     int size = NO_SKY_HEADER_BYTES;
-    size += estimateBitSet(masks.notBlockEmpty().toLongArray());
-    size += estimateBitSet(masks.blockEmpty().toLongArray());
+    size += ChunkSerializationCompat.lightMaskSize(masks.notBlockEmpty());
+    size += ChunkSerializationCompat.lightMaskSize(masks.blockEmpty());
     size += varIntSize(masks.blockDataCount()) + masks.blockDataBytes();
     return size;
   }
@@ -218,17 +219,6 @@ final class FastLightDataWriter {
     }
 
     return new LightMasks(skyData, notSkyEmpty, skyEmpty, blockData, notBlockEmpty, blockEmpty);
-  }
-
-  private static void writeBitSet(ByteBuf out, long[] set) {
-    VarIntUtil.writeVarInt(out, set.length);
-    for (long value : set) {
-      out.writeLong(value);
-    }
-  }
-
-  private static int estimateBitSet(long[] set) {
-    return varIntSize(set.length) + (set.length * Long.BYTES);
   }
 
   private static void writeByteArrayList(ByteBuf out, List<byte[]> list) {

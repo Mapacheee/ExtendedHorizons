@@ -235,10 +235,10 @@ public final class DiskChunkSerializer {
     }
 
     if (skyLight != null) {
-      writeBitSet(buf, notSkyEmpty.toLongArray());
-      writeBitSet(buf, notBlockEmpty.toLongArray());
-      writeBitSet(buf, skyEmpty.toLongArray());
-      writeBitSet(buf, blockEmpty.toLongArray());
+      ChunkSerializationCompat.writeLightMask(buf, notSkyEmpty);
+      ChunkSerializationCompat.writeLightMask(buf, notBlockEmpty);
+      ChunkSerializationCompat.writeLightMask(buf, skyEmpty);
+      ChunkSerializationCompat.writeLightMask(buf, blockEmpty);
 
       VarInt.write(buf, skyDataCount);
       for (int i = 0; i < count; i++) {
@@ -256,9 +256,9 @@ public final class DiskChunkSerializer {
       }
     } else {
       buf.writeByte(0);
-      writeBitSet(buf, notBlockEmpty.toLongArray());
+      ChunkSerializationCompat.writeLightMask(buf, notBlockEmpty);
       buf.writeByte(0);
-      writeBitSet(buf, blockEmpty.toLongArray());
+      ChunkSerializationCompat.writeLightMask(buf, blockEmpty);
       buf.writeByte(0);
 
       VarInt.write(buf, blockDataCount);
@@ -268,11 +268,6 @@ public final class DiskChunkSerializer {
         }
       }
     }
-  }
-
-  private static void writeBitSet(ByteBuf buf, long[] set) {
-    VarInt.write(buf, set.length);
-    for (long l : set) buf.writeLong(l);
   }
 
   /**

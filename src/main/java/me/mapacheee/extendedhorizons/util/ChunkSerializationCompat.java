@@ -2,6 +2,8 @@ package me.mapacheee.extendedhorizons.util;
 
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.VarInt;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
@@ -12,6 +14,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
+import java.util.BitSet;
 
 public final class ChunkSerializationCompat {
 
@@ -20,6 +23,7 @@ public final class ChunkSerializationCompat {
   private static final MethodHandle PALETTE_WRITER = createWriter(PalettedContainerRO.class);
   private static final MethodHandle CHUNK_WRITER = createWriter(ClientboundLevelChunkPacketData.class);
   private static final MethodHandle LIGHT_WRITER = createWriter(ClientboundLightUpdatePacketData.class);
+  private static final StreamCodec<ByteBuf, BitSet> LIGHT_MASK_CODEC = lightMaskCodec();
 
   private ChunkSerializationCompat() {
   }
@@ -38,6 +42,30 @@ public final class ChunkSerializationCompat {
 
   public static void writeLightData(ClientboundLightUpdatePacketData data, FriendlyByteBuf out) {
     write(LIGHT_WRITER, data, out);
+  }
+
+  public static void writeLightMask(ByteBuf out, BitSet mask) {
+    if (LIGHT_MASK_CODEC != null) {
+      LIGHT_MASK_CODEC.encode(out, mask);
+    } else {
+      FriendlyByteBuf.writeLongArray(out, mask.toLongArray());
+    }
+  }
+
+  public static int lightMaskSize(BitSet mask) {
+    int elements = LIGHT_MASK_CODEC != null ? (mask.length() + 7) / 8 : (mask.length() + 63) / 64;
+    return VarInt.getByteSize(elements) + elements * (LIGHT_MASK_CODEC != null ? 1 : Long.BYTES);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static StreamCodec<ByteBuf, BitSet> lightMaskCodec() {
+    try {
+      return (StreamCodec<ByteBuf, BitSet>) ByteBufCodecs.class.getField("BIT_SET").get(null);
+    } catch (NoSuchFieldException exception) {
+      return null;
+    } catch (ReflectiveOperationException exception) {
+      throw new IllegalStateException("Unable to resolve light mask codec", exception);
+    }
   }
 
   private static MethodHandle createWriter(Class<?> type) {
