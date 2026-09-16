@@ -98,7 +98,7 @@ public final class DiskChunkSerializer {
       return null;
     }
 
-    if (chunkData == null || !chunkData.lightCorrect()) {
+    if (!chunkData.lightCorrect()) {
       LOGGER.debug("Chunk [{}, {}] has stale or incomplete light data, using Paper fallback", chunkX, chunkZ);
       return null;
     }
@@ -249,8 +249,7 @@ public final class DiskChunkSerializer {
       }
 
       VarInt.write(buf, blockDataCount);
-      for (int i = 0; i < count; i++) {
-        byte[] block = blockLight[i];
+      for (byte[] block : blockLight) {
         if (block != null) {
           FriendlyByteBuf.writeByteArray(buf, block);
         }
@@ -263,8 +262,7 @@ public final class DiskChunkSerializer {
       buf.writeByte(0);
 
       VarInt.write(buf, blockDataCount);
-      for (int i = 0; i < count; i++) {
-        byte[] block = blockLight[i];
+      for (byte[] block : blockLight) {
         if (block != null) {
           FriendlyByteBuf.writeByteArray(buf, block);
         }
