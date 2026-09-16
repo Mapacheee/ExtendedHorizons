@@ -4,16 +4,11 @@ import com.google.inject.Binder;
 import com.thewinterframework.paper.PaperWinterPlugin;
 import com.thewinterframework.plugin.WinterBootPlugin;
 import dev.faststats.bukkit.BukkitContext;
-import dev.faststats.data.Metric;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
 import me.mapacheee.extendedhorizons.fakechunks.backend.PaperChunkBackend;
-import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.disk.RegionFileReader;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.FarPlayerBackend;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.PaperFarPlayerBackend;
-import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
-
-import java.util.concurrent.atomic.AtomicInteger;
 
 @WinterBootPlugin
 public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
@@ -40,30 +35,7 @@ public final class ExtendedHorizonsPlugin extends PaperWinterPlugin {
   @Override
   public void onPluginEnable() {
     this.context = new BukkitContext.Factory(this, METRICS_TOKEN)
-      .metrics(factory -> factory
-        .addMetric(Metric.number("active_sessions", () -> {
-          SessionRegistry registry = getService(SessionRegistry.class);
-          if (registry == null) return 0;
-          AtomicInteger active = new AtomicInteger();
-          registry.forEachSession(session -> {
-            if (session.enabled()) {
-              active.incrementAndGet();
-            }
-          });
-          return active.get();
-        }))
-        .addMetric(Metric.number("total_queued_chunks", () -> {
-          SessionRegistry registry = getService(SessionRegistry.class);
-          if (registry == null) return 0;
-          AtomicInteger queued = new AtomicInteger();
-          registry.forEachSession(session -> queued.addAndGet(session.chunkQueue().size()));
-          return queued.get();
-        }))
-        .addMetric(Metric.number("cached_built_chunks", () -> {
-          ChunkBuildCacheService cache = getService(ChunkBuildCacheService.class);
-          return cache != null ? cache.getEstimatedSize() : 0;
-        }))
-        .create())
+      .metrics(factory -> factory.create())
       .create();
 
     this.context.ready();
