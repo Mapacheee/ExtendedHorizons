@@ -109,7 +109,7 @@ public final class FakeChunkOrchestratorService {
     Location loc = player.getLocation();
     int chunkX = loc.getBlockX() >> 4;
     int chunkZ = loc.getBlockZ() >> 4;
-    int targetDistance = this.resolveClientDistance(player, session, worldName);
+    int targetDistance = this.resolveClientDistance(player, session);
     int serverDistance = this.resolveServerDistance(player);
 
     boolean chunkChanged = session.hasChunkChanged(chunkX, chunkZ);
@@ -288,7 +288,8 @@ public final class FakeChunkOrchestratorService {
     return globalDistance;
   }
 
-  private int resolveClientDistance(Player player, PlayerSession session, String worldName) {
+  public int resolveClientDistance(Player player, PlayerSession session) {
+    String worldName = player.getWorld().getName();
     if (worldName == null) {
       return DEFAULT_VIEW_DISTANCE;
     }

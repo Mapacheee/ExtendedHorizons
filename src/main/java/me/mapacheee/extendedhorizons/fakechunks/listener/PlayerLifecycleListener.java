@@ -53,7 +53,8 @@ public final class PlayerLifecycleListener implements Listener {
     this.channelInjectionService.inject(player, session);
 
     if (this.configContainer.get().welcomeEnabled() && this.messages.raw().welcome() != null) {
-      player.sendMessage(this.messages.welcome(session.loadedBvChunkKeys().length, player.getName()));
+      int distance = this.fakeChunkOrchestratorService.resolveClientDistance(player, session);
+      player.sendMessage(this.messages.welcome(distance, player.getName()));
     }
   }
 

@@ -53,9 +53,10 @@ public final class MessagesFacade {
     return parse(this.raw().resetSelfSuccess());
   }
 
-  public Component welcome(long chunks, String player) {
+  public Component welcome(long distance, String player) {
     return parse(this.raw().welcome(),
-      Placeholder.unparsed("chunks", String.valueOf(chunks)),
+      Placeholder.unparsed("distance", String.valueOf(distance)),
+      Placeholder.unparsed("chunks", String.valueOf(distance)),
       Placeholder.unparsed("player", player));
   }
 
