@@ -88,8 +88,11 @@ sessionRegistry = ExtendedHorizonsPlugin.getService(SessionRegistry.class);
 - **Track Far Players:** ExtendedHorizons natively syncs far players. You can read the `trackedFarPlayers()` from a `PlayerSession` to see exactly which entities are being simulated locally.
 
 ---
+## Stats
 
 [![Servers & Players](https://faststats.dev/embed/default:fec66100-50ff-435f-b9ea-542e113a8312:servers-and-players.svg?w=960&h=340&theme=dark)](https://faststats.dev/project/extendedhorizons/minecraft-plugin)
+
+---
 
 ## Contribute
 To contribute to this project, just follow this steps:
