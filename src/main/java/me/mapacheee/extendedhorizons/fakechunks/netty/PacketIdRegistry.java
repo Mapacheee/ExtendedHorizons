@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -22,6 +23,7 @@ public final class PacketIdRegistry {
 
   private static final AtomicInteger LEVEL_CHUNK_WITH_LIGHT_ID = new AtomicInteger(UNRESOLVED);
   private static final AtomicInteger CHUNK_CACHE_RADIUS_ID = new AtomicInteger(UNRESOLVED);
+  private static final AtomicBoolean PROTOCOL_ENUM_RESOLVE_ATTEMPTED = new AtomicBoolean();
   private static final AttributeKey<Boolean> PENDING_LEVEL_CHUNK_PROBE =
     AttributeKey.valueOf("eh_pending_level_chunk_probe");
   private static final AttributeKey<Boolean> PENDING_RADIUS_PROBE = AttributeKey.valueOf("eh_pending_radius_probe");
@@ -139,14 +141,29 @@ public final class PacketIdRegistry {
   }
 
   private static boolean resolveFromProtocolEnum() {
+    if (!PROTOCOL_ENUM_RESOLVE_ATTEMPTED.compareAndSet(false, true)) {
+      return false;
+    }
     try {
       Class<?> protocolClass = Class.forName("net.minecraft.network.protocol.Protocol");
       Method getPacketId = findGetPacketIdMethod(protocolClass);
       if (getPacketId == null) {
-        LOGGER.info("EH resolveFromProtocolEnum: no suitable method found on Protocol");
+        LOGGER.debug("EH resolveFromProtocolEnum: no suitable method found on Protocol");
         return false;
       }
-      Object playProtocol = protocolClass.getEnumConstants()[0];
+      Object playProtocol = null;
+      Object[] protocols = protocolClass.getEnumConstants();
+      if (protocols != null) {
+        for (Object protocol : protocols) {
+          if (protocol instanceof Enum<?> value && value.name().equals("PLAY")) {
+            playProtocol = protocol;
+            break;
+          }
+        }
+      }
+      if (playProtocol == null) {
+        return false;
+      }
 
       int chunkId = (int) getPacketId.invoke(playProtocol, ClientboundLevelChunkWithLightPacket.class);
       if (chunkId >= 0) {
@@ -161,7 +178,7 @@ public final class PacketIdRegistry {
 
       return hasLevelChunkWithLightId() && hasChunkCacheRadiusId();
     } catch (Throwable throwable) {
-      LOGGER.info("EH resolveFromProtocolEnum failed: {}", throwable.getMessage());
+      LOGGER.debug("EH resolveFromProtocolEnum unavailable: {}", throwable.getMessage());
       return false;
     }
   }
@@ -189,7 +206,7 @@ public final class PacketIdRegistry {
         }
       }
     }
-    LOGGER.info("EH findGetPacketIdMethod: no suitable method found on {}", protocolClass.getName());
+    LOGGER.debug("EH findGetPacketIdMethod: no suitable method found on {}", protocolClass.getName());
     return null;
   }
 
