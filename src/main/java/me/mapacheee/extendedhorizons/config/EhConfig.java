@@ -18,12 +18,12 @@ public record EhConfig(
 
   private static final int MIN_VIEW_DISTANCE = 2;
   private static final int DEFAULT_TARGET_VIEW_DISTANCE = 32;
-  private static final int DEFAULT_MAX_SEND_PER_CYCLE = 6;
+  private static final int DEFAULT_MAX_SEND_PER_CYCLE = 4;
   private static final int MIN_MAX_SEND_PER_CYCLE = 1;
-  private static final long DEFAULT_BANDWIDTH_BYTES_PER_SECOND = 512_000L;
+  private static final long DEFAULT_BANDWIDTH_BYTES_PER_SECOND = 1_024_000L;
   private static final long MIN_BANDWIDTH_BYTES_PER_SECOND = 32_768L;
   private static final long DEFAULT_BANDWIDTH_BURST_BYTES = 1_024_000L;
-  private static final int DEFAULT_SERIALIZATION_WORKERS = 0;
+  private static final int DEFAULT_SERIALIZATION_WORKERS = 2;
   private static final int MAX_SERIALIZATION_WORKERS = 16;
   private static final int DEFAULT_MAX_GLOBAL_GENERATIONS_PER_TICK = 50;
   private static final int MIN_MAX_GLOBAL_GENERATIONS_PER_TICK = 1;
@@ -105,7 +105,7 @@ public record EhConfig(
 
   public boolean bandwidthEnabled() {
     if (this.fakeChunks == null || this.fakeChunks.bandwidth() == null) {
-      return false;
+      return true;
     }
     return this.fakeChunks.bandwidth().enabled();
   }
@@ -137,7 +137,7 @@ public record EhConfig(
       return DEFAULT_SERIALIZATION_WORKERS;
     }
     int configured = this.fakeChunks.serializationWorkers();
-    return Math.clamp(configured, DEFAULT_SERIALIZATION_WORKERS, MAX_SERIALIZATION_WORKERS);
+    return Math.clamp(configured, 0, MAX_SERIALIZATION_WORKERS);
   }
 
   public boolean worldEditEnabled() {

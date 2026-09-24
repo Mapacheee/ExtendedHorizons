@@ -26,19 +26,19 @@ fake-chunks:
   # 0 = serialize live chunks in their owning region; 1-16 = snapshot worker pool.
   # Disk reads always use a bounded worker pool (at least one thread), including with 0.
   # VANILLA serialization stays in the owning region; FAST and anti-xray can use snapshots.
-  serialization-workers: 1
+  serialization-workers: 2
 
   bandwidth:
     # Per-player bandwidth limiter for fake chunk payloads.
     # When enabled, payload sends are paced by a token bucket.
-    enabled: false
-    # Sustained budget in bytes per second per player.
-    bytes-per-second: 384000
+    enabled: true
+    # Sustained budget in uncompressed bytes per second per player.
+    bytes-per-second: 1024000
     # Burst capacity in bytes (must be >= bytes-per-second).
-    burst-bytes: 768000
+    burst-bytes: 1024000
 
   # Max newly queued fake chunks per player processing cycle.
-  max-send-per-cycle: 6
+  max-send-per-cycle: 4
 
   # Global limit of new chunk generations per tick (protects TPS under load).
   max-global-generations-per-tick: 12
