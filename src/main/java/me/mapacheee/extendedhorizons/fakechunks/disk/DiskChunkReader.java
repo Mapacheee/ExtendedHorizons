@@ -33,11 +33,10 @@ import java.util.UUID;
 public final class DiskChunkReader {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(DiskChunkReader.class);
-  private static final int REGION_COORD_SHIFT = 5;
-  private static final int INCOMPATIBLE_REGION_CACHE_SIZE = 4096;
-  private static final Cache<RegionKey, Boolean> INCOMPATIBLE_REGIONS = Caffeine.newBuilder()
-    .maximumSize(INCOMPATIBLE_REGION_CACHE_SIZE)
-    .expireAfterAccess(Duration.ofMinutes(30))
+  private static final int UNAVAILABLE_CHUNK_CACHE_SIZE = 4096;
+  private static final Cache<ChunkKey, Boolean> UNAVAILABLE_CHUNKS = Caffeine.newBuilder()
+    .maximumSize(UNAVAILABLE_CHUNK_CACHE_SIZE)
+    .expireAfterWrite(Duration.ofSeconds(30))
     .build();
 
   /**
@@ -110,11 +109,11 @@ public final class DiskChunkReader {
 
     ByteBuf packet = DiskChunkSerializer.serialize(nbtBytes, level, chunkX, chunkZ, hasSky, antiXray);
     if (packet == null) {
-      if (markRegionIncompatible(world.getUID(), chunkX, chunkZ)) {
+      if (markChunkUnavailable(world.getUID(), chunkX, chunkZ)) {
         LOGGER.debug(
-          "Direct disk serialization is incompatible with region [{}, {}] in world '{}'; using Paper fallback",
-          chunkX >> REGION_COORD_SHIFT,
-          chunkZ >> REGION_COORD_SHIFT,
+          "Direct disk serialization unavailable for chunk [{}, {}] in world '{}'; using Paper fallback",
+          chunkX,
+          chunkZ,
           world.getName()
         );
       }
@@ -129,21 +128,17 @@ public final class DiskChunkReader {
   }
 
   static boolean shouldAttemptDirectRead(UUID worldId, int chunkX, int chunkZ) {
-    return INCOMPATIBLE_REGIONS.getIfPresent(regionKey(worldId, chunkX, chunkZ)) == null;
+    return UNAVAILABLE_CHUNKS.getIfPresent(new ChunkKey(worldId, chunkX, chunkZ)) == null;
   }
 
-  static boolean markRegionIncompatible(UUID worldId, int chunkX, int chunkZ) {
-    return INCOMPATIBLE_REGIONS.asMap().putIfAbsent(regionKey(worldId, chunkX, chunkZ), Boolean.TRUE) == null;
+  static boolean markChunkUnavailable(UUID worldId, int chunkX, int chunkZ) {
+    return UNAVAILABLE_CHUNKS.asMap().putIfAbsent(new ChunkKey(worldId, chunkX, chunkZ), Boolean.TRUE) == null;
   }
 
-  static void clearIncompatibleRegions() {
-    INCOMPATIBLE_REGIONS.invalidateAll();
+  static void clearUnavailableChunks() {
+    UNAVAILABLE_CHUNKS.invalidateAll();
   }
 
-  private static RegionKey regionKey(UUID worldId, int chunkX, int chunkZ) {
-    return new RegionKey(worldId, chunkX >> REGION_COORD_SHIFT, chunkZ >> REGION_COORD_SHIFT);
-  }
-
-  private record RegionKey(UUID worldId, int regionX, int regionZ) {
+  private record ChunkKey(UUID worldId, int chunkX, int chunkZ) {
   }
 }
