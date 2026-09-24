@@ -465,10 +465,7 @@ public final class PlayerSession {
       return true;
     }
     if (lc == ChunkLifecycle.SERVER_LOADED) {
-      state.set(chunkX, chunkZ, ChunkLifecycle.UNLOADED);
-      // The native unload is suppressed: the client still owns this terrain.
-      state.clientChunkPresent = true;
-      this.iterationIndex = 0;
+      state.set(chunkX, chunkZ, ChunkLifecycle.EH_LOADED);
       return true;
     }
     return false;
@@ -984,4 +981,3 @@ public final class PlayerSession {
     }
   }
 }
-
