@@ -16,7 +16,6 @@ public final class PlayerSession {
   private static final ChunkState DUMMY_STATE = new ChunkState();
   private static final double DIRECTION_CHANGE_THRESHOLD = 0.8d;
   private static final double DIRECTION_WEIGHT = 0.3d;
-  private static final long FAST_MOVEMENT_NANOS = 400_000_000L;
   private static final long BUILD_FAILED_RETRY_NANOS = 1_000_000_000L;
   private static final long NO_BUILD_RETRY_NANOS = Long.MAX_VALUE;
   private static final int STORAGE_RADIUS_PADDING = 3;
@@ -60,7 +59,6 @@ public final class PlayerSession {
   private volatile double moveDirX;
   private volatile double moveDirZ;
   private volatile boolean hasMovementDirection;
-  private volatile long lastChunkCrossNanos;
   private final List<Long> pendingUnloads = new ArrayList<>();
   private volatile int cachedPermissionCap = PERMISSION_CAP_UNINITIALIZED;
   private volatile boolean cachedHasBypass;
@@ -270,6 +268,23 @@ public final class PlayerSession {
     }
   }
 
+  public void prioritizeChunkQueue() {
+    synchronized (this.dispatchLock) {
+      if (this.chunkQueue.size() < 2) {
+        return;
+      }
+      int centerX = ChunkKeyCodec.x(this.chunkKey);
+      int centerZ = ChunkKeyCodec.z(this.chunkKey);
+      List<ChunkSendQueueEntry> entries = new ArrayList<>(this.chunkQueue);
+      entries.sort(Comparator.comparingDouble(entry -> this.chunkPriority(
+        ChunkKeyCodec.x(entry.chunkKey()) - centerX,
+        ChunkKeyCodec.z(entry.chunkKey()) - centerZ
+      )));
+      this.chunkQueue.clear();
+      this.chunkQueue.addAll(entries);
+    }
+  }
+
   public Map<UUID, Integer> trackedFarPlayers() {
     return this.trackedFarPlayers;
   }
@@ -358,21 +373,10 @@ public final class PlayerSession {
       return;
     }
 
-    long now = System.nanoTime();
-    boolean movingFast = this.lastChunkCrossNanos > 0
-      && (now - this.lastChunkCrossNanos) < FAST_MOVEMENT_NANOS;
-    this.lastChunkCrossNanos = now;
-
-    if (movingFast) {
-      double moveX = (double) chunkX - prevX;
-      double moveZ = (double) chunkZ - prevZ;
-      double length = Math.hypot(moveX, moveZ);
-      this.updateLookDirection(moveX / length, moveZ / length);
-    } else if (this.hasMovementDirection) {
-      this.hasMovementDirection = false;
-      this.chunksInDistance = ChunkPlannerService.radiusIterationList(this.distance);
-      this.iterationIndex = 0;
-    }
+    double moveX = (double) chunkX - prevX;
+    double moveZ = (double) chunkZ - prevZ;
+    double length = Math.hypot(moveX, moveZ);
+    this.updateLookDirection(moveX / length, moveZ / length);
 
     boolean cleanedAny = false;
     for (ChunkState state : this.chunkStates) {
@@ -721,7 +725,6 @@ public final class PlayerSession {
     this.serverTrackedEntityIds.clear();
     this.serverLoadedChunks.clear();
     this.hasMovementDirection = false;
-    this.lastChunkCrossNanos = 0L;
     this.resetBandwidthLimiter();
     this.iterationIndex = 0;
     this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
@@ -770,8 +773,6 @@ public final class PlayerSession {
   private void rebuildDirectionalOrder() {
     long[] base = ChunkPlannerService.radiusIterationList(this.distance);
     int len = base.length;
-    double dirX = this.moveDirX;
-    double dirZ = this.moveDirZ;
 
     int[] indices = new int[len];
     double[] keys = new double[len];
@@ -779,13 +780,7 @@ public final class PlayerSession {
       indices[i] = i;
       int ox = ChunkKeyCodec.x(base[i]);
       int oz = ChunkKeyCodec.z(base[i]);
-      double dist = Math.sqrt(ox * ox + oz * oz);
-      if (dist <= 0) {
-        keys[i] = -1.0d;
-      } else {
-        double alignment = (ox * dirX + oz * dirZ) / dist;
-        keys[i] = dist * (1.0d - DIRECTION_WEIGHT * alignment);
-      }
+      keys[i] = this.chunkPriority(ox, oz);
     }
 
     // Merge sort bounds direction changes to O(n log n), including worst-case input.
@@ -801,6 +796,18 @@ public final class PlayerSession {
     }
     this.chunksInDistance = sorted;
     this.iterationIndex = 0;
+  }
+
+  private double chunkPriority(int offsetX, int offsetZ) {
+    double distance = Math.sqrt((double) offsetX * offsetX + (double) offsetZ * offsetZ);
+    if (distance == 0.0d) {
+      return -1.0d;
+    }
+    if (!this.hasMovementDirection) {
+      return distance;
+    }
+    double alignment = (offsetX * this.moveDirX + offsetZ * this.moveDirZ) / distance;
+    return distance * (1.0d - DIRECTION_WEIGHT * alignment);
   }
 
   private void refillBandwidthTokens(long nowNanos) {

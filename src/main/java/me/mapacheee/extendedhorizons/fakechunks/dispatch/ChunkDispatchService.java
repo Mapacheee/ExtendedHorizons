@@ -77,6 +77,7 @@ public final class ChunkDispatchService {
     int chunksPerTick = config.maxSendPerCycle();
     int maxInflight = config.maxInflightPerPlayer();
     int maxQueueSize = config.chunkQueueSize();
+    session.prioritizeChunkQueue();
     int inFlight = this.drainCompletedEntries(world, channel, session, chunksPerTick);
 
     if (debug) {
