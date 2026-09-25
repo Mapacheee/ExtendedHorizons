@@ -140,7 +140,7 @@ public final class ChunkDispatchService {
   }
 
   private int drainCompletedEntries(World world, Channel channel, PlayerSession session, int maxSendPerCycle) {
-    int[] counters = {0, 0};
+    DispatchProgress progress = new DispatchProgress();
     session.chunkQueue().removeIf(entry -> {
       if (!this.isQueueEntryValid(world, session, entry)) {
         session.onChunkBuildFailed(entry.chunkKey());
@@ -158,20 +158,21 @@ public final class ChunkDispatchService {
           entry.releaseFuture();
           return true;
         }
-        counters[0]++;
+        progress.inFlight++;
         return false;
       }
-      if (counters[1] >= maxSendPerCycle && !entry.buildFuture().isCompletedExceptionally()) {
-        counters[0]++;
+      if ((progress.sent >= maxSendPerCycle || progress.bandwidthBlocked)
+        && !entry.buildFuture().isCompletedExceptionally()) {
+        progress.inFlight++;
         return false;
       }
-      boolean processed = this.checkQueueEntry(world, channel, session, entry, counters);
+      boolean processed = this.checkQueueEntry(world, channel, session, entry, progress);
       if (!processed) {
-        counters[0]++;
+        progress.inFlight++;
       }
       return processed;
     });
-    return counters[0];
+    return progress.inFlight;
   }
 
   public void sendUnload(Channel channel, PlayerSession session, long chunkKey) {
@@ -300,7 +301,7 @@ public final class ChunkDispatchService {
   }
 
   private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry,
-    int[] counters) {
+    DispatchProgress progress) {
     CompletableFuture<ByteBuf> buildFuture = entry.buildFuture();
     if (!this.isQueueEntryValid(world, session, entry)) {
       session.onChunkBuildFailed(entry.chunkKey());
@@ -330,6 +331,7 @@ public final class ChunkDispatchService {
       }
       long payloadBytes = payload.readableBytes();
       if (!session.tryConsumeBandwidth(payloadBytes)) {
+        progress.bandwidthBlocked = true;
         return false;
       }
       ByteBuf toSend;
@@ -356,7 +358,7 @@ public final class ChunkDispatchService {
         entry.chunkKey(),
         sendAttempt
       )) {
-        counters[1]++;
+        progress.sent++;
       } else {
         session.onChunkSendFailed(entry.chunkKey(), sendAttempt);
       }
@@ -428,5 +430,11 @@ public final class ChunkDispatchService {
 
   static boolean shouldDeferWrite(Channel channel) {
     return !channel.isWritable();
+  }
+
+  private static final class DispatchProgress {
+    private int inFlight;
+    private int sent;
+    private boolean bandwidthBlocked;
   }
 }
