@@ -28,6 +28,7 @@ public final class ChunkDispatchService {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(ChunkDispatchService.class);
   private static final long BUILD_TIMEOUT_NANOS = 5_000_000_000L;
+  private static final long GENERATION_TIMEOUT_NANOS = 60_000_000_000L;
 
   private final Container<EhConfig> configContainer;
   private final ChunkBuildCacheService cacheService;
@@ -68,7 +69,8 @@ public final class ChunkDispatchService {
     int maxInflight = config.maxInflightPerPlayer();
     int maxQueueSize = config.chunkQueueSize();
     session.prioritizeChunkQueue();
-    int inFlight = this.drainCompletedEntries(world, channel, session, chunksPerTick);
+    long buildTimeoutNanos = config.generateMissingChunks() ? GENERATION_TIMEOUT_NANOS : BUILD_TIMEOUT_NANOS;
+    int inFlight = this.drainCompletedEntries(world, channel, session, chunksPerTick, buildTimeoutNanos);
 
     if (debug) {
       LOGGER.info(
@@ -129,7 +131,8 @@ public final class ChunkDispatchService {
     }
   }
 
-  private int drainCompletedEntries(World world, Channel channel, PlayerSession session, int maxSendPerCycle) {
+  private int drainCompletedEntries(World world, Channel channel, PlayerSession session,
+    int maxSendPerCycle, long buildTimeoutNanos) {
     DispatchProgress progress = new DispatchProgress();
     session.chunkQueue().removeIf(entry -> {
       if (!this.isQueueEntryValid(world, session, entry)) {
@@ -138,7 +141,12 @@ public final class ChunkDispatchService {
         return true;
       }
       if (!entry.buildFuture().isDone()) {
-        if (System.nanoTime() - entry.queuedAtNanos() > BUILD_TIMEOUT_NANOS) {
+        if (System.nanoTime() - entry.queuedAtNanos() > buildTimeoutNanos) {
+          if (this.configContainer.get().debugEnabled()) {
+            LOGGER.info("EH chunk build timed out after {} seconds for chunk [{}, {}] in world '{}'",
+              buildTimeoutNanos / 1_000_000_000L, ChunkKeyCodec.x(entry.chunkKey()),
+              ChunkKeyCodec.z(entry.chunkKey()), world.getName());
+          }
           session.onChunkBuildFailed(entry.chunkKey());
           this.cacheService.markUnavailable(
             entry.worldId(),

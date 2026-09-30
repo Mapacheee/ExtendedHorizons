@@ -147,11 +147,18 @@ public final class PaperChunkBackend implements ChunkBackend {
         cancelWhenParentCancelled(future, schedulingFuture);
         schedulingFuture.exceptionally(throwable -> {
           if (!future.isCancelled()) {
+            if (this.configContainer.get().debugEnabled()) {
+              LOGGER.info("EH Paper chunk load or snapshot scheduling failed for chunk [{}, {}]", chunkX, chunkZ,
+                throwable);
+            }
             future.complete(null);
           }
           return null;
         });
       } catch (Throwable throwable) {
+        if (this.configContainer.get().debugEnabled()) {
+          LOGGER.info("EH Paper chunk load request failed for chunk [{}, {}]", chunkX, chunkZ, throwable);
+        }
         future.complete(null);
       }
     };
