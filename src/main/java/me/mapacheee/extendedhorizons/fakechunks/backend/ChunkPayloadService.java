@@ -8,6 +8,7 @@ import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import org.bukkit.World;
@@ -49,6 +50,64 @@ public final class ChunkPayloadService {
     long cacheGeneration,
     EhConfig config,
     boolean refresh
+  ) {
+    return this.prepare(world, expectedWorldId, chunkX, chunkZ, chunkKey, cacheGeneration, config, refresh, null);
+  }
+
+  public boolean isPrepared(World world, long chunkKey, EhConfig config) {
+    UUID worldId = world.getUID();
+    if (this.cacheService.shouldBypass(worldId, chunkKey)) {
+      return false;
+    }
+    ByteBuf payload;
+    if (config.antiXrayEnabled(world.getName())) {
+      String profile = this.antiXrayPayloadCacheService.resolveProfileHash(world, config);
+      payload = this.antiXrayPayloadCacheService.get(worldId, chunkKey, profile, config.serializerMode());
+    } else {
+      payload = this.cacheService.getSerialized(worldId, chunkKey);
+    }
+    if (payload == null) {
+      return false;
+    }
+    try {
+      return payload.isReadable();
+    } finally {
+      payload.release();
+    }
+  }
+
+  public CompletableFuture<Void> prefetch(World world, long chunkKey, long cacheGeneration, EhConfig config) {
+    PrefetchWork work = new PrefetchWork();
+    try {
+      CompletableFuture<ByteBuf> result = this.prepare(
+        world, world.getUID(), ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey),
+        chunkKey, cacheGeneration, config, false, work
+      );
+      result.whenComplete((payload, throwable) -> {
+        try {
+          ReferenceCountUtil.release(payload);
+        } finally {
+          if (!work.started) {
+            work.settled.complete(null);
+          }
+        }
+      });
+    } catch (RuntimeException | Error exception) {
+      work.settled.completeExceptionally(exception);
+    }
+    return work.settled;
+  }
+
+  private CompletableFuture<ByteBuf> prepare(
+    World world,
+    UUID expectedWorldId,
+    int chunkX,
+    int chunkZ,
+    long chunkKey,
+    long cacheGeneration,
+    EhConfig config,
+    boolean refresh,
+    PrefetchWork work
   ) {
     boolean preferFreshData = refresh || this.cacheService.shouldBypass(expectedWorldId, chunkKey);
     long antiXrayCacheGeneration = this.antiXrayPayloadCacheService.generation();
@@ -102,20 +161,7 @@ public final class ChunkPayloadService {
       expectedWorldId,
       chunkKey,
       cacheGeneration,
-      () -> this.chunkBackend.buildChunkPayload(
-        world,
-        chunkX,
-        chunkZ,
-        config.generateMissingChunks(),
-        preferFreshData,
-        (worldRef, cx, cz, runnable) -> {
-          ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
-          if (plugin == null || !plugin.isEnabled()) {
-            return false;
-          }
-          return FoliaTaskUtil.runAtChunk(worldRef, cx, cz, plugin, runnable);
-        }
-      )
+      () -> this.startBackend(world, chunkX, chunkZ, config, preferFreshData, work)
     );
     CompletableFuture<ByteBuf> result = new CompletableFuture<>();
     source.whenComplete((payload, throwable) -> {
@@ -153,4 +199,54 @@ public final class ChunkPayloadService {
     return result;
   }
 
+  private CompletableFuture<ByteBuf> startBackend(
+    World world, int chunkX, int chunkZ, EhConfig config, boolean preferFreshData, PrefetchWork work
+  ) {
+    if (work != null) {
+      work.started = true;
+    }
+    CompletableFuture<ByteBuf> backend;
+    try {
+      backend = this.chunkBackend.buildChunkPayload(
+        world, chunkX, chunkZ, config.generateMissingChunks(), preferFreshData,
+        (worldRef, cx, cz, runnable) -> {
+          ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
+          return plugin != null && plugin.isEnabled()
+            && FoliaTaskUtil.runAtChunk(worldRef, cx, cz, plugin, runnable);
+        }
+      );
+    } catch (RuntimeException | Error exception) {
+      if (work != null) {
+        work.settled.completeExceptionally(exception);
+      }
+      throw exception;
+    }
+    if (work == null) {
+      return backend;
+    }
+    if (backend == null) {
+      work.settled.complete(null);
+      return CompletableFuture.completedFuture(null);
+    }
+    // Cancelling a cache subscriber does not stop Paper's generation already in progress.
+    CompletableFuture<ByteBuf> shield = new CompletableFuture<>();
+    backend.whenComplete((payload, throwable) -> {
+      try {
+        if (throwable != null) {
+          ReferenceCountUtil.release(payload);
+          shield.completeExceptionally(throwable);
+        } else if (!shield.complete(payload)) {
+          ReferenceCountUtil.release(payload);
+        }
+      } finally {
+        work.settled.complete(null);
+      }
+    });
+    return shield;
+  }
+
+  private static final class PrefetchWork {
+    private boolean started;
+    private final CompletableFuture<Void> settled = new CompletableFuture<>();
+  }
 }
