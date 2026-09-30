@@ -7,17 +7,13 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelPromise;
 import io.netty.util.ReferenceCountUtil;
-import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.EhConfig;
-import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkBackend;
-import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkPayloadService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
-import me.mapacheee.extendedhorizons.runtime.ChunkBuildMetricsService;
-import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
@@ -35,9 +31,7 @@ public final class ChunkDispatchService {
 
   private final Container<EhConfig> configContainer;
   private final ChunkBuildCacheService cacheService;
-  private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
-  private final ChunkBuildMetricsService metricsService;
-  private final ChunkBackend chunkBackend;
+  private final ChunkPayloadService payloadService;
   private final ChannelInjectionService channelInjectionService;
   private final GlobalGenerationLimiterService generationLimiterService;
 
@@ -45,17 +39,13 @@ public final class ChunkDispatchService {
   public ChunkDispatchService(
     Container<EhConfig> configContainer,
     ChunkBuildCacheService cacheService,
-    AntiXrayPayloadCacheService antiXrayPayloadCacheService,
-    ChunkBuildMetricsService metricsService,
-    ChunkBackend chunkBackend,
+    ChunkPayloadService payloadService,
     ChannelInjectionService channelInjectionService,
     GlobalGenerationLimiterService generationLimiterService
   ) {
     this.configContainer = configContainer;
     this.cacheService = cacheService;
-    this.antiXrayPayloadCacheService = antiXrayPayloadCacheService;
-    this.metricsService = metricsService;
-    this.chunkBackend = chunkBackend;
+    this.payloadService = payloadService;
     this.channelInjectionService = channelInjectionService;
     this.generationLimiterService = generationLimiterService;
   }
@@ -107,7 +97,7 @@ public final class ChunkDispatchService {
       UUID expectedWorldId = session.worldId();
       long expectedEpoch = session.epoch();
       long cacheGeneration = this.cacheService.generation();
-      CompletableFuture<ByteBuf> buildFuture = this.buildChunk(
+      CompletableFuture<ByteBuf> buildFuture = this.payloadService.prepare(
         world,
         expectedWorldId,
         chunkX,
@@ -185,119 +175,6 @@ public final class ChunkDispatchService {
     this.channelInjectionService.writeBypass(channel,
       new ClientboundForgetLevelChunkPacket(new ChunkPos(chunkX, chunkZ)));
     session.onChunkUnloaded(chunkKey);
-  }
-
-  private CompletableFuture<ByteBuf> buildChunk(
-    World world,
-    UUID expectedWorldId,
-    int chunkX,
-    int chunkZ,
-    long chunkKey,
-    long cacheGeneration,
-    EhConfig config,
-    boolean refresh
-  ) {
-    boolean preferFreshData = refresh || this.cacheService.shouldBypass(expectedWorldId, chunkKey);
-    long antiXrayCacheGeneration = this.antiXrayPayloadCacheService.generation();
-    boolean antiXrayEnabled = config.antiXrayEnabled(world.getName());
-    String antiXrayProfileHash = antiXrayEnabled
-      ? this.antiXrayPayloadCacheService.resolveProfileHash(world, config)
-      : null;
-
-    if (config.debugEnabled()) {
-      LOGGER.info(
-        "EH buildChunk: chunk=({}, {}) antiXrayEnabled={} bypassCache={}",
-        chunkX, chunkZ, antiXrayEnabled,
-        antiXrayEnabled || preferFreshData
-      );
-    }
-
-    if (antiXrayProfileHash != null && !preferFreshData) {
-      ByteBuf antiXrayCached = this.antiXrayPayloadCacheService.get(
-        expectedWorldId,
-        chunkKey,
-        antiXrayProfileHash,
-        config.serializerMode(),
-        antiXrayCacheGeneration
-      );
-      if (antiXrayCached != null) {
-        this.metricsService.recordAntiXrayFinalCacheHit();
-        return CompletableFuture.completedFuture(antiXrayCached);
-      }
-      this.metricsService.recordAntiXrayFinalCacheMiss();
-    }
-
-    if (this.cacheService.isTemporarilyUnavailable(expectedWorldId, chunkKey)) {
-      if (config.debugEnabled()) {
-        LOGGER.info("EH buildChunk skip: cache temporarily unavailable for {}", chunkKey);
-      }
-      return CompletableFuture.completedFuture(null);
-    }
-
-    boolean bypass = antiXrayEnabled || preferFreshData;
-    if (!bypass) {
-      ByteBuf cached = this.cacheService.getSerialized(expectedWorldId, chunkKey);
-      if (cached != null) {
-        if (config.debugEnabled()) {
-          LOGGER.info("EH buildChunk cache hit for {}", chunkKey);
-        }
-        return CompletableFuture.completedFuture(cached);
-      }
-    }
-
-    CompletableFuture<ByteBuf> source = this.cacheService.getOrStartBuildFuture(
-      expectedWorldId,
-      chunkKey,
-      cacheGeneration,
-      () -> this.chunkBackend.buildChunkPayload(
-        world,
-        chunkX,
-        chunkZ,
-        config.generateMissingChunks(),
-        preferFreshData,
-        (worldRef, cx, cz, runnable) -> {
-          ExtendedHorizonsPlugin plugin = ExtendedHorizonsPlugin.getInstance();
-          if (plugin == null || !plugin.isEnabled()) {
-            return false;
-          }
-          return FoliaTaskUtil.runAtChunk(worldRef, cx, cz, plugin, runnable);
-        }
-      )
-    );
-    CompletableFuture<ByteBuf> result = new CompletableFuture<>();
-    source.whenComplete((payload, throwable) -> {
-      if (throwable != null) {
-        result.complete(null);
-        return;
-      } else if (payload == null) {
-        this.cacheService.markUnavailable(expectedWorldId, chunkKey, cacheGeneration);
-        if (config.debugEnabled()) {
-          LOGGER.info("EH buildChunk failed: null payload for {}", chunkKey);
-        }
-      } else if (antiXrayProfileHash != null) {
-        try {
-          this.antiXrayPayloadCacheService.put(
-            expectedWorldId,
-            chunkKey,
-            antiXrayProfileHash,
-            config.serializerMode(),
-            antiXrayCacheGeneration,
-            payload
-          );
-        } catch (RuntimeException exception) {
-          LOGGER.warn("Failed to cache anti-xray payload for chunk {}", chunkKey, exception);
-        }
-      }
-      if (!result.complete(payload)) {
-        ReferenceCountUtil.release(payload);
-      }
-    });
-    result.whenComplete((payload, throwable) -> {
-      if (result.isCancelled()) {
-        source.cancel(false);
-      }
-    });
-    return result;
   }
 
   private boolean checkQueueEntry(World world, Channel channel, PlayerSession session, ChunkSendQueueEntry entry,
