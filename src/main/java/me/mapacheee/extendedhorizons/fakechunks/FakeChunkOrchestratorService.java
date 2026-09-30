@@ -11,6 +11,7 @@ import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheS
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
+import me.mapacheee.extendedhorizons.fakechunks.prefetch.ChunkPrefetchService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
@@ -21,6 +22,7 @@ import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.WorldBorder;
 import org.bukkit.entity.Player;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +51,7 @@ public final class FakeChunkOrchestratorService {
   private static final Logger LOGGER = LoggerFactory.getLogger(FakeChunkOrchestratorService.class);
   private final SessionRegistry sessionRegistry;
   private final ChunkDispatchService dispatchService;
+  private final ChunkPrefetchService prefetchService;
   private final ChannelInjectionService channelInjectionService;
   private final FarPlayerTrackingService farPlayerTrackingService;
   private final FarPlayerCacheService farPlayerCacheService;
@@ -59,6 +62,7 @@ public final class FakeChunkOrchestratorService {
     Container<EhConfig> configContainer,
     SessionRegistry sessionRegistry,
     ChunkDispatchService dispatchService,
+    ChunkPrefetchService prefetchService,
     ChannelInjectionService channelInjectionService,
     FarPlayerTrackingService farPlayerTrackingService,
     FarPlayerCacheService farPlayerCacheService
@@ -66,6 +70,7 @@ public final class FakeChunkOrchestratorService {
     this.configContainer = configContainer;
     this.sessionRegistry = sessionRegistry;
     this.dispatchService = dispatchService;
+    this.prefetchService = prefetchService;
     this.channelInjectionService = channelInjectionService;
     this.farPlayerTrackingService = farPlayerTrackingService;
     this.farPlayerCacheService = farPlayerCacheService;
@@ -96,6 +101,7 @@ public final class FakeChunkOrchestratorService {
     Channel channel = this.channelInjectionService.resolveChannel(player);
 
     if (!this.configContainer.get().fakeChunksEnabledForWorld(worldName)) {
+      this.prefetchService.forget(session);
       this.channelInjectionService.executeForSession(channel, session, session.worldId(), sessionEpoch,
         () -> this.clearSessionState(channel, session));
       return;
@@ -107,6 +113,7 @@ public final class FakeChunkOrchestratorService {
     this.channelInjectionService.bindSession(channel, session);
 
     Location loc = player.getLocation();
+    long sampledAtNanos = System.nanoTime();
     int chunkX = loc.getBlockX() >> 4;
     int chunkZ = loc.getBlockZ() >> 4;
     int targetDistance = this.resolveClientDistance(player, session);
@@ -126,7 +133,8 @@ public final class FakeChunkOrchestratorService {
       || centerChanged
       || distanceChanged
       || needsQueueProcessing
-      || isFarPlayerTick;
+      || isFarPlayerTick
+      || (session.enabled() && this.configContainer.get().prefetchEnabled());
 
     if (!shouldTick) {
       return;
@@ -153,6 +161,16 @@ public final class FakeChunkOrchestratorService {
       }
     }
 
+    ChunkPrefetchService.BorderBounds border = null;
+    if (this.configContainer.get().prefetchEnabled() && targetDistance > serverDistance) {
+      WorldBorder worldBorder = world.getWorldBorder();
+      Location center = worldBorder.getCenter();
+      double halfSize = worldBorder.getSize() * 0.5d;
+      border = new ChunkPrefetchService.BorderBounds(
+        center.getX() - halfSize, center.getZ() - halfSize,
+        center.getX() + halfSize, center.getZ() + halfSize
+      );
+    }
     TickSnapshot snapshot = new TickSnapshot(
       world,
       world.getUID(),
@@ -161,6 +179,8 @@ public final class FakeChunkOrchestratorService {
       chunkZ,
       loc.getX(),
       loc.getZ(),
+      sampledAtNanos,
+      border,
       targetDistance,
       serverDistance,
       sessionEpoch,
@@ -182,7 +202,7 @@ public final class FakeChunkOrchestratorService {
     }
     session.serverViewDistance(snapshot.serverDistance());
     session.moveTo(snapshot.chunkX(), snapshot.chunkZ());
-    session.updateMovement(snapshot.x(), snapshot.z());
+    session.updateMovement(snapshot.x(), snapshot.z(), snapshot.sampledAtNanos());
     for (long key : session.drainPendingUnloads()) {
       this.dispatchService.sendUnload(channel, session, key);
     }
@@ -201,6 +221,7 @@ public final class FakeChunkOrchestratorService {
     }
 
     if (!this.preTick(session, snapshot.targetDistance(), snapshot.serverDistance())) {
+      this.prefetchService.forget(session);
       this.farPlayerTrackingService.clearTracked(channel, session);
       this.unloadSessionChunks(channel, session);
       this.syncClientRadius(channel, session, snapshot.serverDistance());
@@ -232,6 +253,11 @@ public final class FakeChunkOrchestratorService {
       }
     }
     this.dispatchService.processQueue(snapshot.world(), channel, session);
+    if (snapshot.border() != null && channel.isWritable()) {
+      this.prefetchService.process(snapshot.world(), session, snapshot.border(), snapshot.sampledAtNanos());
+    } else {
+      this.prefetchService.forget(session);
+    }
     this.channelInjectionService.flush(channel);
   }
 
@@ -419,6 +445,8 @@ public final class FakeChunkOrchestratorService {
     int chunkZ,
     double x,
     double z,
+    long sampledAtNanos,
+    ChunkPrefetchService.BorderBounds border,
     int targetDistance,
     int serverDistance,
     long sessionEpoch,

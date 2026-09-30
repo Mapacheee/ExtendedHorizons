@@ -16,10 +16,18 @@ public final class GlobalGenerationLimiterService {
   }
 
   public boolean tryAcquire() {
+    return this.tryAcquireAbove(0);
+  }
+
+  public boolean tryAcquirePrefetch() {
+    return this.tryAcquireAbove(Math.max(1, this.maxPerTick / 2));
+  }
+
+  private boolean tryAcquireAbove(int reserved) {
     int current;
     do {
       current = this.remaining.get();
-      if (current <= 0) {
+      if (current <= reserved) {
         return false;
       }
     } while (!this.remaining.compareAndSet(current, current - 1));

@@ -13,9 +13,9 @@ import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.dispatch.GlobalGenerationLimiterService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
+import me.mapacheee.extendedhorizons.fakechunks.prefetch.ChunkPrefetchService;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
 import me.mapacheee.extendedhorizons.util.FoliaTaskUtil;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
@@ -49,7 +49,7 @@ public final class RuntimeOrchestratorService {
   private final Container<EhConfig> configContainer;
   private final SessionRegistry sessionRegistry;
   private final FakeChunkOrchestratorService fakeChunkOrchestratorService;
-  private final GlobalGenerationLimiterService generationLimiterService;
+  private final ChunkPrefetchService prefetchService;
   private final FarPlayerCacheService farPlayerCacheService;
   private final ChunkBuildMetricsService chunkBuildMetricsService;
   private final ChunkBuildCacheService chunkBuildCacheService;
@@ -66,7 +66,7 @@ public final class RuntimeOrchestratorService {
     Container<EhConfig> configContainer,
     SessionRegistry sessionRegistry,
     FakeChunkOrchestratorService fakeChunkOrchestratorService,
-    GlobalGenerationLimiterService generationLimiterService,
+    ChunkPrefetchService prefetchService,
     FarPlayerCacheService farPlayerCacheService,
     ChunkBuildMetricsService chunkBuildMetricsService,
     ChunkBuildCacheService chunkBuildCacheService,
@@ -76,7 +76,7 @@ public final class RuntimeOrchestratorService {
     this.configContainer = configContainer;
     this.sessionRegistry = sessionRegistry;
     this.fakeChunkOrchestratorService = fakeChunkOrchestratorService;
-    this.generationLimiterService = generationLimiterService;
+    this.prefetchService = prefetchService;
     this.farPlayerCacheService = farPlayerCacheService;
     this.chunkBuildMetricsService = chunkBuildMetricsService;
     this.chunkBuildCacheService = chunkBuildCacheService;
@@ -111,7 +111,7 @@ public final class RuntimeOrchestratorService {
     Collections.shuffle(this.playerBuffer);
 
     EhConfig config = this.configContainer.get();
-    this.generationLimiterService.reset(config.maxGlobalGenerationsPerTick());
+    this.prefetchService.beginCycle(config);
 
     this.orchestratorTick = (this.orchestratorTick + 1) & Integer.MAX_VALUE;
     boolean farPlayersEnabled = config.farPlayersEnabled();

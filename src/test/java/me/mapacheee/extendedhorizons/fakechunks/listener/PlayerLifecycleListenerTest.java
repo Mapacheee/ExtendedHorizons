@@ -31,7 +31,7 @@ class PlayerLifecycleListenerTest {
     var config = TestContainers.containing(EhConfig.empty());
     var sessions = new SessionRegistry();
     var injection = new ChannelInjectionService();
-    var orchestrator = new FakeChunkOrchestratorService(config, sessions, null, injection, null, null);
+    var orchestrator = new FakeChunkOrchestratorService(config, sessions, null, null, injection, null, null);
     var listener = new PlayerLifecycleListener(sessions, injection, null, orchestrator, null, config);
     var session = sessions.ensureFor(player, false);
     session.setChunkPos(0, 0);

@@ -227,6 +227,7 @@ class ChunkSerializationExecutorServiceTest {
       null,
       null,
       null,
+      null,
       null
     );
     return new EhConfig(null, fakeChunks, null, true);

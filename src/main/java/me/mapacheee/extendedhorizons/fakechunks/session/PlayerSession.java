@@ -18,6 +18,7 @@ public final class PlayerSession {
   private static final double DIRECTION_WEIGHT = 0.3d;
   private static final long DIRECTION_IDLE_TIMEOUT_NANOS = 250_000_000L;
   private static final double MOVEMENT_EPSILON_SQUARED = 0.0001d;
+  private static final double MIN_PREFETCH_SPEED = 8.0d;
   private static final long BUILD_FAILED_RETRY_NANOS = 1_000_000_000L;
   private static final long NO_BUILD_RETRY_NANOS = Long.MAX_VALUE;
   private static final int STORAGE_RADIUS_PADDING = 3;
@@ -64,6 +65,9 @@ public final class PlayerSession {
   private double lastMovementX = Double.NaN;
   private double lastMovementZ = Double.NaN;
   private long lastMovementNanos;
+  private long movementResetAtNanos;
+  private double movementVelocityX;
+  private double movementVelocityZ;
   private final List<Long> pendingUnloads = new ArrayList<>();
   private volatile int cachedPermissionCap = PERMISSION_CAP_UNINITIALIZED;
   private volatile boolean cachedHasBypass;
@@ -347,21 +351,60 @@ public final class PlayerSession {
     this.chunkStates = newStates;
   }
 
-  public void updateMovement(double x, double z) {
-    long now = System.nanoTime();
+  public void updateMovement(double x, double z, long now) {
+    if ((this.movementResetAtNanos != 0L && now - this.movementResetAtNanos < 0L)
+      || (this.lastMovementNanos != 0L && now - this.lastMovementNanos < 0L)) {
+      return;
+    }
     double dx = x - this.lastMovementX;
     double dz = z - this.lastMovementZ;
     if (Double.isNaN(this.lastMovementX) || dx * dx + dz * dz >= MOVEMENT_EPSILON_SQUARED) {
+      long elapsed = now - this.lastMovementNanos;
+      if (this.lastMovementNanos != 0L && elapsed > 0L && elapsed <= 1_000_000_000L
+        && dx * dx + dz * dz <= 64.0d * 64.0d) {
+        double seconds = elapsed / 1_000_000_000.0d;
+        this.movementVelocityX = (this.movementVelocityX + dx / seconds) * 0.5d;
+        this.movementVelocityZ = (this.movementVelocityZ + dz / seconds) * 0.5d;
+      } else {
+        this.movementVelocityX = 0.0d;
+        this.movementVelocityZ = 0.0d;
+      }
       this.lastMovementX = x;
       this.lastMovementZ = z;
       this.lastMovementNanos = now;
       return;
     }
-    if (this.hasMovementDirection && now - this.lastMovementNanos >= DIRECTION_IDLE_TIMEOUT_NANOS) {
-      this.hasMovementDirection = false;
-      this.chunksInDistance = ChunkPlannerService.radiusIterationList(this.distance);
-      this.iterationIndex = 0;
+    if (now - this.lastMovementNanos >= DIRECTION_IDLE_TIMEOUT_NANOS) {
+      this.movementVelocityX = 0.0d;
+      this.movementVelocityZ = 0.0d;
+      if (this.hasMovementDirection) {
+        this.hasMovementDirection = false;
+        this.chunksInDistance = ChunkPlannerService.radiusIterationList(this.distance);
+        this.iterationIndex = 0;
+      }
     }
+  }
+
+  public Long predictChunkKey(double lookaheadSeconds, int maxExtraDistance) {
+    double speed = Math.hypot(this.movementVelocityX, this.movementVelocityZ);
+    if (speed < MIN_PREFETCH_SPEED
+      || System.nanoTime() - this.lastMovementNanos >= DIRECTION_IDLE_TIMEOUT_NANOS) {
+      return null;
+    }
+    double scale = Math.min(lookaheadSeconds, maxExtraDistance * 16.0d / speed) / 16.0d;
+    int chunkX = (int) Math.floor(this.lastMovementX / 16.0d + this.movementVelocityX * scale);
+    int chunkZ = (int) Math.floor(this.lastMovementZ / 16.0d + this.movementVelocityZ * scale);
+    long predicted = ChunkKeyCodec.pack(chunkX, chunkZ);
+    return predicted == this.chunkKey ? null : predicted;
+  }
+
+  public synchronized void resetMovementPrediction() {
+    this.movementResetAtNanos = System.nanoTime();
+    this.lastMovementX = Double.NaN;
+    this.lastMovementZ = Double.NaN;
+    this.lastMovementNanos = 0L;
+    this.movementVelocityX = 0.0d;
+    this.movementVelocityZ = 0.0d;
   }
 
   public void moveTo(int chunkX, int chunkZ) {
@@ -392,6 +435,7 @@ public final class PlayerSession {
       this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
       this.enabled = false;
       this.hasMovementDirection = false;
+      this.resetMovementPrediction();
       return;
     }
 
@@ -747,9 +791,7 @@ public final class PlayerSession {
     this.serverTrackedEntityIds.clear();
     this.serverLoadedChunks.clear();
     this.hasMovementDirection = false;
-    this.lastMovementX = Double.NaN;
-    this.lastMovementZ = Double.NaN;
-    this.lastMovementNanos = 0L;
+    this.resetMovementPrediction();
     this.resetBandwidthLimiter();
     this.iterationIndex = 0;
     this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
@@ -760,9 +802,7 @@ public final class PlayerSession {
   public void clearDispatchState() {
     this.enabled = false;
     this.hasMovementDirection = false;
-    this.lastMovementX = Double.NaN;
-    this.lastMovementZ = Double.NaN;
-    this.lastMovementNanos = 0L;
+    this.resetMovementPrediction();
     this.clearChunkQueue();
     this.trackingBuffer.clear();
     this.usedFarEntityIdBuffer.clear();

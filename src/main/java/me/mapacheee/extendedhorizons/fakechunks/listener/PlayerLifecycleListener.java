@@ -65,6 +65,7 @@ public final class PlayerLifecycleListener implements Listener {
     // Teleport events fire before the move and do not reset the client's world.
     // Respawn packets and the subsequent world change perform dimension resets.
     PlayerSession session = this.sessionRegistry.ensureFor(player, false);
+    session.resetMovementPrediction();
     this.channelInjectionService.inject(player, session);
   }
 

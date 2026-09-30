@@ -52,6 +52,15 @@ fake-chunks:
   # If true, missing chunks can be generated. If false, only already-available chunks are used.
   generate-missing-chunks: false
 
+  prefetch:
+    # Prepares real chunks ahead of moving players; respects generate-missing-chunks.
+    enabled: false
+    lookahead-seconds: 1.5
+    max-extra-distance: 4
+    max-inflight-per-player: 2
+    max-inflight-global: 8
+    max-starts-per-tick: 2
+
   # Retry delay (ms) for chunks temporarily unavailable.
   unavailable-retry-ms: 150
 

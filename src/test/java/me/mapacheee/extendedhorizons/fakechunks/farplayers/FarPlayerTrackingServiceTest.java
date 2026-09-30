@@ -46,7 +46,8 @@ class FarPlayerTrackingServiceTest {
         new EhConfig.CacheConfig(10, 400, 3000L, 1024, 5, 150),
         new EhConfig.RuntimeConfig(1),
         new EhConfig.FarPlayersConfig(true, 6, 30),
-        new EhConfig.WorldEditConfig(true)
+        new EhConfig.WorldEditConfig(true),
+        null
       ),
       Map.of(),
       true

@@ -49,6 +49,11 @@ public record EhConfig(
   private static final int DEFAULT_FAR_PLAYER_MOVE_TICKS = 4;
   private static final int MIN_FAR_PLAYER_MOVE_TICKS = 1;
   private static final int DEFAULT_FAR_PLAYER_EQUIP_TICKS = 15;
+  private static final double DEFAULT_PREFETCH_LOOKAHEAD_SECONDS = 1.5;
+  private static final int DEFAULT_PREFETCH_MAX_EXTRA_DISTANCE = 4;
+  private static final int DEFAULT_PREFETCH_MAX_INFLIGHT_PER_PLAYER = 2;
+  private static final int DEFAULT_PREFETCH_MAX_INFLIGHT_GLOBAL = 8;
+  private static final int DEFAULT_PREFETCH_MAX_STARTS_PER_TICK = 2;
 
   private static final List<String> DEFAULT_ANTI_XRAY_HIDDEN_BLOCKS = List.of(
     "minecraft:diamond_ore",
@@ -190,6 +195,44 @@ public record EhConfig(
     return enabled != null && enabled;
   }
 
+  public boolean prefetchEnabled() {
+    PrefetchConfig configured = this.prefetchConfig();
+    return configured != null && configured.enabled();
+  }
+
+  public double prefetchLookaheadSeconds() {
+    PrefetchConfig configured = this.prefetchConfig();
+    Double seconds = configured == null ? null : configured.lookaheadSeconds();
+    if (seconds == null || !Double.isFinite(seconds)) {
+      return DEFAULT_PREFETCH_LOOKAHEAD_SECONDS;
+    }
+    return Math.clamp(seconds, 0.25, 5.0);
+  }
+
+  public int prefetchMaxExtraDistance() {
+    PrefetchConfig configured = this.prefetchConfig();
+    int distance = configured == null ? 0 : configured.maxExtraDistance();
+    return distance > 0 ? Math.clamp(distance, 1, 8) : DEFAULT_PREFETCH_MAX_EXTRA_DISTANCE;
+  }
+
+  public int prefetchMaxInflightPerPlayer() {
+    PrefetchConfig configured = this.prefetchConfig();
+    int limit = configured == null ? 0 : configured.maxInflightPerPlayer();
+    return limit > 0 ? Math.clamp(limit, 1, 8) : DEFAULT_PREFETCH_MAX_INFLIGHT_PER_PLAYER;
+  }
+
+  public int prefetchMaxInflightGlobal() {
+    PrefetchConfig configured = this.prefetchConfig();
+    int limit = configured == null ? 0 : configured.maxInflightGlobal();
+    return limit > 0 ? Math.clamp(limit, 1, 64) : DEFAULT_PREFETCH_MAX_INFLIGHT_GLOBAL;
+  }
+
+  public int prefetchMaxStartsPerTick() {
+    PrefetchConfig configured = this.prefetchConfig();
+    int limit = configured == null ? 0 : configured.maxStartsPerTick();
+    return limit > 0 ? Math.clamp(limit, 1, 8) : DEFAULT_PREFETCH_MAX_STARTS_PER_TICK;
+  }
+
   public int cacheTtlSeconds() {
     if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
       return DEFAULT_CACHE_TTL_SECONDS;
@@ -288,6 +331,10 @@ public record EhConfig(
     return this.fakeChunks.antiXray().hiddenBlocks();
   }
 
+  private PrefetchConfig prefetchConfig() {
+    return this.fakeChunks == null ? null : this.fakeChunks.prefetch();
+  }
+
   private WorldSettingsConfig world(String worldName) {
     if (worldName == null || worldName.isBlank() || this.worldSettings == null || this.worldSettings.isEmpty()) {
       return null;
@@ -325,7 +372,19 @@ public record EhConfig(
     CacheConfig cache,
     RuntimeConfig runtime,
     @Setting("far-players") FarPlayersConfig farPlayers,
-    @Setting("worldedit") WorldEditConfig worldEdit
+    @Setting("worldedit") WorldEditConfig worldEdit,
+    PrefetchConfig prefetch
+  ) {
+  }
+
+  @ConfigSerializable
+  public record PrefetchConfig(
+    boolean enabled,
+    @Setting("lookahead-seconds") Double lookaheadSeconds,
+    @Setting("max-extra-distance") int maxExtraDistance,
+    @Setting("max-inflight-per-player") int maxInflightPerPlayer,
+    @Setting("max-inflight-global") int maxInflightGlobal,
+    @Setting("max-starts-per-tick") int maxStartsPerTick
   ) {
   }
 
