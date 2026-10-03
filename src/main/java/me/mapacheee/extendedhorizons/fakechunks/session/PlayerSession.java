@@ -55,6 +55,7 @@ public final class PlayerSession {
   private final Deque<ChunkSendQueueEntry> chunkQueue = new ConcurrentLinkedDeque<>();
   private final Object dispatchLock = new Object();
   private final Map<UUID, Integer> trackedFarPlayers = new ConcurrentHashMap<>();
+  private final Map<UUID, Long> farPlayerSpawnAttempts = new ConcurrentHashMap<>();
   private final Set<UUID> trackingBuffer = ConcurrentHashMap.newKeySet();
   private final Set<Integer> usedFarEntityIdBuffer = ConcurrentHashMap.newKeySet();
   private final Set<Integer> serverTrackedEntityIds = ConcurrentHashMap.newKeySet();
@@ -129,6 +130,10 @@ public final class PlayerSession {
 
   public Set<UUID> trackingBuffer() {
     return this.trackingBuffer;
+  }
+
+  public Map<UUID, Long> farPlayerSpawnAttempts() {
+    return this.farPlayerSpawnAttempts;
   }
 
   public Set<Integer> usedFarEntityIdBuffer() {
@@ -785,6 +790,7 @@ public final class PlayerSession {
     }
     this.clearChunkQueue();
     this.trackedFarPlayers.clear();
+    this.farPlayerSpawnAttempts.clear();
     this.pendingUnloads.clear();
     this.trackingBuffer.clear();
     this.usedFarEntityIdBuffer.clear();
@@ -804,6 +810,7 @@ public final class PlayerSession {
     this.hasMovementDirection = false;
     this.resetMovementPrediction();
     this.clearChunkQueue();
+    this.farPlayerSpawnAttempts.clear();
     this.trackingBuffer.clear();
     this.usedFarEntityIdBuffer.clear();
     this.serverTrackedEntityIds.clear();
