@@ -51,16 +51,6 @@ dependencies {
     annotationProcessor("me.mapacheee:MapacheeeLib:1.0.2")
     paperweight.paperDevBundle("26.2.build.+")
 
-    /*compileOnly("com.thewinterframework:paper:2.1.1")
-    annotationProcessor("com.thewinterframework:paper:2.1.1")
-    compileOnly("com.thewinterframework:configuration:2.0.0")
-    annotationProcessor("com.thewinterframework:configuration:2.0.0")
-    compileOnly("com.thewinterframework:command:2.0.0") {
-        exclude group: "org.incendo", module: "cloud-paper"
-        exclude group: "org.incendo", module: "cloud-annotations"
-    }
-    annotationProcessor("com.thewinterframework:command:2.0.0")*/
-
     compileOnly("dev.faststats.metrics:bukkit:0.29.0")
     compileOnly("me.clip:placeholderapi:2.12.2")
     compileOnly(platform("com.intellectualsites.bom:bom-newest:1.56"))
@@ -75,26 +65,9 @@ dependencies {
     testImplementation("com.fastasyncworldedit:FastAsyncWorldEdit-Core")
 }
 
-// Workaround: Winter v2 AP reads META-INF/winter/exposed-classes.txt via
-// Filer.getResource(CLASS_PATH, ...), but paperweight's custom FileManager
-// cannot open that entry from inside MapacheeeLib's JAR. We create the file
-// as a loose directory on the compile classpath so the AP can find it.
-def generatedWinterDir = layout.buildDirectory.dir("generated/classpath/winter").get().asFile
-
-tasks.register("generateWinterExposedClasses") {
-    doLast {
-        def metaInfDir = new File(generatedWinterDir, "META-INF/winter")
-        metaInfDir.mkdirs()
-        def file = new File(metaInfDir, "exposed-classes.txt")
-        if (!file.exists()) file.createNewFile()
-    }
-}
-
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 25
-    dependsOn("generateWinterExposedClasses")
-    classpath = classpath + files(generatedWinterDir)
 }
 
 shadowJar {
