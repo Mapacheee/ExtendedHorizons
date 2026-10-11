@@ -1,0 +1,38 @@
+[versions]
+# Core & Platform
+mapacheeelib = "1.0.2"
+paper-dev-bundle = "26.2.build.+"
+
+# Hooks & Metrics
+faststats = "0.29.0"
+placeholderapi = "2.12.2"
+intellectualsites-bom = "1.56"
+
+# Testing & Quality
+junit = "5.11.4"
+junit-platform = "1.11.4"
+checkstyle = "10.12.5"
+
+# Plugins
+shadow = "9.2.2"
+paperweight = "2.0.0-beta.21"
+
+[libraries]
+# Core
+mapacheeelib = { module = "me.mapacheee:MapacheeeLib", version.ref = "mapacheeelib" }
+
+# Hooks & Metrics
+faststats-bukkit = { module = "dev.faststats.metrics:bukkit", version.ref = "faststats" }
+placeholderapi = { module = "me.clip:placeholderapi", version.ref = "placeholderapi" }
+intellectualsites-bom = { module = "com.intellectualsites.bom:bom-newest", version.ref = "intellectualsites-bom" }
+fawe-core = { module = "com.fastasyncworldedit:FastAsyncWorldEdit-Core" }
+fawe-bukkit = { module = "com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit" }
+
+# Testing
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
+
+[plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+paperweight-userdev = { id = "io.papermc.paperweight.userdev", version.ref = "paperweight" }
