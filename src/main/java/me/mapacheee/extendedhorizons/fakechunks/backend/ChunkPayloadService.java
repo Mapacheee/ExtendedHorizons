@@ -48,10 +48,9 @@ public final class ChunkPayloadService {
     int chunkZ,
     long chunkKey,
     long cacheGeneration,
-    EhConfig config,
-    boolean refresh
+    EhConfig config
   ) {
-    return this.prepare(world, expectedWorldId, chunkX, chunkZ, chunkKey, cacheGeneration, config, refresh, null);
+    return this.prepare(world, expectedWorldId, chunkX, chunkZ, chunkKey, cacheGeneration, config, null);
   }
 
   public boolean isPrepared(World world, long chunkKey, EhConfig config) {
@@ -81,7 +80,7 @@ public final class ChunkPayloadService {
     try {
       CompletableFuture<ByteBuf> result = this.prepare(
         world, world.getUID(), ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey),
-        chunkKey, cacheGeneration, config, false, work
+        chunkKey, cacheGeneration, config, work
       );
       result.whenComplete((payload, throwable) -> {
         try {
@@ -106,10 +105,9 @@ public final class ChunkPayloadService {
     long chunkKey,
     long cacheGeneration,
     EhConfig config,
-    boolean refresh,
     PrefetchWork work
   ) {
-    boolean preferFreshData = refresh || this.cacheService.shouldBypass(expectedWorldId, chunkKey);
+    boolean preferFreshData = this.cacheService.shouldBypass(expectedWorldId, chunkKey);
     long antiXrayCacheGeneration = this.antiXrayPayloadCacheService.generation();
     boolean antiXrayEnabled = config.antiXrayEnabled(world.getName());
     String antiXrayProfileHash = antiXrayEnabled

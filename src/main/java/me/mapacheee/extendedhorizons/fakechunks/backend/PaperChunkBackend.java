@@ -45,7 +45,6 @@ public final class PaperChunkBackend implements ChunkBackend {
   private static final int PACKET_HEADER_SIZE = 12;
   private static final int SECTION_BUFFER_PADDING = 512;
   private static final int SECTION_BUFFER_MIN = 64;
-  private static final int BIOME_BUFFER_SIZE = 64;
   private static final int MIN_PACKET_SIZE = 2048;
   private static final int MAX_PACKET_BUFFER = 4 * 1024 * 1024;
   private static final int SECTION_MAX_BUFFER = 256 * 1024;
@@ -68,6 +67,7 @@ public final class PaperChunkBackend implements ChunkBackend {
   private final LightPayloadCacheService lightPayloadCacheService;
   private final ChunkBuildMetricsService metricsService;
   private final Container<EhConfig> configContainer;
+  private final ChunkWorkSchedulerService workLimiter;
 
   @Inject
   public PaperChunkBackend(
@@ -75,13 +75,15 @@ public final class PaperChunkBackend implements ChunkBackend {
     AntiXrayService antiXrayService,
     ChunkSerializationExecutorService serializationExecutorService,
     LightPayloadCacheService lightPayloadCacheService,
-    ChunkBuildMetricsService metricsService
+    ChunkBuildMetricsService metricsService,
+    ChunkWorkSchedulerService workLimiter
   ) {
     this.configContainer = configContainer;
     this.antiXrayService = antiXrayService;
     this.serializationExecutorService = serializationExecutorService;
     this.lightPayloadCacheService = lightPayloadCacheService;
     this.metricsService = metricsService;
+    this.workLimiter = workLimiter;
   }
 
   @Override
@@ -116,90 +118,103 @@ public final class PaperChunkBackend implements ChunkBackend {
       return CompletableFuture.completedFuture(null);
     }
     long lightCacheGeneration = this.lightPayloadCacheService.generation();
-    Consumer<Chunk> task = createChunkTask(world, chunkX, chunkZ, lightCacheGeneration, future);
+    Consumer<LevelChunk> task = createChunkTask(world, chunkX, chunkZ, lightCacheGeneration, future);
+    Consumer<Chunk> loadedTask = chunk -> task.accept(this.resolveLevelChunk(chunk));
 
-    Runnable fallbackLoad = () -> {
+    this.workLimiter.prepare(future, this.configContainer.get().serializationWorkers(), () -> {
       if (future.isDone()) {
         return;
       }
-      try {
-        CompletableFuture<Chunk> chunkLoadFuture = world.getChunkAtAsync(
-          chunkX,
-          chunkZ,
-          generateMissingChunks
-        );
-        cancelWhenParentCancelled(future, chunkLoadFuture);
-        CompletableFuture<Void> schedulingFuture = chunkLoadFuture.thenAccept((chunk) -> {
-          if (future.isDone()) {
-            return;
-          }
-          if (!generateMissingChunks) {
-            if (chunk == null) {
-              if (this.configContainer.get().debugEnabled()) {
-                LOGGER.info("EH getChunkAtAsync returned null for chunk [{}, {}]", chunkX, chunkZ);
-              }
-              future.complete(null);
-              return;
-            }
-          }
-          this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(chunk), future);
-        });
-        cancelWhenParentCancelled(future, schedulingFuture);
-        schedulingFuture.exceptionally(throwable -> {
-          if (!future.isCancelled()) {
-            if (this.configContainer.get().debugEnabled()) {
-              LOGGER.info("EH Paper chunk load or snapshot scheduling failed for chunk [{}, {}]", chunkX, chunkZ,
-                throwable);
-            }
-            future.complete(null);
-          }
-          return null;
-        });
-      } catch (Throwable throwable) {
-        if (this.configContainer.get().debugEnabled()) {
-          LOGGER.info("EH Paper chunk load request failed for chunk [{}, {}]", chunkX, chunkZ, throwable);
-        }
-        future.complete(null);
-      }
-    };
-
-    boolean chunkLoaded = world.isChunkLoaded(chunkX, chunkZ);
-    boolean useDiskReader = this.configContainer.get().diskReaderEnabled()
-      && !preferFreshData
-      && !chunkLoaded
-      && DiskChunkReader.shouldAttemptDirectRead(world, chunkX, chunkZ);
-    if (useDiskReader) {
-      CompletableFuture<ByteBuf> diskFuture = this.serializationExecutorService.submitIo(
-        () -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ, diskAntiXray)
-      );
-      cancelWhenParentCancelled(future, diskFuture);
-      diskFuture.whenComplete((diskPayload, throwable) -> {
-        if (diskFuture.isCancelled() || isCancellation(throwable)) {
-          if (!future.isDone()) {
-            future.complete(null);
-          }
+      Runnable fallbackLoad = () -> {
+        if (future.isDone()) {
           return;
         }
-        if (diskPayload != null) {
+        try {
+          CompletableFuture<Chunk> chunkLoadFuture = world.getChunkAtAsync(chunkX, chunkZ, false);
+          cancelWhenParentCancelled(future, chunkLoadFuture);
+          CompletableFuture<Void> schedulingFuture = chunkLoadFuture.thenAccept((chunk) -> {
+            if (future.isDone()) {
+              return;
+            }
+            if (chunk == null) {
+              if (generateMissingChunks) {
+                this.workLimiter.generate(future, () -> this.generateChunk(world, chunkX, chunkZ, scheduler, loadedTask, future));
+              } else {
+                future.complete(null);
+              }
+              return;
+            }
+            this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> loadedTask.accept(chunk), future);
+          });
+          cancelWhenParentCancelled(future, schedulingFuture);
+          schedulingFuture.exceptionally(throwable -> {
+            if (!future.isCancelled()) {
+              if (this.configContainer.get().debugEnabled()) {
+                LOGGER.info("EH Paper chunk load or snapshot scheduling failed for chunk [{}, {}]", chunkX, chunkZ,
+                  throwable);
+              }
+              future.complete(null);
+            }
+            return null;
+          });
+        } catch (Throwable throwable) {
           if (this.configContainer.get().debugEnabled()) {
-            LOGGER.info("EH disk payload ok for chunk [{}, {}]", chunkX, chunkZ);
+            LOGGER.info("EH Paper chunk load request failed for chunk [{}, {}]", chunkX, chunkZ, throwable);
           }
-          completeOwned(future, diskPayload);
-        } else {
-          if (this.configContainer.get().debugEnabled()) {
-            LOGGER.info("EH disk payload null for chunk [{}, {}], falling back", chunkX, chunkZ);
-          }
-          fallbackLoad.run();
+          future.complete(null);
         }
-      });
-    } else {
-      if (this.configContainer.get().debugEnabled()) {
-        LOGGER.info("EH chunk [{}, {}] using Paper data: loaded={} refresh={}",
-          chunkX, chunkZ, chunkLoaded, preferFreshData);
-      }
-      fallbackLoad.run();
-    }
+      };
 
+      boolean chunkLoaded = world.isChunkLoaded(chunkX, chunkZ);
+      if (chunkLoaded) {
+        this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> {
+          ServerLevel level = ((CraftWorld) world).getHandle();
+          LevelChunk chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
+          if (chunk == null) {
+            fallbackLoad.run();
+          } else {
+            task.accept(chunk);
+          }
+        }, future);
+        return;
+      }
+      boolean useDiskReader = this.configContainer.get().diskReaderEnabled()
+        && !preferFreshData
+        && !chunkLoaded
+        && DiskChunkReader.shouldAttemptDirectRead(world, chunkX, chunkZ);
+      if (useDiskReader) {
+        CompletableFuture<ByteBuf> diskFuture = this.serializationExecutorService.submitIo(
+          () -> DiskChunkReader.readAndSerialize(world, chunkX, chunkZ, diskAntiXray)
+        );
+        cancelWhenParentCancelled(future, diskFuture);
+        diskFuture.whenComplete((diskPayload, throwable) -> {
+          if (diskFuture.isCancelled() || isCancellation(throwable)) {
+            if (!future.isDone()) {
+              future.complete(null);
+            }
+            return;
+          }
+          if (diskPayload != null) {
+            if (this.configContainer.get().debugEnabled()) {
+              LOGGER.info("EH disk payload ok for chunk [{}, {}]", chunkX, chunkZ);
+            }
+            completeOwned(future, diskPayload);
+          } else {
+            if (this.configContainer.get().debugEnabled()) {
+              LOGGER.info("EH disk payload null for chunk [{}, {}], falling back", chunkX, chunkZ);
+            }
+            fallbackLoad.run();
+          }
+        });
+      } else {
+        if (this.configContainer.get().debugEnabled()) {
+          LOGGER.info("EH chunk [{}, {}] using Paper data: loaded={} refresh={}",
+            chunkX, chunkZ, chunkLoaded, preferFreshData);
+        }
+        fallbackLoad.run();
+      }
+
+    });
     return future;
   }
 
@@ -216,7 +231,7 @@ public final class PaperChunkBackend implements ChunkBackend {
     return null;
   }
 
-  private Consumer<Chunk> createChunkTask(
+  private Consumer<LevelChunk> createChunkTask(
     World world,
     int chunkX,
     int chunkZ,
@@ -225,13 +240,12 @@ public final class PaperChunkBackend implements ChunkBackend {
   ) {
     int serializationWorkers = this.configContainer.get().serializationWorkers();
     boolean useAsyncSerialization = serializationWorkers > 0;
-    return (asyncChunk) -> {
+    return (resolvedChunk) -> {
       if (future.isCancelled()) {
         return;
       }
       try {
         ServerLevel level = ((CraftWorld) world).getHandle();
-        LevelChunk resolvedChunk = this.resolveLevelChunk(asyncChunk);
         if (resolvedChunk == null) {
           if (this.configContainer.get().debugEnabled()) {
             LOGGER.info("EH resolveLevelChunk failed for chunk [{}, {}]", chunkX, chunkZ);
@@ -337,10 +351,62 @@ public final class PaperChunkBackend implements ChunkBackend {
     if (future.isDone()) {
       return;
     }
-    boolean scheduled = scheduler.runAtChunk(world, chunkX, chunkZ, task);
-    if (!scheduled && !future.isDone()) {
-      future.complete(null);
+    this.workLimiter.snapshot(future, () -> {
+      boolean scheduled = scheduler.runAtChunk(world, chunkX, chunkZ, () -> {
+        if (future.isDone()) {
+          return;
+        }
+        if (!this.workLimiter.canCapture()) {
+          this.runInChunkContext(world, chunkX, chunkZ, scheduler, task, future);
+          return;
+        }
+        long start = System.nanoTime();
+        try {
+          task.run();
+        } catch (RuntimeException | Error exception) {
+          if (this.configContainer.get().debugEnabled()) {
+            LOGGER.info("EH chunk capture failed for chunk [{}, {}]", chunkX, chunkZ, exception);
+          }
+          future.completeExceptionally(exception);
+        } finally {
+          this.workLimiter.recordCapture(System.nanoTime() - start);
+        }
+      });
+      if (!scheduled) {
+        future.complete(null);
+      }
+    });
+  }
+
+  private void generateChunk(World world, int chunkX, int chunkZ, ChunkScheduler scheduler,
+    Consumer<Chunk> task, CompletableFuture<ByteBuf> future) {
+    if (future.isDone()) {
+      return;
     }
+    if (!this.workLimiter.tryStartGeneration()) {
+      this.workLimiter.generate(future, () -> this.generateChunk(world, chunkX, chunkZ, scheduler, task, future));
+      return;
+    }
+    CompletableFuture<Chunk> load;
+    try {
+      load = world.getChunkAtAsync(chunkX, chunkZ, true);
+    } catch (RuntimeException | Error exception) {
+      this.workLimiter.finishGeneration();
+      throw exception;
+    }
+    load.whenComplete((chunk, throwable) -> {
+      this.workLimiter.finishGeneration();
+      if (future.isDone()) {
+        return;
+      }
+      if (throwable != null) {
+        future.completeExceptionally(throwable);
+      } else if (chunk == null) {
+        future.complete(null);
+      } else {
+        this.runInChunkContext(world, chunkX, chunkZ, scheduler, () -> task.accept(chunk), future);
+      }
+    });
   }
 
   private ByteBuf serializeLevelChunkWithLight(
@@ -606,44 +672,17 @@ public final class PaperChunkBackend implements ChunkBackend {
         LevelChunkSection section = chunkSections[i];
         short nonEmptyBlockCount = ChunkSectionCountWriter.nonEmptyBlockCount(section);
         short fluidCount = ChunkSectionCountWriter.fluidCount(section);
-        ByteBuf states = null;
-        ByteBuf biomes = null;
-        try {
-          states = PooledByteBufAllocator.DEFAULT.buffer(
-            Math.max(SECTION_BUFFER_MIN, section.getSerializedSize()), SECTION_STATES_MAX_BUFFER);
-          biomes = PooledByteBufAllocator.DEFAULT.buffer(BIOME_BUFFER_SIZE, HEIGHTMAP_BUFFER_MAX);
-          FriendlyByteBuf statesOut = new FriendlyByteBuf(states);
-          FriendlyByteBuf biomesOut = new FriendlyByteBuf(biomes);
-
-          ChunkSerializationCompat.writePalette(section.getStates(), statesOut);
-          ChunkSerializationCompat.writePalette(section.getBiomes(), biomesOut);
-
-          sectionSnapshots[i] = new AntiXraySectionSnapshot(
-            i + minSectionY,
-            nonEmptyBlockCount,
-            fluidCount,
-            states,
-            biomes
-          );
-          states = null;
-          biomes = null;
-        } finally {
-          if (states != null) {
-            states.release();
-          }
-          if (biomes != null) {
-            biomes.release();
-          }
-        }
+        sectionSnapshots[i] = new AntiXraySectionSnapshot(
+          i + minSectionY,
+          nonEmptyBlockCount,
+          fluidCount,
+          section.getStates().copy(),
+          section.getBiomes().copy()
+        );
       }
 
       if (light == null) {
         if (!FastLightDataWriter.hasInitialisedLight(chunk)) {
-          for (AntiXraySectionSnapshot snap : sectionSnapshots) {
-            if (snap != null) {
-              snap.release();
-            }
-          }
           heightmaps.release();
           return null;
         }
@@ -667,13 +706,6 @@ public final class PaperChunkBackend implements ChunkBackend {
         ChunkKeyCodec.z(chunkKey),
         throwable
       );
-      if (sectionSnapshots != null) {
-        for (AntiXraySectionSnapshot sectionSnapshot : sectionSnapshots) {
-          if (sectionSnapshot != null) {
-            sectionSnapshot.release();
-          }
-        }
-      }
       heightmaps.release();
       if (light != null) {
         light.release();
@@ -692,19 +724,22 @@ public final class PaperChunkBackend implements ChunkBackend {
       for (AntiXraySectionSnapshot section : sections) {
         ChunkSectionCountWriter.write(sectionOut, section.nonEmptyBlockCount(), section.fluidCount());
 
-        ByteBuf states = section.states().retainedDuplicate();
-        try {
-          int preReader = states.readerIndex();
-          if (snapshot.antiXrayProcessor() != null) {
+        if (snapshot.antiXrayProcessor() == null) {
+          ChunkSerializationCompat.writePalette(section.states(), sectionOut);
+        } else {
+          ByteBuf states = PooledByteBufAllocator.DEFAULT.buffer(
+            Math.max(SECTION_BUFFER_MIN, section.states().getSerializedSize()), SECTION_STATES_MAX_BUFFER);
+          try {
+            ChunkSerializationCompat.writePalette(section.states(), new FriendlyByteBuf(states));
+            int preReader = states.readerIndex();
             snapshot.antiXrayProcessor().process(states, section.sectionY(), false);
+            states.readerIndex(preReader);
+            sectionOut.writeBytes(states, states.readerIndex(), states.readableBytes());
+          } finally {
+            states.release();
           }
-          states.readerIndex(preReader);
-          sectionOut.writeBytes(states, states.readerIndex(), states.readableBytes());
-        } finally {
-          states.release();
         }
-
-        sectionOut.writeBytes(section.biomes(), section.biomes().readerIndex(), section.biomes().readableBytes());
+        ChunkSerializationCompat.writePalette(section.biomes(), sectionOut);
       }
 
       int sectionBytes = sectionBuffer.readableBytes();
@@ -748,7 +783,7 @@ public final class PaperChunkBackend implements ChunkBackend {
         continue;
       }
       total +=
-        ChunkSectionCountWriter.serializedSize() + section.states().readableBytes() + section.biomes().readableBytes();
+        ChunkSectionCountWriter.serializedSize() + section.states().getSerializedSize() + section.biomes().getSerializedSize();
     }
     return total;
   }

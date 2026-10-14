@@ -34,21 +34,18 @@ public final class ChunkDispatchService {
   private final ChunkBuildCacheService cacheService;
   private final ChunkPayloadService payloadService;
   private final ChannelInjectionService channelInjectionService;
-  private final GlobalGenerationLimiterService generationLimiterService;
 
   @Inject
   public ChunkDispatchService(
     Container<EhConfig> configContainer,
     ChunkBuildCacheService cacheService,
     ChunkPayloadService payloadService,
-    ChannelInjectionService channelInjectionService,
-    GlobalGenerationLimiterService generationLimiterService
+    ChannelInjectionService channelInjectionService
   ) {
     this.configContainer = configContainer;
     this.cacheService = cacheService;
     this.payloadService = payloadService;
     this.channelInjectionService = channelInjectionService;
-    this.generationLimiterService = generationLimiterService;
   }
 
   public void processQueue(World world, Channel channel, PlayerSession session) {
@@ -86,12 +83,8 @@ public final class ChunkDispatchService {
       if (session.chunkQueue().size() >= maxQueueSize) {
         break;
       }
-      if (!this.generationLimiterService.tryAcquire()) {
-        break;
-      }
       Long chunkKey = session.pollNextChunkKey();
       if (chunkKey == null) {
-        this.generationLimiterService.release();
         break;
       }
       int chunkX = ChunkKeyCodec.x(chunkKey);
@@ -106,12 +99,8 @@ public final class ChunkDispatchService {
         chunkZ,
         chunkKey,
         cacheGeneration,
-        config,
-        session.isChunkRefresh(chunkKey)
+        config
       );
-      if (buildFuture.isDone()) {
-        this.generationLimiterService.release();
-      }
       ChunkSendQueueEntry queueEntry = new ChunkSendQueueEntry(
         chunkKey,
         expectedWorldId,

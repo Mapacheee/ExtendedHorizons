@@ -7,7 +7,6 @@ import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkPayloadService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
-import me.mapacheee.extendedhorizons.fakechunks.dispatch.GlobalGenerationLimiterService;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPrefetchPlan;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.session.SessionRegistry;
@@ -29,7 +28,6 @@ public final class ChunkPrefetchService {
   private final Container<EhConfig> configContainer;
   private final ChunkPayloadService payloadService;
   private final ChunkBuildCacheService cacheService;
-  private final GlobalGenerationLimiterService generationLimiterService;
   private final SessionRegistry sessionRegistry;
   private final Map<UUID, PlayerPlan> plans = new ConcurrentHashMap<>();
   private final Map<ChunkKey, PendingWork> pending = new HashMap<>();
@@ -41,19 +39,16 @@ public final class ChunkPrefetchService {
     Container<EhConfig> configContainer,
     ChunkPayloadService payloadService,
     ChunkBuildCacheService cacheService,
-    GlobalGenerationLimiterService generationLimiterService,
     SessionRegistry sessionRegistry
   ) {
     this.configContainer = configContainer;
     this.payloadService = payloadService;
     this.cacheService = cacheService;
-    this.generationLimiterService = generationLimiterService;
     this.sessionRegistry = sessionRegistry;
   }
 
   public void beginCycle(EhConfig config) {
     synchronized (this) {
-      this.generationLimiterService.reset(config.maxGlobalGenerationsPerTick());
       this.remainingStarts = !this.stopping && config.prefetchEnabled() ? config.prefetchMaxStartsPerTick() : 0;
     }
     this.plans.entrySet().removeIf(entry -> {
@@ -115,11 +110,7 @@ public final class ChunkPrefetchService {
         completion = this.payloadService.prefetch(world, chunkKey, signature.cacheGeneration(), config);
       } catch (RuntimeException | Error exception) {
         this.finish(work);
-        this.generationLimiterService.release();
         throw exception;
-      }
-      if (completion.isDone()) {
-        this.generationLimiterService.release();
       }
       completion.whenComplete((ignored, throwable) -> this.finish(work));
     }
@@ -144,8 +135,7 @@ public final class ChunkPrefetchService {
         playerPending++;
       }
     }
-    if (playerPending >= config.prefetchMaxInflightPerPlayer()
-      || !this.generationLimiterService.tryAcquirePrefetch()) {
+    if (playerPending >= config.prefetchMaxInflightPerPlayer()) {
       return false;
     }
     this.remainingStarts--;

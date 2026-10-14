@@ -1,19 +1,17 @@
 package me.mapacheee.extendedhorizons.fakechunks.backend;
 
-import io.netty.buffer.ByteBuf;
+import net.minecraft.core.Holder;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
 
 record AntiXraySectionSnapshot(
   int sectionY,
   short nonEmptyBlockCount,
   short fluidCount,
-  ByteBuf states,
-  ByteBuf biomes
+  PalettedContainerRO<BlockState> states,
+  PalettedContainerRO<Holder<Biome>> biomes
 ) {
-
-  void release() {
-    this.states.release();
-    this.biomes.release();
-  }
 }
 
 

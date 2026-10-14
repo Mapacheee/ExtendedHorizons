@@ -13,11 +13,6 @@ record AntiXrayChunkSnapshot(
   void release() {
     this.heightmaps.release();
     this.light.release();
-    for (AntiXraySectionSnapshot section : this.sections) {
-      if (section != null) {
-        section.release();
-      }
-    }
   }
 }
 

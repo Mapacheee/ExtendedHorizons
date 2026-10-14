@@ -10,6 +10,7 @@ import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.FakeChunkOrchestratorService;
+import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkWorkSchedulerService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
@@ -50,6 +51,7 @@ public final class RuntimeOrchestratorService {
   private final SessionRegistry sessionRegistry;
   private final FakeChunkOrchestratorService fakeChunkOrchestratorService;
   private final ChunkPrefetchService prefetchService;
+  private final ChunkWorkSchedulerService workScheduler;
   private final FarPlayerCacheService farPlayerCacheService;
   private final ChunkBuildMetricsService chunkBuildMetricsService;
   private final ChunkBuildCacheService chunkBuildCacheService;
@@ -67,6 +69,7 @@ public final class RuntimeOrchestratorService {
     SessionRegistry sessionRegistry,
     FakeChunkOrchestratorService fakeChunkOrchestratorService,
     ChunkPrefetchService prefetchService,
+    ChunkWorkSchedulerService workScheduler,
     FarPlayerCacheService farPlayerCacheService,
     ChunkBuildMetricsService chunkBuildMetricsService,
     ChunkBuildCacheService chunkBuildCacheService,
@@ -77,6 +80,7 @@ public final class RuntimeOrchestratorService {
     this.sessionRegistry = sessionRegistry;
     this.fakeChunkOrchestratorService = fakeChunkOrchestratorService;
     this.prefetchService = prefetchService;
+    this.workScheduler = workScheduler;
     this.farPlayerCacheService = farPlayerCacheService;
     this.chunkBuildMetricsService = chunkBuildMetricsService;
     this.chunkBuildCacheService = chunkBuildCacheService;
@@ -111,6 +115,7 @@ public final class RuntimeOrchestratorService {
     Collections.shuffle(this.playerBuffer);
 
     EhConfig config = this.configContainer.get();
+    this.workScheduler.beginCycle(config.maxGlobalGenerationsPerTick());
     this.prefetchService.beginCycle(config);
 
     this.orchestratorTick = (this.orchestratorTick + 1) & Integer.MAX_VALUE;

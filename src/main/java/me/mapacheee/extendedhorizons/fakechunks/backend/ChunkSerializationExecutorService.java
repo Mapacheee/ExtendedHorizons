@@ -26,7 +26,7 @@ public final class ChunkSerializationExecutorService {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(ChunkSerializationExecutorService.class);
   private static final String THREAD_PREFIX = "EH-ChunkSerializer-";
-  private static final int MAX_QUEUED_PER_WORKER = 8;
+  private static final int MAX_QUEUED_PER_WORKER = 32;
   private static final int SHUTDOWN_WAIT_SECONDS = 5;
   private static final long WARN_THROTTLE_NANOS = TimeUnit.SECONDS.toNanos(10);
   private static final Runnable NOOP = () -> {
