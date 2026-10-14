@@ -9,6 +9,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class PlayerSession {
 
@@ -31,6 +33,8 @@ public final class PlayerSession {
   private volatile UUID worldId;
   private final AtomicLong epoch = new AtomicLong(0L);
   private final AtomicLong sendAttemptSequence = new AtomicLong();
+  private final AtomicBoolean tickScheduled = new AtomicBoolean();
+  private final AtomicReference<Runnable> pendingTick = new AtomicReference<>();
   private volatile long chunkKey = UNADVERTISED_CHUNK_KEY;
   private volatile int distance;
   private volatile int storageRadius;
@@ -254,7 +258,7 @@ public final class PlayerSession {
     return this.chunkQueue;
   }
 
-  public synchronized boolean hasPendingChunkWork() {
+  public boolean hasPendingChunkWork() {
     if (!this.enabled) {
       return false;
     }
@@ -262,12 +266,35 @@ public final class PlayerSession {
       return true;
     }
     long retryAt = this.nextBuildRetryNanos;
-    if (retryAt != NO_BUILD_RETRY_NANOS && System.nanoTime() - retryAt >= 0L) {
-      this.iterationIndex = 0;
-      this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
-      return true;
+    return retryAt != NO_BUILD_RETRY_NANOS && System.nanoTime() - retryAt >= 0L;
+  }
+
+  public boolean queueTick(Runnable tick) {
+    if (this.closed) {
+      return false;
     }
-    return false;
+    this.pendingTick.set(tick);
+    if (this.closed) {
+      this.pendingTick.set(null);
+      return false;
+    }
+    return this.tickScheduled.compareAndSet(false, true);
+  }
+
+  public void runPendingTick() {
+    try {
+      Runnable tick = this.pendingTick.getAndSet(null);
+      if (tick != null && !this.closed) {
+        tick.run();
+      }
+    } finally {
+      this.tickScheduled.set(false);
+    }
+  }
+
+  public void cancelPendingTick() {
+    this.pendingTick.set(null);
+    this.tickScheduled.set(false);
   }
 
   public boolean enqueueChunk(ChunkSendQueueEntry entry, UUID expectedWorldId, long expectedEpoch) {
@@ -547,6 +574,11 @@ public final class PlayerSession {
   }
 
   public Long pollNextChunkKey() {
+    long retryAtNanos = this.nextBuildRetryNanos;
+    if (retryAtNanos != NO_BUILD_RETRY_NANOS && System.nanoTime() - retryAtNanos >= 0L) {
+      this.iterationIndex = 0;
+      this.nextBuildRetryNanos = NO_BUILD_RETRY_NANOS;
+    }
     int centerX = ChunkKeyCodec.x(this.chunkKey);
     int centerZ = ChunkKeyCodec.z(this.chunkKey);
     long[] offsets = this.chunksInDistance;
@@ -784,6 +816,7 @@ public final class PlayerSession {
 
   public synchronized void handleDimensionReset() {
     this.bumpEpoch();
+    this.pendingTick.set(null);
     this.enabled = false;
     for (ChunkState state : this.chunkStates) {
       state.reset();
@@ -806,6 +839,7 @@ public final class PlayerSession {
   }
 
   public void clearDispatchState() {
+    this.pendingTick.set(null);
     this.enabled = false;
     this.hasMovementDirection = false;
     this.resetMovementPrediction();
@@ -827,6 +861,7 @@ public final class PlayerSession {
       return;
     }
     this.closed = true;
+    this.pendingTick.set(null);
     this.bumpEpoch();
     this.clearDispatchState();
     this.serverLoadedChunks.clear();

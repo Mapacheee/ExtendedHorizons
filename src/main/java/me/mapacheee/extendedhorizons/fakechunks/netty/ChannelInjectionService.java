@@ -243,11 +243,12 @@ public final class ChannelInjectionService {
     this.runOnEventLoop(channel, channel::flush);
   }
 
-  public void executeOnEventLoop(Channel channel, Runnable runnable) {
+  public boolean executeOnEventLoop(Channel channel, Runnable runnable) {
     if (this.stopping || channel == null || !channel.isActive() || runnable == null) {
-      return;
+      return false;
     }
     this.runOnEventLoop(channel, runnable);
+    return true;
   }
 
   public Channel resolveChannel(Player player) {

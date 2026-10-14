@@ -186,7 +186,16 @@ public final class FakeChunkOrchestratorService {
       sessionEpoch,
       visibleCandidates
     );
-    this.channelInjectionService.executeOnEventLoop(channel, () -> this.processOnNetty(channel, session, snapshot));
+    if (session.queueTick(() -> this.processOnNetty(channel, session, snapshot))) {
+      try {
+        if (!this.channelInjectionService.executeOnEventLoop(channel, session::runPendingTick)) {
+          session.cancelPendingTick();
+        }
+      } catch (RuntimeException exception) {
+        session.cancelPendingTick();
+        throw exception;
+      }
+    }
   }
 
   private void processOnNetty(Channel channel, PlayerSession session, TickSnapshot snapshot) {

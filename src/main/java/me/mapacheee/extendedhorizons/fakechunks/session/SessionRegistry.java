@@ -21,6 +21,10 @@ public final class SessionRegistry {
     if (this.stopping) {
       return closedSession(playerId, worldId);
     }
+    PlayerSession existing = this.sessions.get(playerId);
+    if (!bumpEpoch && existing != null && !existing.closed() && worldId.equals(existing.worldId())) {
+      return existing;
+    }
     PlayerSession result = this.sessions.compute(playerId, (id, current) -> {
       if (this.stopping) {
         if (current != null) {
