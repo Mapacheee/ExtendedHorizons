@@ -245,7 +245,17 @@ public final class ChunkBuildCacheService {
     }
   }
 
-  public record ChunkKey(UUID worldId, long chunkKey) {
+  public record ChunkKey(UUID worldId, long chunkKey) implements Comparable<ChunkKey> {
+    @Override
+    public int compareTo(ChunkKey other) {
+      if (this.worldId != other.worldId) {
+        if (this.worldId == null) return -1;
+        if (other.worldId == null) return 1;
+        int worldOrder = this.worldId.compareTo(other.worldId);
+        if (worldOrder != 0) return worldOrder;
+      }
+      return Long.compare(this.chunkKey, other.chunkKey);
+    }
   }
 
   private record BuildRegistration(
