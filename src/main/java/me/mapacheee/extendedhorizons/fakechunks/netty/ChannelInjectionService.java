@@ -5,12 +5,14 @@ import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOutboundHandler;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.EventLoop;
 import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
+import net.minecraft.network.CompressionEncoder;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.server.level.ServerPlayer;
@@ -196,6 +198,42 @@ public final class ChannelInjectionService {
    * Consumes one owned encoded buffer reference on every return path.
    */
   public ChannelPromise writeEncodedFuture(Channel channel, ByteBuf payload) {
+    return this.writeEncodedFuture(channel, payload, null);
+  }
+
+  public CompressionRoute compressionRoute(Channel channel) {
+    try {
+      ChannelHandlerContext context = channel.pipeline().context("compress");
+      if (context == null || context.handler().getClass() != CompressionEncoder.class) {
+        return null;
+      }
+      boolean afterCompression = false;
+      for (var entry : channel.pipeline()) {
+        if (entry.getKey().equals(context.name())) {
+          afterCompression = true;
+          continue;
+        }
+        if (!afterCompression || !(entry.getValue() instanceof ChannelOutboundHandler)) {
+          continue;
+        }
+        String type = entry.getValue().getClass().getName();
+        if (!type.startsWith("net.minecraft.network.")
+          && !type.startsWith("me.mapacheee.extendedhorizons.fakechunks.netty.")
+          && !type.equals("io.netty.handler.flush.FlushConsolidationHandler")) {
+          return null;
+        }
+      }
+      int threshold = ((CompressionEncoder) context.handler()).getThreshold();
+      return threshold < 0 ? null : new CompressionRoute(context, threshold);
+    } catch (RuntimeException | LinkageError exception) {
+      return null;
+    }
+  }
+
+  public record CompressionRoute(ChannelHandlerContext context, int threshold) {
+  }
+
+  public ChannelPromise writeEncodedFuture(Channel channel, ByteBuf payload, CompressionRoute route) {
     if (payload == null) {
       return null;
     }
@@ -216,7 +254,16 @@ public final class ChannelInjectionService {
         return;
       }
       try {
-        channel.write(payload, promise);
+        if (route == null) {
+          channel.write(payload, promise);
+        } else if (route.context().isRemoved()
+          || route.context().channel() != channel
+          || ((CompressionEncoder) route.context().handler()).getThreshold() != route.threshold()) {
+          ReferenceCountUtil.release(payload);
+          promise.tryFailure(new IllegalStateException("Compression pipeline changed"));
+        } else {
+          route.context().write(payload, promise);
+        }
       } catch (RuntimeException | Error throwable) {
         ReferenceCountUtil.release(payload);
         promise.tryFailure(throwable);

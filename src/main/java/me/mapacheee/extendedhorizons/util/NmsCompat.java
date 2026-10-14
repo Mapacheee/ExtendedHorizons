@@ -4,6 +4,9 @@ import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
+import net.minecraft.core.SectionPos;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.phys.Vec3;
 import it.unimi.dsi.fastutil.ints.IntList;
@@ -25,6 +28,9 @@ public final class NmsCompat {
   private static final MethodHandle GET_ENTITY_TYPE;
   private static final MethodHandle CHUNK_X = accessor(ClientboundLevelChunkWithLightPacket.class, "x", "getX");
   private static final MethodHandle CHUNK_Z = accessor(ClientboundLevelChunkWithLightPacket.class, "z", "getZ");
+  private static final MethodHandle LIGHT_X = accessor(ClientboundLightUpdatePacket.class, "x", "getX");
+  private static final MethodHandle LIGHT_Z = accessor(ClientboundLightUpdatePacket.class, "z", "getZ");
+  private static final MethodHandle SECTION_POS = sectionPositionGetter();
   private static final MethodHandle REMOVED_IDS = accessor(ClientboundRemoveEntitiesPacket.class, "entityIds", "getEntityIds");
 
   static {
@@ -102,6 +108,36 @@ public final class NmsCompat {
 
   public static int chunkZ(ClientboundLevelChunkWithLightPacket packet) {
     return (int) read(CHUNK_Z, packet);
+  }
+
+  public static int lightChunkX(ClientboundLightUpdatePacket packet) {
+    return (int) read(LIGHT_X, packet);
+  }
+
+  public static int lightChunkZ(ClientboundLightUpdatePacket packet) {
+    return (int) read(LIGHT_Z, packet);
+  }
+
+  private static MethodHandle sectionPositionGetter() {
+    try {
+      return MethodHandles.privateLookupIn(ClientboundSectionBlocksUpdatePacket.class, MethodHandles.lookup())
+        .findGetter(ClientboundSectionBlocksUpdatePacket.class, "sectionPos", SectionPos.class);
+    } catch (ReflectiveOperationException exception) {
+      return null;
+    }
+  }
+
+  public static SectionPos sectionPosition(ClientboundSectionBlocksUpdatePacket packet) {
+    if (SECTION_POS != null) {
+      return (SectionPos) read(SECTION_POS, packet);
+    }
+    SectionPos[] position = new SectionPos[1];
+    packet.runUpdates((block, state) -> {
+      if (position[0] == null) {
+        position[0] = SectionPos.of(block);
+      }
+    });
+    return position[0];
   }
 
   public static IntList removedEntityIds(ClientboundRemoveEntitiesPacket packet) {

@@ -10,6 +10,7 @@ import me.mapacheee.extendedhorizons.fakechunks.antixray.AntiXrayService;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkSerializationExecutorService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.AntiXrayPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.CompressedPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.LightPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
@@ -35,6 +36,8 @@ public class EhCommands {
   private ReloadServiceManager reloadServiceManager;
   @Inject
   private ChunkBuildCacheService chunkBuildCacheService;
+  @Inject
+  private CompressedPayloadCacheService compressedPayloadCacheService;
   @Inject
   private LightPayloadCacheService lightPayloadCacheService;
   @Inject
@@ -75,6 +78,7 @@ public class EhCommands {
       this.configContainer.reload();
       this.messagesContainer.reload();
       this.chunkSerializationExecutorService.rebuild();
+      this.compressedPayloadCacheService.rebuild();
       this.lightPayloadCacheService.rebuild();
       this.antiXrayPayloadCacheService.rebuild();
       this.antiXrayService.invalidateAllProfiles();

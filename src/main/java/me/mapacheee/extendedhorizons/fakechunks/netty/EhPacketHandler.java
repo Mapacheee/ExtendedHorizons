@@ -8,6 +8,7 @@ import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.PromiseCombiner;
 import it.unimi.dsi.fastutil.ints.IntList;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import me.mapacheee.extendedhorizons.util.NmsCompat;
 import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.Packet;
@@ -164,6 +165,21 @@ public final class EhPacketHandler extends ChannelOutboundHandlerAdapter {
     }
     boolean fakeChunksEnabled = session.enabled();
     return switch (input) {
+      case ClientboundBlockUpdatePacket packet -> {
+        session.invalidatePayloadFingerprint(ChunkKeyCodec.pack(packet.getPos().getX() >> 4, packet.getPos().getZ() >> 4));
+        yield false;
+      }
+      case ClientboundSectionBlocksUpdatePacket packet -> {
+        var position = NmsCompat.sectionPosition(packet);
+        if (position != null) {
+          session.invalidatePayloadFingerprint(ChunkKeyCodec.pack(position.x(), position.z()));
+        }
+        yield false;
+      }
+      case ClientboundLightUpdatePacket packet -> {
+        session.invalidatePayloadFingerprint(ChunkKeyCodec.pack(NmsCompat.lightChunkX(packet), NmsCompat.lightChunkZ(packet)));
+        yield false;
+      }
       case ClientboundLevelChunkWithLightPacket packet -> {
         session.serverChunkAdd(NmsCompat.chunkX(packet), NmsCompat.chunkZ(packet));
         yield false;

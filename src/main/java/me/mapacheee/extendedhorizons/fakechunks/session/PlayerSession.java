@@ -57,6 +57,8 @@ public final class PlayerSession {
   private volatile long bandwidthTokens;
   private volatile long bandwidthLastRefillNanos;
   private final Deque<ChunkSendQueueEntry> chunkQueue = new ConcurrentLinkedDeque<>();
+  private final Deque<Long> refreshQueue = new ConcurrentLinkedDeque<>();
+  private final Set<Long> pendingRefreshes = ConcurrentHashMap.newKeySet();
   private final Object dispatchLock = new Object();
   private final Map<UUID, Integer> trackedFarPlayers = new ConcurrentHashMap<>();
   private final Map<UUID, Long> farPlayerSpawnAttempts = new ConcurrentHashMap<>();
@@ -262,7 +264,7 @@ public final class PlayerSession {
     if (!this.enabled) {
       return false;
     }
-    if (!this.chunkQueue.isEmpty() || this.iterationIndex < this.chunksInDistance.length) {
+    if (!this.chunkQueue.isEmpty() || !this.refreshQueue.isEmpty() || this.iterationIndex < this.chunksInDistance.length) {
       return true;
     }
     long retryAt = this.nextBuildRetryNanos;
@@ -317,7 +319,8 @@ public final class PlayerSession {
       int centerX = ChunkKeyCodec.x(this.chunkKey);
       int centerZ = ChunkKeyCodec.z(this.chunkKey);
       List<ChunkSendQueueEntry> entries = new ArrayList<>(this.chunkQueue);
-      entries.sort(Comparator.comparingDouble(entry -> this.chunkPriority(
+      entries.sort(Comparator.comparingInt((ChunkSendQueueEntry entry) -> this.isChunkRefresh(entry.chunkKey()) ? 1 : 0)
+        .thenComparingDouble(entry -> this.chunkPriority(
         ChunkKeyCodec.x(entry.chunkKey()) - centerX,
         ChunkKeyCodec.z(entry.chunkKey()) - centerZ
       )));
@@ -602,6 +605,9 @@ public final class PlayerSession {
       if (state.hasCoords() && !state.matches(chunkX, chunkZ)) {
         state.reset();
       }
+      if (state.clientChunkPresent) {
+        continue;
+      }
       if (state.lifecycle() == ChunkLifecycle.UNLOADED) {
         state.set(chunkX, chunkZ, ChunkLifecycle.EH_QUEUED);
         return ChunkKeyCodec.pack(chunkX, chunkZ);
@@ -618,13 +624,60 @@ public final class PlayerSession {
     return null;
   }
 
+  private void queueRefresh(long chunkKey) {
+    if (this.pendingRefreshes.size() >= this.chunkStates.length) {
+      this.refreshQueue.removeIf(key -> {
+        ChunkState state = this.getStateByKey(key);
+        if (state != DUMMY_STATE && state.clientChunkPresent) {
+          return false;
+        }
+        this.pendingRefreshes.remove(key);
+        return true;
+      });
+    }
+    if (this.pendingRefreshes.add(chunkKey)) {
+      this.refreshQueue.addLast(chunkKey);
+    }
+  }
+
+  public Long pollNextRefreshChunkKey() {
+    int remaining = this.refreshQueue.size();
+    while (remaining-- > 0) {
+      Long key = this.refreshQueue.pollFirst();
+      if (key == null) {
+        return null;
+      }
+      ChunkState state = this.getStateByKey(key);
+      if (state == DUMMY_STATE || !state.clientChunkPresent
+        || state.lifecycle() == ChunkLifecycle.SERVER_LOADED) {
+        this.pendingRefreshes.remove(key);
+        continue;
+      }
+      if (state.lifecycle() == ChunkLifecycle.BUILD_FAILED
+        && System.nanoTime() - state.failedAtNanos() < BUILD_FAILED_RETRY_NANOS) {
+        this.refreshQueue.addLast(key);
+        continue;
+      }
+      this.pendingRefreshes.remove(key);
+      if (state.lifecycle() == ChunkLifecycle.UNLOADED || state.lifecycle() == ChunkLifecycle.BUILD_FAILED) {
+        state.set(ChunkKeyCodec.x(key), ChunkKeyCodec.z(key), ChunkLifecycle.EH_QUEUED);
+        return key;
+      }
+    }
+    return null;
+  }
+
   public void onChunkBuildFailed(long chunkKey) {
     ChunkState state = this.getStateByKey(chunkKey);
     synchronized (state) {
       if (state.lifecycle() == ChunkLifecycle.EH_QUEUED
         || state.lifecycle() == ChunkLifecycle.EH_SENDING) {
         state.markBuildFailed();
-        this.iterationIndex = 0;
+        if (state.clientChunkPresent) {
+          this.queueRefresh(chunkKey);
+        } else {
+          this.iterationIndex = 0;
+        }
         this.scheduleBuildRetry(state.failedAtNanos() + BUILD_FAILED_RETRY_NANOS);
       }
     }
@@ -646,10 +699,39 @@ public final class PlayerSession {
   }
 
   public void onChunkSent(long chunkKey, long sendAttempt) {
+    this.onChunkSent(chunkKey, sendAttempt, null);
+  }
+
+  public void onChunkSent(long chunkKey, long sendAttempt, byte[] fingerprint) {
     ChunkState state = this.getStateByKey(chunkKey);
     synchronized (state) {
       if (state.lifecycle() == ChunkLifecycle.EH_SENDING && state.sendAttempt() == sendAttempt) {
         state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.EH_LOADED);
+        state.lastPayloadFingerprint = fingerprint;
+      }
+    }
+  }
+
+  public boolean suppressUnchangedRefresh(long chunkKey, byte[] fingerprint) {
+    if (fingerprint == null) {
+      return false;
+    }
+    ChunkState state = this.getStateByKey(chunkKey);
+    synchronized (state) {
+      if (state.lifecycle() != ChunkLifecycle.EH_QUEUED || !state.clientChunkPresent
+        || !Arrays.equals(state.lastPayloadFingerprint, fingerprint)) {
+        return false;
+      }
+      state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.EH_LOADED);
+      return true;
+    }
+  }
+
+  public void invalidatePayloadFingerprint(long chunkKey) {
+    ChunkState state = this.getStateByKey(chunkKey);
+    if (state != DUMMY_STATE) {
+      synchronized (state) {
+        state.lastPayloadFingerprint = null;
       }
     }
   }
@@ -676,7 +758,11 @@ public final class PlayerSession {
     synchronized (state) {
       if (state.lifecycle() == ChunkLifecycle.EH_SENDING && state.sendAttempt() == sendAttempt) {
         state.markBuildFailed();
-        this.iterationIndex = 0;
+        if (state.clientChunkPresent) {
+          this.queueRefresh(chunkKey);
+        } else {
+          this.iterationIndex = 0;
+        }
         this.scheduleBuildRetry(state.failedAtNanos() + BUILD_FAILED_RETRY_NANOS);
       }
     }
@@ -729,7 +815,11 @@ public final class PlayerSession {
       }
       state.set(ChunkKeyCodec.x(chunkKey), ChunkKeyCodec.z(chunkKey), ChunkLifecycle.UNLOADED);
       state.clientChunkPresent = visible;
-      this.iterationIndex = 0;
+      if (visible) {
+        this.queueRefresh(chunkKey);
+      } else {
+        this.iterationIndex = 0;
+      }
       return true;
     }
   }
@@ -971,6 +1061,8 @@ public final class PlayerSession {
 
   private void clearChunkQueue() {
     synchronized (this.dispatchLock) {
+      this.refreshQueue.clear();
+      this.pendingRefreshes.clear();
       ChunkSendQueueEntry entry;
       while ((entry = this.chunkQueue.pollFirst()) != null) {
         entry.releaseFuture();
@@ -1035,6 +1127,7 @@ public final class PlayerSession {
     // Independent of build lifecycle: a refresh may queue, send or fail while old terrain remains visible.
     private volatile boolean clientChunkPresent;
     private volatile long sendAttempt;
+    private byte[] lastPayloadFingerprint;
 
     public int chunkX() {
       return this.chunkX;
@@ -1062,7 +1155,10 @@ public final class PlayerSession {
       this.lifecycle = lifecycle;
       this.loadedAtNanos = lifecycle == ChunkLifecycle.EH_LOADED ? System.nanoTime() : 0L;
       if (lifecycle == ChunkLifecycle.EH_LOADED) this.clientChunkPresent = true;
-      else if (lifecycle == ChunkLifecycle.SERVER_LOADED) this.clientChunkPresent = false;
+      else if (lifecycle == ChunkLifecycle.SERVER_LOADED) {
+        this.clientChunkPresent = false;
+        this.lastPayloadFingerprint = null;
+      }
       this.sendAttempt = 0L;
     }
 
@@ -1083,6 +1179,7 @@ public final class PlayerSession {
       this.set(UNSET_COORD, UNSET_COORD, ChunkLifecycle.UNLOADED);
       this.clientChunkPresent = false;
       this.failedAtNanos = 0L;
+      this.lastPayloadFingerprint = null;
     }
 
     public boolean hasCoords() {

@@ -10,6 +10,7 @@ import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkPayloadService;
 import me.mapacheee.extendedhorizons.fakechunks.cache.ChunkBuildCacheService;
+import me.mapacheee.extendedhorizons.fakechunks.cache.CompressedPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
@@ -34,18 +35,21 @@ public final class ChunkDispatchService {
   private final ChunkBuildCacheService cacheService;
   private final ChunkPayloadService payloadService;
   private final ChannelInjectionService channelInjectionService;
+  private final CompressedPayloadCacheService compressedCacheService;
 
   @Inject
   public ChunkDispatchService(
     Container<EhConfig> configContainer,
     ChunkBuildCacheService cacheService,
     ChunkPayloadService payloadService,
-    ChannelInjectionService channelInjectionService
+    ChannelInjectionService channelInjectionService,
+    CompressedPayloadCacheService compressedCacheService
   ) {
     this.configContainer = configContainer;
     this.cacheService = cacheService;
     this.payloadService = payloadService;
     this.channelInjectionService = channelInjectionService;
+    this.compressedCacheService = compressedCacheService;
   }
 
   public void processQueue(World world, Channel channel, PlayerSession session) {
@@ -68,6 +72,7 @@ public final class ChunkDispatchService {
     session.prioritizeChunkQueue();
     long buildTimeoutNanos = config.generateMissingChunks() ? GENERATION_TIMEOUT_NANOS : BUILD_TIMEOUT_NANOS;
     int inFlight = this.drainCompletedEntries(world, channel, session, chunksPerTick, buildTimeoutNanos);
+    int refreshStarts = Math.max(1, chunksPerTick / 4);
 
     if (debug) {
       LOGGER.info(
@@ -83,7 +88,15 @@ public final class ChunkDispatchService {
       if (session.chunkQueue().size() >= maxQueueSize) {
         break;
       }
-      Long chunkKey = session.pollNextChunkKey();
+      Long chunkKey = refreshStarts > 0 ? session.pollNextRefreshChunkKey() : null;
+      if (chunkKey != null) {
+        refreshStarts--;
+      } else {
+        chunkKey = session.pollNextChunkKey();
+        if (chunkKey == null && refreshStarts == 0) {
+          chunkKey = session.pollNextRefreshChunkKey();
+        }
+      }
       if (chunkKey == null) {
         break;
       }
@@ -123,6 +136,7 @@ public final class ChunkDispatchService {
   private int drainCompletedEntries(World world, Channel channel, PlayerSession session,
     int maxSendPerCycle, long buildTimeoutNanos) {
     DispatchProgress progress = new DispatchProgress();
+    progress.compression = this.channelInjectionService.compressionRoute(channel);
     session.chunkQueue().removeIf(entry -> {
       if (!this.isQueueEntryValid(world, session, entry)) {
         session.onChunkBuildFailed(entry.chunkKey());
@@ -204,13 +218,34 @@ public final class ChunkDispatchService {
         return false;
       }
       long payloadBytes = payload.readableBytes();
-      if (!session.tryConsumeBandwidth(payloadBytes)) {
-        progress.bandwidthBlocked = true;
-        return false;
-      }
-      ByteBuf toSend;
+      EncodedChunk toSend;
       try {
-        toSend = EncodedPayloadCopy.copy(channel.alloc(), payload);
+        ByteBuf compressed = null;
+        byte[] fingerprint = null;
+        if (progress.compression != null) {
+          CompressedPayloadCacheService.Request request = this.compressedCacheService.request(payload,
+            progress.compression.threshold());
+          if (request.pending()) {
+            return false;
+          }
+          compressed = request.payload();
+          fingerprint = request.fingerprint();
+        }
+        try {
+          if (this.isQueueEntryValid(world, session, entry)
+            && session.suppressUnchangedRefresh(entry.chunkKey(), fingerprint)) {
+            removeEntry = true;
+            return true;
+          }
+          if (!session.tryConsumeBandwidth(payloadBytes)) {
+            progress.bandwidthBlocked = true;
+            return false;
+          }
+          toSend = new EncodedChunk(EncodedPayloadCopy.copy(channel.alloc(), compressed == null ? payload : compressed),
+            compressed == null ? null : progress.compression, fingerprint);
+        } finally {
+          ReferenceCountUtil.release(compressed);
+        }
       } catch (RuntimeException exception) {
         LOGGER.warn("Failed to copy chunk payload {} for dispatch", entry.chunkKey(), exception);
         session.onChunkBuildFailed(entry.chunkKey());
@@ -219,7 +254,7 @@ public final class ChunkDispatchService {
       }
       long sendAttempt = session.beginChunkSend(entry.chunkKey());
       if (sendAttempt == 0L) {
-        ReferenceCountUtil.release(toSend);
+        ReferenceCountUtil.release(toSend.payload());
         removeEntry = true;
         return true;
       }
@@ -251,15 +286,17 @@ public final class ChunkDispatchService {
     PlayerSession session,
     UUID expectedWorldId,
     long expectedEpoch,
-    ByteBuf payload,
+    EncodedChunk payload,
     long chunkKey,
     long sendAttempt
   ) {
     if (!this.isSessionValid(session, expectedWorldId, expectedEpoch)) {
-      ReferenceCountUtil.release(payload);
+      ReferenceCountUtil.release(payload.payload());
       return false;
     }
-    ChannelPromise writePromise = this.channelInjectionService.writeEncodedFuture(channel, payload);
+    ChannelPromise writePromise = payload.route() == null
+      ? this.channelInjectionService.writeEncodedFuture(channel, payload.payload())
+      : this.channelInjectionService.writeEncodedFuture(channel, payload.payload(), payload.route());
     if (writePromise == null || (writePromise.isDone() && !writePromise.isSuccess())) {
       return false;
     }
@@ -272,7 +309,7 @@ public final class ChunkDispatchService {
         return;
       }
       if (future.isSuccess()) {
-        session.onChunkSent(capturedChunkKey, capturedSendAttempt);
+        session.onChunkSent(capturedChunkKey, capturedSendAttempt, payload.fingerprint());
       } else {
         session.onChunkSendFailed(capturedChunkKey, capturedSendAttempt);
       }
@@ -307,8 +344,12 @@ public final class ChunkDispatchService {
   }
 
   private static final class DispatchProgress {
+    private ChannelInjectionService.CompressionRoute compression;
     private int inFlight;
     private int sent;
     private boolean bandwidthBlocked;
+  }
+
+  private record EncodedChunk(ByteBuf payload, ChannelInjectionService.CompressionRoute route, byte[] fingerprint) {
   }
 }
