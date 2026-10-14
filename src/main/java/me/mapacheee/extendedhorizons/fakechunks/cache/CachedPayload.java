@@ -52,6 +52,10 @@ final class CachedPayload implements AutoCloseable {
     return isReadable(this.payload);
   }
 
+  synchronized int capacity() {
+    return this.payload == null ? 0 : this.payload.capacity();
+  }
+
   @Override
   public synchronized void close() {
     ByteBuf current = this.payload;

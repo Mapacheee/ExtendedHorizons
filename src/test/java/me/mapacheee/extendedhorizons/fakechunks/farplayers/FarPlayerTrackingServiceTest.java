@@ -43,7 +43,7 @@ class FarPlayerTrackingServiceTest {
         150L,
         new EhConfig.AntiXrayConfig(false, List.of()),
         true,
-        new EhConfig.CacheConfig(10, 400, 3000L, 1024, 5, 150),
+        new EhConfig.CacheConfig(10, 400, 3000L, 1024, 5, 150, null),
         new EhConfig.RuntimeConfig(1),
         new EhConfig.FarPlayersConfig(true, 6, 30),
         new EhConfig.WorldEditConfig(true),

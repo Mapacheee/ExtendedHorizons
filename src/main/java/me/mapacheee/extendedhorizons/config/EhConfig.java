@@ -35,7 +35,7 @@ public record EhConfig(
   private static final long MIN_UNAVAILABLE_RETRY_MS = 25L;
   private static final int DEFAULT_CACHE_TTL_SECONDS = 15;
   private static final int MIN_CACHE_TTL_SECONDS = 1;
-  private static final int DEFAULT_CACHE_MAX_ENTRIES = 1500;
+  private static final int DEFAULT_CACHE_MAX_ENTRIES = 4096;
   private static final int MIN_CACHE_MAX_ENTRIES = 128;
   private static final long DEFAULT_BYPASS_AFTER_INTERACTION_MS = 3000L;
   private static final long MIN_BYPASS_AFTER_INTERACTION_MS = 250L;
@@ -247,6 +247,13 @@ public record EhConfig(
     return Math.max(MIN_CACHE_MAX_ENTRIES, this.fakeChunks.cache().maxEntries());
   }
 
+  public long cacheMaxBytes() {
+    Long configured = this.fakeChunks == null || this.fakeChunks.cache() == null
+      ? null : this.fakeChunks.cache().maxBytes();
+    return configured == null ? 256L * 1024L * 1024L
+      : Math.clamp(configured, 1024L * 1024L, 1024L * 1024L * 1024L);
+  }
+
   public long cacheBypassAfterRealInteractionMs() {
     if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
       return DEFAULT_BYPASS_AFTER_INTERACTION_MS;
@@ -401,7 +408,8 @@ public record EhConfig(
     @Setting("bypass-after-real-interaction-ms") long bypassAfterRealInteractionMs,
     @Setting("permission-cache-entries") int permissionCacheEntries,
     @Setting("permission-cache-ttl-seconds") int permissionCacheTtlSeconds,
-    @Setting("far-player-cache-entries") int farPlayerCacheEntries
+    @Setting("far-player-cache-entries") int farPlayerCacheEntries,
+    @Setting("max-bytes") Long maxBytes
   ) {
   }
 

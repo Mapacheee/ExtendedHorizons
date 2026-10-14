@@ -39,7 +39,8 @@ public final class ChunkBuildCacheService {
       ? Long.MAX_VALUE
       : Math.max(1_000L, retryMs * 2L);
 
-    CacheGeneration next = new CacheGeneration(ttlSeconds, maxEntries, bypassMs, unavailableTtlMs);
+    CacheGeneration next = new CacheGeneration(ttlSeconds, maxEntries, this.configContainer.get().cacheMaxBytes(),
+      bypassMs, unavailableTtlMs);
     CacheGeneration previous;
     synchronized (this.lifecycleLock) {
       previous = this.generation;
@@ -268,10 +269,12 @@ public final class ChunkBuildCacheService {
     private volatile boolean active = true;
     private boolean closed;
 
-    private CacheGeneration(int ttlSeconds, int maxEntries, long bypassMs, long unavailableTtlMs) {
+    private CacheGeneration(int ttlSeconds, int maxEntries, long maxBytes, long bypassMs, long unavailableTtlMs) {
       this.maxBuilds = maxEntries;
+      int minimumWeight = (int) ((maxBytes - 1L) / maxEntries + 1L);
       this.serializedCache = Caffeine.newBuilder()
-        .maximumSize(maxEntries)
+        .maximumWeight(maxBytes)
+        .weigher((ChunkKey key, CachedPayload payload) -> Math.max(minimumWeight, payload.capacity()))
         .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
         .expireAfterAccess(Duration.ofSeconds(Math.min(ttlSeconds, 60L)))
         .executor(Runnable::run)

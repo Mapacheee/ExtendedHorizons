@@ -40,7 +40,8 @@ public final class AntiXrayPayloadCacheService {
     int ttlSeconds = Math.max(1, this.configContainer.get().cacheTtlSeconds());
     int maxEntries = Math.max(MIN_CACHE_ENTRIES, this.configContainer.get().cacheMaxEntries() / MAX_ENTRIES_DIVISOR);
     int profileHashMaxEntries = Math.max(MIN_PROFILE_ENTRIES, maxEntries / PROFILE_HASH_DIVISOR);
-    CacheGeneration next = new CacheGeneration(ttlSeconds, maxEntries, profileHashMaxEntries);
+    CacheGeneration next = new CacheGeneration(ttlSeconds, maxEntries, profileHashMaxEntries,
+      this.configContainer.get().cacheMaxBytes());
     CacheGeneration previous;
     synchronized (this.lifecycleLock) {
       previous = this.generation;
@@ -232,9 +233,11 @@ public final class AntiXrayPayloadCacheService {
     private volatile boolean active = true;
     private boolean closed;
 
-    private CacheGeneration(int ttlSeconds, int maxEntries, int profileHashMaxEntries) {
+    private CacheGeneration(int ttlSeconds, int maxEntries, int profileHashMaxEntries, long maxBytes) {
+      int minimumWeight = (int) ((maxBytes - 1L) / maxEntries + 1L);
       this.payloadCache = Caffeine.newBuilder()
-        .maximumSize(maxEntries)
+        .maximumWeight(maxBytes)
+        .weigher((AntiXrayPayloadKey key, CachedPayload payload) -> Math.max(minimumWeight, payload.capacity()))
         .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
         .executor(Runnable::run)
         .removalListener((AntiXrayPayloadKey key, CachedPayload value, RemovalCause cause) ->

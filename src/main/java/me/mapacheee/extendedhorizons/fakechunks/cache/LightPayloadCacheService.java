@@ -34,7 +34,7 @@ public final class LightPayloadCacheService {
   public void rebuild() {
     int ttlSeconds = Math.max(1, this.configContainer.get().cacheTtlSeconds());
     int maxEntries = Math.max(MIN_CACHE_ENTRIES, this.configContainer.get().cacheMaxEntries() / MAX_ENTRIES_DIVISOR);
-    CacheGeneration next = new CacheGeneration(ttlSeconds, maxEntries);
+    CacheGeneration next = new CacheGeneration(ttlSeconds, maxEntries, this.configContainer.get().cacheMaxBytes() / 4L);
     CacheGeneration previous;
     synchronized (this.lifecycleLock) {
       previous = this.generation;
@@ -152,9 +152,11 @@ public final class LightPayloadCacheService {
     private volatile boolean active = true;
     private boolean closed;
 
-    private CacheGeneration(int ttlSeconds, int maxEntries) {
+    private CacheGeneration(int ttlSeconds, int maxEntries, long maxBytes) {
+      int minimumWeight = (int) ((maxBytes - 1L) / maxEntries + 1L);
       this.cache = Caffeine.newBuilder()
-        .maximumSize(maxEntries)
+        .maximumWeight(maxBytes)
+        .weigher((LightChunkKey key, CachedPayload payload) -> Math.max(minimumWeight, payload.capacity()))
         .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
         .executor(Runnable::run)
         .removalListener((LightChunkKey key, CachedPayload value, RemovalCause cause) -> close(value))

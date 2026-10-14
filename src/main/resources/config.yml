@@ -40,7 +40,8 @@ fake-chunks:
   # Max newly queued fake chunks per player processing cycle.
   max-send-per-cycle: 4
 
-  # Global limit of new chunk generations per tick (protects TPS under load).
+  # Global limit of missing chunk generation starts per runtime cycle and requests in progress.
+  # Cached packets and existing chunk reads do not consume this budget.
   max-global-generations-per-tick: 12
 
   # Max in-flight chunk builds per player.
@@ -96,7 +97,9 @@ fake-chunks:
     # Serialized fake chunk cache TTL.
     ttl-seconds: 10
     # Max cache entries.
-    max-entries: 400
+    max-entries: 4096
+    # Byte limit for each full-packet cache; light data uses one quarter. Entry limits also apply.
+    max-bytes: 268435456
     # Cache bypass window after real interaction invalidation.
     bypass-after-real-interaction-ms: 3000
     # Max entries in permission cache (player distance permissions).
