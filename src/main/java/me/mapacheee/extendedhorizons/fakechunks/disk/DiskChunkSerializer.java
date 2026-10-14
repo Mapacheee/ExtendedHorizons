@@ -34,6 +34,8 @@ public final class DiskChunkSerializer {
   private static final int MAX_PACKET_BUFFER = 4 * 1024 * 1024;
   private static final int EXTRA_LIGHT_SECTIONS = 2;
   private static final int LIGHT_SECTION_OFFSET = 1;
+  private static final boolean REMAP_CHAIN = BuiltInRegistries.BLOCK.keySet().stream()
+    .noneMatch(key -> "minecraft:chain".equals(key.toString()));
 
   private DiskChunkSerializer() {
   }
@@ -85,7 +87,7 @@ public final class DiskChunkSerializer {
     byte[][] blockLight = new byte[lightSections][];
     byte[][] skyLight = hasSkyLight ? new byte[lightSections][] : null;
 
-    if (shouldRemapChain()) {
+    if (REMAP_CHAIN) {
       remapLegacyPalettes(rootTag);
     }
 
@@ -131,8 +133,6 @@ public final class DiskChunkSerializer {
           factory.createForBlockStates(),
           factory.createForBiomes()
         );
-      } else {
-        sections[i].recalcBlockCounts();
       }
     }
 
@@ -330,10 +330,5 @@ public final class DiskChunkSerializer {
         remapChainInPalette(blockStates);
       }
     }
-  }
-
-  private static boolean shouldRemapChain() {
-    return BuiltInRegistries.BLOCK.keySet().stream()
-      .noneMatch(key -> "minecraft:chain".equals(key.toString()));
   }
 }
