@@ -18,16 +18,16 @@ public record EhConfig(
 
   private static final int MIN_VIEW_DISTANCE = 2;
   private static final int DEFAULT_TARGET_VIEW_DISTANCE = 32;
-  private static final int DEFAULT_MAX_SEND_PER_CYCLE = 4;
+  private static final int DEFAULT_MAX_SEND_PER_CYCLE = 8;
   private static final int MIN_MAX_SEND_PER_CYCLE = 1;
-  private static final long DEFAULT_BANDWIDTH_BYTES_PER_SECOND = 1_024_000L;
+  private static final long DEFAULT_BANDWIDTH_BYTES_PER_SECOND = 8_388_608L;
   private static final long MIN_BANDWIDTH_BYTES_PER_SECOND = 32_768L;
-  private static final long DEFAULT_BANDWIDTH_BURST_BYTES = 1_024_000L;
+  private static final long DEFAULT_BANDWIDTH_BURST_BYTES = 8_388_608L;
   private static final int DEFAULT_SERIALIZATION_WORKERS = 2;
   private static final int MAX_SERIALIZATION_WORKERS = 16;
   private static final int DEFAULT_MAX_GLOBAL_GENERATIONS_PER_TICK = 50;
   private static final int MIN_MAX_GLOBAL_GENERATIONS_PER_TICK = 1;
-  private static final int DEFAULT_MAX_INFLIGHT_PER_PLAYER = 4;
+  private static final int DEFAULT_MAX_INFLIGHT_PER_PLAYER = 12;
   private static final int MIN_MAX_INFLIGHT_PER_PLAYER = 1;
   private static final int DEFAULT_CHUNK_QUEUE_SIZE = 64;
   private static final int MIN_CHUNK_QUEUE_SIZE = 8;

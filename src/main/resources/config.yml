@@ -33,19 +33,19 @@ fake-chunks:
     # When enabled, payload sends are paced by a token bucket.
     enabled: true
     # Sustained budget in uncompressed bytes per second per player.
-    bytes-per-second: 1024000
+    bytes-per-second: 8388608
     # Burst capacity in bytes (must be >= bytes-per-second).
-    burst-bytes: 1024000
+    burst-bytes: 8388608
 
   # Max newly queued fake chunks per player processing cycle.
-  max-send-per-cycle: 4
+  max-send-per-cycle: 8
 
   # Global limit of missing chunk generation starts per runtime cycle and requests in progress.
   # Cached packets and existing chunk reads do not consume this budget.
   max-global-generations-per-tick: 12
 
   # Max in-flight chunk builds per player.
-  max-inflight-per-player: 9
+  max-inflight-per-player: 12
 
   # Hard queue cap per player.
   chunk-queue-size: 24
