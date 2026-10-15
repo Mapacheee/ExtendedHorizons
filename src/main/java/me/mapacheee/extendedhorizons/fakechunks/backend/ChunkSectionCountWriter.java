@@ -19,7 +19,7 @@ public final class ChunkSectionCountWriter {
     write(out, nonEmptyBlockCount(section), fluidCount(section));
   }
 
-  static void write(FriendlyByteBuf out, short nonEmptyBlockCount, short fluidCount) {
+  public static void write(FriendlyByteBuf out, short nonEmptyBlockCount, short fluidCount) {
     out.writeShort(nonEmptyBlockCount);
     if (GET_FLUID_COUNT != null) {
       out.writeShort(fluidCount);

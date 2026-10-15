@@ -7,16 +7,23 @@ import me.mapacheee.extendedhorizons.fakechunks.backend.ChunkSectionCountWriter;
 import me.mapacheee.extendedhorizons.fakechunks.netty.PacketIdRegistry;
 import me.mapacheee.extendedhorizons.util.ChunkSerializationCompat;
 import net.minecraft.SharedConstants;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.VarInt;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
 import net.minecraft.world.level.chunk.storage.SerializableChunkData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,6 +43,7 @@ public final class DiskChunkSerializer {
   private static final int LIGHT_SECTION_OFFSET = 1;
   private static final boolean REMAP_CHAIN = BuiltInRegistries.BLOCK.keySet().stream()
     .noneMatch(key -> "minecraft:chain".equals(key.toString()));
+  private static volatile boolean directSectionsCompatible = true;
 
   private DiskChunkSerializer() {
   }
@@ -77,6 +85,18 @@ public final class DiskChunkSerializer {
       return null;
     }
 
+    if (REMAP_CHAIN) {
+      remapLegacyPalettes(rootTag);
+    }
+    if (antiXray == null && directSectionsCompatible) {
+      try {
+        return writeDirectPacket(rootTag, level, chunkX, chunkZ, hasSkyLight);
+      } catch (LinkageError error) {
+        directSectionsCompatible = false;
+        LOGGER.debug("Direct section counting unavailable, using native chunk parser", error);
+      }
+    }
+
     int sectionsCount = level.getSectionsCount();
     int minSectionY = level.getMinSectionY();
     int lightSections = sectionsCount + EXTRA_LIGHT_SECTIONS;
@@ -86,10 +106,6 @@ public final class DiskChunkSerializer {
     LevelChunkSection[] sections = new LevelChunkSection[sectionsCount];
     byte[][] blockLight = new byte[lightSections][];
     byte[][] skyLight = hasSkyLight ? new byte[lightSections][] : null;
-
-    if (REMAP_CHAIN) {
-      remapLegacyPalettes(rootTag);
-    }
 
     SerializableChunkData chunkData;
     try {
@@ -137,6 +153,129 @@ public final class DiskChunkSerializer {
     }
 
     return writePacket(chunkX, chunkZ, sections, blockLight, skyLight, level, antiXray);
+  }
+
+  private static ByteBuf writeDirectPacket(CompoundTag rootTag, ServerLevel level,
+    int chunkX, int chunkZ, boolean hasSkyLight) {
+    Tag originalSections = rootTag.get(SerializableChunkData.SECTIONS_TAG);
+    ListTag tags = rootTag.getList(SerializableChunkData.SECTIONS_TAG).orElseGet(ListTag::new);
+    PalettedContainerFactory factory = level.palettedContainerFactory();
+    rootTag.put(SerializableChunkData.SECTIONS_TAG, new ListTag());
+    try {
+      if (!SerializableChunkData.parse(level, factory, rootTag).lightCorrect()) {
+        return null;
+      }
+    } catch (RuntimeException exception) {
+      return null;
+    } finally {
+      if (originalSections == null) {
+        rootTag.remove(SerializableChunkData.SECTIONS_TAG);
+      } else {
+        rootTag.put(SerializableChunkData.SECTIONS_TAG, originalSections);
+      }
+    }
+
+    int count = level.getSectionsCount();
+    int minY = level.getMinSectionY();
+    DiskSection[] sections = new DiskSection[count];
+    byte[][] blockLight = new byte[count + EXTRA_LIGHT_SECTIONS][];
+    byte[][] skyLight = hasSkyLight ? new byte[blockLight.length][] : null;
+    try {
+      for (int i = 0; i < tags.size(); i++) {
+        CompoundTag tag = tags.getCompound(i).orElseThrow();
+        int sectionIndex = tag.getByteOr("Y", (byte) 0) - minY;
+        if (sectionIndex >= 0 && sectionIndex < count) {
+          PalettedContainer<BlockState> states = tag.getCompound("block_states")
+            .map(data -> factory.blockStatesContainerCodec().parse(NbtOps.INSTANCE, data).getOrThrow())
+            .orElseGet(factory::createForBlockStates);
+          PalettedContainerRO<Holder<Biome>> biomes = tag.getCompound("biomes")
+            .map(data -> factory.biomeContainerCodec().parse(NbtOps.INSTANCE, data).getOrThrow())
+            .orElseGet(factory::createForBiomes);
+          sections[sectionIndex] = new DiskSection(states, biomes);
+        }
+        int lightIndex = sectionIndex + LIGHT_SECTION_OFFSET;
+        if (lightIndex >= 0 && lightIndex < blockLight.length) {
+          blockLight[lightIndex] = tag.getByteArray("BlockLight").orElse(null);
+          if (skyLight != null) {
+            skyLight[lightIndex] = tag.getByteArray("SkyLight").orElse(null);
+          }
+          if ((blockLight[lightIndex] != null && blockLight[lightIndex].length != 2048)
+            || (skyLight != null && skyLight[lightIndex] != null && skyLight[lightIndex].length != 2048)) {
+            return null;
+          }
+        }
+      }
+      DiskSection empty = new DiskSection(factory.createForBlockStates(), factory.createForBiomes());
+      ByteBuf raw = PooledByteBufAllocator.DEFAULT.buffer(MIN_PACKET_SIZE, MAX_PACKET_BUFFER);
+      ByteBuf data = PooledByteBufAllocator.DEFAULT.buffer(MIN_PACKET_SIZE, MAX_PACKET_BUFFER);
+      try {
+        FriendlyByteBuf out = new FriendlyByteBuf(data);
+        for (DiskSection section : sections) {
+          (section == null ? empty : section).write(out);
+        }
+        VarInt.write(raw, PacketIdRegistry.getLevelChunkWithLightId());
+        raw.writeInt(chunkX);
+        raw.writeInt(chunkZ);
+        VarInt.write(raw, 0);
+        VarInt.write(raw, data.readableBytes());
+        raw.writeBytes(data, data.readerIndex(), data.readableBytes());
+        VarInt.write(raw, 0);
+        writeLightData(raw, blockLight, skyLight);
+        return raw;
+      } catch (RuntimeException | Error exception) {
+        raw.release();
+        throw exception;
+      } finally {
+        data.release();
+      }
+    } catch (RuntimeException exception) {
+      LOGGER.debug("Direct palette serialization failed for [{}, {}], using Paper fallback", chunkX, chunkZ, exception);
+      return null;
+    }
+  }
+
+  private record DiskSection(PalettedContainer<BlockState> states, PalettedContainerRO<Holder<Biome>> biomes) {
+    private void write(FriendlyByteBuf out) {
+      var data = this.states.data;
+      int paletteSize = data.palette().getSize();
+      int[] totals = new int[2];
+      if (paletteSize == 1) {
+        addCounts(data.palette().valueFor(0), data.storage().getSize(), totals);
+      } else if (paletteSize <= 256) {
+        int[] counts = new int[paletteSize];
+        int bits = data.storage().getBits();
+        int perLong = Long.SIZE / bits;
+        long mask = (1L << bits) - 1L;
+        int remaining = data.storage().getSize();
+        for (long packed : data.storage().getRaw()) {
+          int entries = Math.min(perLong, remaining);
+          for (int i = 0; i < entries; i++) {
+            counts[(int) (packed & mask)]++;
+            packed >>>= bits;
+          }
+          remaining -= entries;
+        }
+        for (int i = 0; i < paletteSize; i++) {
+          if (counts[i] != 0) {
+            addCounts(data.palette().valueFor(i), counts[i], totals);
+          }
+        }
+      } else {
+        this.states.count((state, count) -> addCounts(state, count, totals));
+      }
+      ChunkSectionCountWriter.write(out, (short) totals[0], (short) totals[1]);
+      ChunkSerializationCompat.writePalette(this.states, out);
+      ChunkSerializationCompat.writePalette(this.biomes, out);
+    }
+
+    private static void addCounts(BlockState state, int count, int[] totals) {
+      if (!state.isAir()) {
+        totals[0] += count;
+      }
+      if (!state.getFluidState().isEmpty()) {
+        totals[1] += count;
+      }
+    }
   }
 
   static boolean isCompatibleChunkTag(
