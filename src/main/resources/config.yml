@@ -98,7 +98,7 @@ fake-chunks:
     ttl-seconds: 10
     # Max cache entries.
     max-entries: 4096
-    # Byte limit for each full-packet cache; light data uses one quarter. Entry limits also apply.
+    # Byte limit per fake chunk packet cache; light and native compression caches use one quarter. Entry limits also apply.
     max-bytes: 268435456
     # Cache bypass window after real interaction invalidation.
     bypass-after-real-interaction-ms: 3000

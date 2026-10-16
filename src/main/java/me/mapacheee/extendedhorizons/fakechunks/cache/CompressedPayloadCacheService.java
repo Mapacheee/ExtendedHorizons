@@ -13,6 +13,7 @@ import me.mapacheee.lib.caffeine.cache.Scheduler;
 import net.minecraft.network.VarInt;
 
 import java.time.Duration;
+import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -25,6 +26,14 @@ import java.util.zip.Deflater;
 
 @Service
 public final class CompressedPayloadCacheService {
+
+  private static final ThreadLocal<MessageDigest> DIGEST = ThreadLocal.withInitial(() -> {
+    try {
+      return MessageDigest.getInstance("SHA-256");
+    } catch (NoSuchAlgorithmException exception) {
+      throw new IllegalStateException(exception);
+    }
+  });
 
   private final Container<EhConfig> configContainer;
   private volatile Generation generation;
@@ -40,14 +49,8 @@ public final class CompressedPayloadCacheService {
     if (current == null || !current.active || threshold < 0) {
       return new Request(null, false, null);
     }
-    ByteBuf root = source;
-    while (root.unwrap() != null) {
-      root = root.unwrap();
-    }
-    if (root.readerIndex() != source.readerIndex() || root.readableBytes() != source.readableBytes()) {
-      return new Request(null, false, null);
-    }
-    Entry entry = current.lookup(new Key(root, threshold, source.readerIndex(), source.readableBytes()));
+    byte[] fingerprint = fingerprint(source);
+    Entry entry = current.lookup(contentKey(fingerprint, source.readableBytes(), threshold), source, fingerprint);
     if (entry == null) {
       return new Request(null, false, null);
     }
@@ -60,6 +63,49 @@ public final class CompressedPayloadCacheService {
     if (previous != null) {
       previous.close();
     }
+  }
+
+  public NativeLookup lookupNative(ByteBuf source, int threshold) {
+    Generation current = this.generation;
+    if (current == null || !current.active || threshold < 0) return null;
+    ContentKey key = contentKey(fingerprint(source), source.readableBytes(), threshold);
+    CachedPayload cached = current.nativeCache.getIfPresent(key);
+    return new NativeLookup(current, key, cached == null ? null : cached.acquire());
+  }
+
+  public void storeNative(NativeLookup lookup, ByteBuf encoded) {
+    lookup.generation.storeNative(lookup.key, encoded);
+  }
+
+  public static final class NativeLookup {
+    private final Generation generation;
+    private final ContentKey key;
+    private final ByteBuf payload;
+
+    private NativeLookup(Generation generation, ContentKey key, ByteBuf payload) {
+      this.generation = generation;
+      this.key = key;
+      this.payload = payload;
+    }
+
+    public ByteBuf payload() {
+      return this.payload;
+    }
+  }
+
+  private static byte[] fingerprint(ByteBuf source) {
+    MessageDigest digest = DIGEST.get();
+    digest.reset();
+    digest.update(source.nioBuffer());
+    return digest.digest();
+  }
+
+  private static ContentKey contentKey(byte[] fingerprint, int length, int threshold) {
+    ByteBuffer hash = ByteBuffer.wrap(fingerprint);
+    return new ContentKey(hash.getLong(), hash.getLong(), hash.getLong(), hash.getLong(), length, threshold);
+  }
+
+  private record ContentKey(long first, long second, long third, long fourth, int length, int threshold) {
   }
 
   public long getEstimatedSize() {
@@ -79,36 +125,23 @@ public final class CompressedPayloadCacheService {
   public record Request(ByteBuf payload, boolean pending, byte[] fingerprint) {
   }
 
-  private record Key(ByteBuf root, int threshold, int offset, int length) {
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof Key key && this.root == key.root && this.threshold == key.threshold
-        && this.offset == key.offset && this.length == key.length;
-    }
-
-    @Override
-    public int hashCode() {
-      return System.identityHashCode(this.root) * 31 + this.threshold * 17 + this.offset * 7 + this.length;
-    }
-  }
-
   private static final class Entry implements AutoCloseable {
-    private final ByteBuf root;
     private final CompletableFuture<Void> done = new CompletableFuture<>();
+    private final int maxEncodedCapacity;
+    private final byte[] fingerprint;
     private CachedPayload encoded;
-    private volatile byte[] fingerprint;
     private boolean closed;
 
-    private Entry(ByteBuf root) {
-      this.root = root.retain();
+    private Entry(int maxEncodedCapacity, byte[] fingerprint) {
+      this.maxEncodedCapacity = maxEncodedCapacity;
+      this.fingerprint = fingerprint;
     }
 
-    private synchronized void complete(ByteBuf payload, byte[] fingerprint) {
+    private synchronized void complete(ByteBuf payload) {
       if (this.closed) {
         CachedPayload.release(payload);
       } else {
         this.encoded = CachedPayload.takeOwnership(payload);
-        this.fingerprint = fingerprint;
       }
       this.done.complete(null);
     }
@@ -123,7 +156,6 @@ public final class CompressedPayloadCacheService {
         return;
       }
       this.closed = true;
-      this.root.release();
       if (this.encoded != null) {
         this.encoded.close();
         this.encoded = null;
@@ -132,7 +164,8 @@ public final class CompressedPayloadCacheService {
   }
 
   private static final class Generation implements AutoCloseable {
-    private final Cache<Key, Entry> cache;
+    private final Cache<ContentKey, Entry> cache;
+    private final Cache<ContentKey, CachedPayload> nativeCache;
     private final ThreadPoolExecutor executor;
     private volatile boolean active = true;
 
@@ -146,18 +179,42 @@ public final class CompressedPayloadCacheService {
       long maxBytes = config.cacheMaxBytes();
       int minimumWeight = (int) Math.max(1L, (maxBytes + config.cacheMaxEntries() - 1L) / config.cacheMaxEntries());
       this.cache = Caffeine.newBuilder().maximumWeight(maxBytes)
-        .weigher((Key key, Entry entry) -> (int) Math.min(Integer.MAX_VALUE,
-          Math.max(minimumWeight, (long) key.root().capacity() * 2L + 8192L)))
+        .weigher((ContentKey key, Entry entry) -> Math.max(minimumWeight, entry.maxEncodedCapacity))
         .expireAfterAccess(Duration.ofSeconds(Math.max(1, config.cacheTtlSeconds())))
         .scheduler(Scheduler.systemScheduler())
         .executor(Runnable::run)
-        .removalListener((Key key, Entry entry, me.mapacheee.lib.caffeine.cache.RemovalCause cause) -> entry.close())
+        .recordStats()
+        .removalListener((ContentKey key, Entry entry, me.mapacheee.lib.caffeine.cache.RemovalCause cause) -> entry.close())
+        .build();
+      long nativeMaxBytes = Math.max(1L, maxBytes / 4L);
+      int nativeMinimumWeight = (int) Math.max(1L,
+        (nativeMaxBytes + config.cacheMaxEntries() - 1L) / config.cacheMaxEntries());
+      this.nativeCache = Caffeine.newBuilder().maximumWeight(nativeMaxBytes)
+        .weigher((ContentKey key, CachedPayload payload) -> Math.max(nativeMinimumWeight, payload.capacity()))
+        .expireAfterAccess(Duration.ofSeconds(Math.max(1, config.cacheTtlSeconds())))
+        .scheduler(Scheduler.systemScheduler())
+        .executor(Runnable::run)
+        .recordStats()
+        .removalListener((ContentKey key, CachedPayload payload, me.mapacheee.lib.caffeine.cache.RemovalCause cause) ->
+          payload.close())
         .build();
     }
 
-    private Entry start(Key key) {
-      Entry entry = new Entry(key.root());
-      Task task = new Task(entry, key.root().retainedDuplicate(), key.threshold());
+    private synchronized void storeNative(ContentKey key, ByteBuf encoded) {
+      if (!this.active) return;
+      CachedPayload cached = CachedPayload.takeOwnership(encoded.copy());
+      try {
+        CachedPayload previous = this.nativeCache.asMap().put(key, cached);
+        if (previous != null) previous.close();
+      } catch (RuntimeException exception) {
+        this.nativeCache.asMap().remove(key, cached);
+        cached.close();
+      }
+    }
+
+    private Entry start(ContentKey key, ByteBuf source, byte[] fingerprint) {
+      Entry entry = new Entry(source.readableBytes() + 8192, fingerprint);
+      Task task = new Task(entry, source.retainedDuplicate(), key.threshold());
       try {
         this.executor.execute(task);
       } catch (RuntimeException exception) {
@@ -166,8 +223,8 @@ public final class CompressedPayloadCacheService {
       return entry;
     }
 
-    private synchronized Entry lookup(Key key) {
-      return this.active ? this.cache.get(key, this::start) : null;
+    private synchronized Entry lookup(ContentKey key, ByteBuf source, byte[] fingerprint) {
+      return this.active ? this.cache.get(key, ignored -> this.start(key, source, fingerprint)) : null;
     }
 
     @Override
@@ -175,6 +232,8 @@ public final class CompressedPayloadCacheService {
       this.active = false;
       this.cache.invalidateAll();
       this.cache.cleanUp();
+      this.nativeCache.invalidateAll();
+      this.nativeCache.cleanUp();
       for (Runnable task : this.executor.shutdownNow()) {
         ((Task) task).discard();
       }
@@ -196,7 +255,7 @@ public final class CompressedPayloadCacheService {
     private void discard() {
       if (this.claimed.compareAndSet(false, true)) {
         this.source.release();
-        this.entry.complete(null, null);
+        this.entry.complete(null);
       }
     }
 
@@ -208,9 +267,6 @@ public final class CompressedPayloadCacheService {
       ByteBuf output = null;
       try {
         int length = this.source.readableBytes();
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        digest.update(this.source.nioBuffer());
-        byte[] fingerprint = digest.digest();
         output = PooledByteBufAllocator.DEFAULT.buffer(Math.min(4096, length + 8192), length + 8192);
         if (length < this.threshold) {
           VarInt.write(output, 0);
@@ -233,10 +289,10 @@ public final class CompressedPayloadCacheService {
             deflater.end();
           }
         }
-        this.entry.complete(output, fingerprint);
+        this.entry.complete(output);
         output = null;
-      } catch (RuntimeException | Error | NoSuchAlgorithmException exception) {
-        this.entry.complete(null, null);
+      } catch (RuntimeException | Error exception) {
+        this.entry.complete(null);
       } finally {
         CachedPayload.release(output);
         this.source.release();

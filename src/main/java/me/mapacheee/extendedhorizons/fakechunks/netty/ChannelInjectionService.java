@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.fakechunks.netty;
 
+import com.google.inject.Inject;
 import com.thewinterframework.service.annotation.Service;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import io.netty.buffer.ByteBuf;
@@ -10,6 +11,7 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.EventLoop;
 import io.netty.util.ReferenceCountUtil;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
+import me.mapacheee.extendedhorizons.fakechunks.cache.CompressedPayloadCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.CompressionEncoder;
@@ -33,9 +35,13 @@ public final class ChannelInjectionService {
   public static final String EH_HANDLER = "eh_packet_handler";
   public static final String EH_PACKET_ID_PROBE_HANDLER = "eh_packet_id_probe";
   public static final String EH_PACKET_SNIFFER = "eh_packet_sniffer";
+  private static final String EH_NATIVE_COMPRESSION = "eh_native_compression";
+  private static final String EH_NATIVE_CAPTURE = "eh_native_compression_capture";
   private static final int SHUTDOWN_WAIT_SECONDS = 5;
 
   private volatile boolean stopping;
+  @Inject
+  private CompressedPayloadCacheService compressedCacheService;
 
   public void inject(Player player) {
     this.inject(player, null);
@@ -74,6 +80,12 @@ public final class ChannelInjectionService {
       EhPacketHandler handler = new EhPacketHandler();
       handler.setSession(session);
       channel.pipeline().addBefore("packet_handler", EH_HANDLER, handler);
+      if (this.compressedCacheService != null && channel.pipeline().get("compress") instanceof CompressionEncoder) {
+        NativeChunkCompressionHandler compression = new NativeChunkCompressionHandler(this.compressedCacheService,
+          this, handler);
+        channel.pipeline().addBefore("compress", EH_NATIVE_CAPTURE, compression.captureHandler());
+        channel.pipeline().addAfter("compress", EH_NATIVE_COMPRESSION, compression);
+      }
       PacketIdRegistry.resolveFromEncoder(channel);
       removePacketIdProbeIfResolved(channel);
     };
@@ -208,11 +220,19 @@ public final class ChannelInjectionService {
         return null;
       }
       boolean afterCompression = false;
+      boolean nativeCaptureSeen = channel.pipeline().get(EH_NATIVE_COMPRESSION) == null;
+      boolean nativeLookupSeen = nativeCaptureSeen;
       for (var entry : channel.pipeline()) {
+        if (entry.getKey().equals(EH_NATIVE_CAPTURE)) {
+          if (afterCompression) return null;
+          nativeCaptureSeen = true;
+        }
         if (entry.getKey().equals(context.name())) {
+          if (!nativeCaptureSeen) return null;
           afterCompression = true;
           continue;
         }
+        if (afterCompression && entry.getKey().equals(EH_NATIVE_COMPRESSION)) nativeLookupSeen = true;
         if (!afterCompression || !(entry.getValue() instanceof ChannelOutboundHandler)) {
           continue;
         }
@@ -223,6 +243,7 @@ public final class ChannelInjectionService {
           return null;
         }
       }
+      if (!nativeLookupSeen) return null;
       int threshold = ((CompressionEncoder) context.handler()).getThreshold();
       return threshold < 0 ? null : new CompressionRoute(context, threshold);
     } catch (RuntimeException | LinkageError exception) {
@@ -330,6 +351,8 @@ public final class ChannelInjectionService {
   }
 
   private static void removeHandlers(Channel channel) {
+    if (channel.pipeline().get(EH_NATIVE_COMPRESSION) != null) channel.pipeline().remove(EH_NATIVE_COMPRESSION);
+    if (channel.pipeline().get(EH_NATIVE_CAPTURE) != null) channel.pipeline().remove(EH_NATIVE_CAPTURE);
     if (channel.pipeline().get(EH_HANDLER) instanceof EhPacketHandler handler) {
       handler.setSession(null);
       channel.pipeline().remove(EH_HANDLER);
