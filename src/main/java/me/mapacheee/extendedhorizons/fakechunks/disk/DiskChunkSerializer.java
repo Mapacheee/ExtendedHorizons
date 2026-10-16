@@ -28,8 +28,6 @@ import net.minecraft.world.level.chunk.storage.SerializableChunkData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.util.BitSet;
 
 
@@ -67,7 +65,7 @@ public final class DiskChunkSerializer {
 
     CompoundTag rootTag;
     try {
-      rootTag = NbtIo.read(new DataInputStream(new ByteArrayInputStream(nbtBytes)));
+      rootTag = NbtIo.read(new NbtByteArrayInput(nbtBytes));
     } catch (Exception e) {
       LOGGER.warn("Failed to parse NBT for chunk [{}, {}]: {}", chunkX, chunkZ, e.getMessage());
       return null;
