@@ -374,7 +374,7 @@ public final class ChunkBuildCacheService {
     }
 
     private void completeBuild(ChunkKey key, BuildEntry entry, ByteBuf payload, Throwable throwable) {
-      CachedPayload source = CachedPayload.takeOwnership(payload);
+      CachedPayload source = CachedPayload.takeOwnership(FingerprintedPayload.takeOwnership(payload));
       try {
         if (throwable == null && source != null && source.isReadable()) {
           this.completeSuccessfulBuild(key, entry, source);

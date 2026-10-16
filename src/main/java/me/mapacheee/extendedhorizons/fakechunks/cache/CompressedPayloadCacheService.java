@@ -94,6 +94,14 @@ public final class CompressedPayloadCacheService {
   }
 
   private static byte[] fingerprint(ByteBuf source) {
+    if (source instanceof FingerprintedPayload payload) {
+      byte[] fingerprint = payload.fingerprint();
+      if (fingerprint != null) return fingerprint;
+    }
+    return computeFingerprint(source);
+  }
+
+  static byte[] computeFingerprint(ByteBuf source) {
     MessageDigest digest = DIGEST.get();
     digest.reset();
     digest.update(source.nioBuffer());
