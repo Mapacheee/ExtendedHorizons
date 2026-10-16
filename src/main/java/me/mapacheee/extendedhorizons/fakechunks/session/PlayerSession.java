@@ -1,6 +1,9 @@
 package me.mapacheee.extendedhorizons.fakechunks.session;
 
 import it.unimi.dsi.fastutil.ints.IntArrays;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
+import it.unimi.dsi.fastutil.longs.LongSets;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkSendQueueEntry;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
@@ -65,7 +68,7 @@ public final class PlayerSession {
   private final Set<UUID> trackingBuffer = ConcurrentHashMap.newKeySet();
   private final Set<Integer> usedFarEntityIdBuffer = ConcurrentHashMap.newKeySet();
   private final Set<Integer> serverTrackedEntityIds = ConcurrentHashMap.newKeySet();
-  private final Set<Long> serverLoadedChunks = ConcurrentHashMap.newKeySet();
+  private final LongSet serverLoadedChunks = LongSets.synchronize(new LongOpenHashSet());
   private volatile double moveDirX;
   private volatile double moveDirZ;
   private volatile boolean hasMovementDirection;
@@ -1053,7 +1056,7 @@ public final class PlayerSession {
 
   private void pruneServerLoadedChunks(int centerX, int centerZ) {
     int retentionRadius = this.serverViewDistance + STORAGE_RADIUS_PADDING;
-    this.serverLoadedChunks.removeIf(key ->
+    this.serverLoadedChunks.removeIf((long key) ->
       Math.abs((long) ChunkKeyCodec.x(key) - centerX) > retentionRadius
         || Math.abs((long) ChunkKeyCodec.z(key) - centerZ) > retentionRadius
     );
