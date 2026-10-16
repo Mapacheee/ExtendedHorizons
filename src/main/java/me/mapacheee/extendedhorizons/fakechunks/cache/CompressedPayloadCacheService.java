@@ -207,8 +207,11 @@ public final class CompressedPayloadCacheService {
         CachedPayload previous = this.nativeCache.asMap().put(key, cached);
         if (previous != null) previous.close();
       } catch (RuntimeException exception) {
-        this.nativeCache.asMap().remove(key, cached);
-        cached.close();
+        try {
+          this.nativeCache.asMap().remove(key, cached);
+        } finally {
+          cached.close();
+        }
       }
     }
 

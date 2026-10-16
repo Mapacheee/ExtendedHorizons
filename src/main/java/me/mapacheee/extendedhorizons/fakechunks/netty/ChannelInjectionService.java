@@ -216,26 +216,34 @@ public final class ChannelInjectionService {
   public CompressionRoute compressionRoute(Channel channel) {
     try {
       ChannelHandlerContext context = channel.pipeline().context("compress");
-      if (context == null || context.handler().getClass() != CompressionEncoder.class) {
+      if (context == null || context.handler().getClass() != CompressionEncoder.class
+        || context.executor() != channel.eventLoop()) {
         return null;
       }
       boolean afterCompression = false;
-      boolean nativeCaptureSeen = channel.pipeline().get(EH_NATIVE_COMPRESSION) == null;
+      boolean nativeReusePresent = channel.pipeline().get(EH_NATIVE_COMPRESSION) != null;
+      boolean nativeCaptureSeen = !nativeReusePresent;
       boolean nativeLookupSeen = nativeCaptureSeen;
       for (var entry : channel.pipeline()) {
         if (entry.getKey().equals(EH_NATIVE_CAPTURE)) {
-          if (afterCompression) return null;
+          if (afterCompression || channel.pipeline().context(EH_NATIVE_CAPTURE).executor() != channel.eventLoop()) {
+            return null;
+          }
           nativeCaptureSeen = true;
+          continue;
         }
         if (entry.getKey().equals(context.name())) {
           if (!nativeCaptureSeen) return null;
           afterCompression = true;
           continue;
         }
+        if (nativeReusePresent && nativeCaptureSeen && !afterCompression
+          && entry.getValue() instanceof ChannelOutboundHandler) return null;
         if (afterCompression && entry.getKey().equals(EH_NATIVE_COMPRESSION)) nativeLookupSeen = true;
         if (!afterCompression || !(entry.getValue() instanceof ChannelOutboundHandler)) {
           continue;
         }
+        if (channel.pipeline().context(entry.getKey()).executor() != channel.eventLoop()) return null;
         String type = entry.getValue().getClass().getName();
         if (!type.startsWith("net.minecraft.network.")
           && !type.startsWith("me.mapacheee.extendedhorizons.fakechunks.netty.")
