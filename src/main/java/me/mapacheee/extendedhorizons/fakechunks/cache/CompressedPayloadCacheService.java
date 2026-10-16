@@ -50,11 +50,21 @@ public final class CompressedPayloadCacheService {
       return new Request(null, false, null);
     }
     byte[] fingerprint = fingerprint(source);
-    Entry entry = current.lookup(contentKey(fingerprint, source.readableBytes(), threshold), source, fingerprint);
+    ContentKey key = contentKey(fingerprint, source.readableBytes(), threshold);
+    Entry entry = current.lookup(key, source, fingerprint);
     if (entry == null) {
       return new Request(null, false, null);
     }
-    return entry.done.isDone() ? new Request(entry.acquire(), false, entry.fingerprint) : new Request(null, true, null);
+    ByteBuf payload = entry.acquire();
+    if (payload == null) {
+      ByteBuf nativePayload = current.acquireNative(key);
+      if (nativePayload != null) {
+        entry.complete(nativePayload);
+        payload = entry.acquire();
+      }
+    }
+    return payload != null || entry.done.isDone()
+      ? new Request(payload, false, entry.fingerprint) : new Request(null, true, null);
   }
 
   public synchronized void rebuild() {
@@ -69,8 +79,12 @@ public final class CompressedPayloadCacheService {
     Generation current = this.generation;
     if (current == null || !current.active || threshold < 0) return null;
     ContentKey key = contentKey(fingerprint(source), source.readableBytes(), threshold);
-    CachedPayload cached = current.nativeCache.getIfPresent(key);
-    return new NativeLookup(current, key, cached == null ? null : cached.acquire());
+    ByteBuf payload = current.acquireNative(key);
+    if (payload == null) {
+      Entry entry = current.cache.getIfPresent(key);
+      if (entry != null) payload = entry.acquire();
+    }
+    return new NativeLookup(current, key, payload);
   }
 
   public void storeNative(NativeLookup lookup, ByteBuf encoded) {
@@ -146,7 +160,7 @@ public final class CompressedPayloadCacheService {
     }
 
     private synchronized void complete(ByteBuf payload) {
-      if (this.closed) {
+      if (this.closed || this.encoded != null) {
         CachedPayload.release(payload);
       } else {
         this.encoded = CachedPayload.takeOwnership(payload);
@@ -225,6 +239,11 @@ public final class CompressedPayloadCacheService {
 
     private Entry start(ContentKey key, ByteBuf source, byte[] fingerprint) {
       Entry entry = new Entry(source.readableBytes() + 8192, fingerprint);
+      ByteBuf nativePayload = this.acquireNative(key);
+      if (nativePayload != null) {
+        entry.complete(nativePayload);
+        return entry;
+      }
       Task task = new Task(entry, source.retainedDuplicate(), key.threshold());
       try {
         this.executor.execute(task);
@@ -232,6 +251,11 @@ public final class CompressedPayloadCacheService {
         task.discard();
       }
       return entry;
+    }
+
+    private ByteBuf acquireNative(ContentKey key) {
+      CachedPayload cached = this.nativeCache.getIfPresent(key);
+      return cached == null ? null : cached.acquire();
     }
 
     private synchronized Entry lookup(ContentKey key, ByteBuf source, byte[] fingerprint) {
@@ -273,6 +297,10 @@ public final class CompressedPayloadCacheService {
     @Override
     public void run() {
       if (!this.claimed.compareAndSet(false, true)) {
+        return;
+      }
+      if (this.entry.done.isDone()) {
+        this.source.release();
         return;
       }
       ByteBuf output = null;
