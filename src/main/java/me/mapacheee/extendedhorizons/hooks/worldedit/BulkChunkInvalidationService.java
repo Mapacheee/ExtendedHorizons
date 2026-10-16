@@ -27,6 +27,7 @@ import java.util.UUID;
 public final class BulkChunkInvalidationService {
 
   private static final int MAX_INVALIDATIONS_PER_TICK = 256;
+  private static final long FLUID_REFRESH_NANOS = 1_000_000_000L;
 
   private final ChunkBuildCacheService cacheService;
   private final AntiXrayPayloadCacheService antiXrayPayloadCacheService;
@@ -34,6 +35,7 @@ public final class BulkChunkInvalidationService {
   private final SessionRegistry sessionRegistry;
   private final ChannelInjectionService channelInjectionService;
   private final PendingChunkInvalidations pendingInvalidations = new PendingChunkInvalidations();
+  private final PendingChunkInvalidations pendingFluidInvalidations = new PendingChunkInvalidations();
 
   private volatile ScheduledTask processorTask;
   private int refreshTicks;
@@ -69,10 +71,15 @@ public final class BulkChunkInvalidationService {
       this.processorTask = null;
     }
     this.pendingInvalidations.clear();
+    this.pendingFluidInvalidations.clear();
   }
 
   public void queueInvalidation(UUID worldId, long chunkKey) {
     this.pendingInvalidations.offer(worldId, chunkKey, System.nanoTime());
+  }
+
+  public void queueFluidInvalidation(UUID worldId, long chunkKey) {
+    this.pendingFluidInvalidations.offerWithin(worldId, chunkKey, System.nanoTime(), FLUID_REFRESH_NANOS);
   }
 
   public void queueInvalidationBatch(UUID worldId, Collection<Long> chunkKeys) {
@@ -87,10 +94,14 @@ public final class BulkChunkInvalidationService {
       this.refreshTicks = 0;
       this.queuePeriodicRefreshes();
     }
-    for (Map.Entry<UUID, List<Long>> entry : this.pendingInvalidations
-      .drain(System.nanoTime(), MAX_INVALIDATIONS_PER_TICK).entrySet()) {
+    long now = System.nanoTime();
+    Map<UUID, List<Long>> batches = this.pendingInvalidations.drain(now, MAX_INVALIDATIONS_PER_TICK);
+    int remaining = MAX_INVALIDATIONS_PER_TICK - batches.values().stream().mapToInt(List::size).sum();
+    this.pendingFluidInvalidations.drain(now, remaining).forEach((worldId, keys) ->
+      batches.computeIfAbsent(worldId, ignored -> new java.util.ArrayList<>()).addAll(keys));
+    for (Map.Entry<UUID, List<Long>> entry : batches.entrySet()) {
       UUID worldId = entry.getKey();
-      long[] keyArray = entry.getValue().stream().mapToLong(Long::longValue).toArray();
+      long[] keyArray = entry.getValue().stream().mapToLong(Long::longValue).distinct().toArray();
       final int count = keyArray.length;
       for (int i = 0; i < count; i++) {
         this.cacheService.invalidate(worldId, keyArray[i]);

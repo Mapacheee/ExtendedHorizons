@@ -66,8 +66,8 @@ public final class ChunkInvalidationListener implements Listener {
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onFlow(BlockFromToEvent event) {
-    invalidate(event.getBlock());
-    invalidate(event.getToBlock());
+    invalidate(event.getBlock(), true);
+    invalidate(event.getToBlock(), true);
   }
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -116,6 +116,10 @@ public final class ChunkInvalidationListener implements Listener {
   }
 
   private void invalidate(Block block) {
+    invalidate(block, false);
+  }
+
+  private void invalidate(Block block, boolean fluid) {
     int x = block.getX() >> 4;
     int z = block.getZ() >> 4;
     int localX = block.getX() & 15;
@@ -126,7 +130,12 @@ public final class ChunkInvalidationListener implements Listener {
         int distanceX = dx < 0 ? localX + 1 : dx > 0 ? 16 - localX : 0;
         int distanceZ = dz < 0 ? localZ + 1 : dz > 0 ? 16 - localZ : 0;
         if (distanceX + distanceZ <= 15) {
-          invalidations.queueInvalidation(worldId, ChunkKeyCodec.pack(x + dx, z + dz));
+          long chunkKey = ChunkKeyCodec.pack(x + dx, z + dz);
+          if (fluid) {
+            invalidations.queueFluidInvalidation(worldId, chunkKey);
+          } else {
+            invalidations.queueInvalidation(worldId, chunkKey);
+          }
         }
       }
     }

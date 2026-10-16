@@ -17,6 +17,11 @@ final class PendingChunkInvalidations {
     pending.put(key, now + SETTLE_NANOS);
   }
 
+  synchronized void offerWithin(UUID world, long chunk, long now, long delayNanos) {
+    if (world == null) return;
+    pending.putIfAbsent(new Key(world, chunk), now + delayNanos);
+  }
+
   synchronized Map<UUID, List<Long>> drain(long now, int limit) {
     Map<UUID, List<Long>> result = new LinkedHashMap<>();
     var iterator = pending.entrySet().iterator();
