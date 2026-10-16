@@ -1,6 +1,5 @@
 package me.mapacheee.extendedhorizons.fakechunks.session;
 
-import it.unimi.dsi.fastutil.ints.IntArrays;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.longs.LongSets;
@@ -20,7 +19,6 @@ public final class PlayerSession {
   private static final long[] EMPTY_LONG_ARRAY = new long[0];
   private static final ChunkState DUMMY_STATE = new ChunkState();
   private static final double DIRECTION_CHANGE_THRESHOLD = 0.8d;
-  private static final double DIRECTION_WEIGHT = 0.3d;
   private static final long DIRECTION_IDLE_TIMEOUT_NANOS = 250_000_000L;
   private static final double MOVEMENT_EPSILON_SQUARED = 0.0001d;
   private static final double MIN_PREFETCH_SPEED = 8.0d;
@@ -975,43 +973,13 @@ public final class PlayerSession {
   }
 
   private void rebuildDirectionalOrder() {
-    long[] base = ChunkPlannerService.radiusIterationList(this.distance);
-    int len = base.length;
-
-    int[] indices = new int[len];
-    double[] keys = new double[len];
-    for (int i = 0; i < len; i++) {
-      indices[i] = i;
-      int ox = ChunkKeyCodec.x(base[i]);
-      int oz = ChunkKeyCodec.z(base[i]);
-      keys[i] = this.chunkPriority(ox, oz);
-    }
-
-    // Merge sort bounds direction changes to O(n log n), including worst-case input.
-    // Original indices preserve the planner's tie order without boxing every chunk.
-    IntArrays.mergeSort(indices, (left, right) -> {
-      int order = Double.compare(keys[left], keys[right]);
-      return order != 0 ? order : Integer.compare(left, right);
-    });
-
-    long[] sorted = new long[len];
-    for (int i = 0; i < len; i++) {
-      sorted[i] = base[indices[i]];
-    }
-    this.chunksInDistance = sorted;
+    this.chunksInDistance = ChunkPlannerService.directionalIterationList(this.distance, this.moveDirX, this.moveDirZ);
     this.iterationIndex = 0;
   }
 
   private double chunkPriority(int offsetX, int offsetZ) {
-    double distance = Math.sqrt((double) offsetX * offsetX + (double) offsetZ * offsetZ);
-    if (distance == 0.0d) {
-      return -1.0d;
-    }
-    if (!this.hasMovementDirection) {
-      return distance;
-    }
-    double alignment = (offsetX * this.moveDirX + offsetZ * this.moveDirZ) / distance;
-    return distance * (1.0d - DIRECTION_WEIGHT * alignment);
+    return ChunkPlannerService.chunkPriority(offsetX, offsetZ,
+      this.hasMovementDirection ? this.moveDirX : 0.0d, this.hasMovementDirection ? this.moveDirZ : 0.0d);
   }
 
   private void refillBandwidthTokens(long nowNanos) {
