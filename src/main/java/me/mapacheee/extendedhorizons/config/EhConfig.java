@@ -254,6 +254,13 @@ public record EhConfig(
       : Math.clamp(configured, 1024L * 1024L, 1024L * 1024L * 1024L);
   }
 
+  public int compressedCacheMaxEntries() {
+    Integer configured = this.fakeChunks == null || this.fakeChunks.cache() == null
+      ? null : this.fakeChunks.cache().compressedMaxEntries();
+    return configured == null ? (int) Math.clamp(4L * this.cacheMaxEntries(), 1L, 65536L)
+      : Math.clamp(configured, 1, 65536);
+  }
+
   public long cacheBypassAfterRealInteractionMs() {
     if (this.fakeChunks == null || this.fakeChunks.cache() == null) {
       return DEFAULT_BYPASS_AFTER_INTERACTION_MS;
@@ -409,7 +416,8 @@ public record EhConfig(
     @Setting("permission-cache-entries") int permissionCacheEntries,
     @Setting("permission-cache-ttl-seconds") int permissionCacheTtlSeconds,
     @Setting("far-player-cache-entries") int farPlayerCacheEntries,
-    @Setting("max-bytes") Long maxBytes
+    @Setting("max-bytes") Long maxBytes,
+    @Setting("compressed-max-entries") Integer compressedMaxEntries
   ) {
   }
 

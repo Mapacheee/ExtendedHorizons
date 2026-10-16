@@ -59,7 +59,7 @@ public final class CompressedPayloadCacheService {
     if (payload == null) {
       ByteBuf nativePayload = current.acquireNative(key);
       if (nativePayload != null) {
-        entry.complete(nativePayload);
+        current.complete(key, entry, nativePayload);
         payload = entry.acquire();
       }
     }
@@ -153,6 +153,7 @@ public final class CompressedPayloadCacheService {
     private final byte[] fingerprint;
     private CachedPayload encoded;
     private boolean closed;
+    private int accountedWeight = -1;
 
     private Entry(int maxEncodedCapacity, byte[] fingerprint) {
       this.maxEncodedCapacity = maxEncodedCapacity;
@@ -172,6 +173,21 @@ public final class CompressedPayloadCacheService {
       return this.closed || this.encoded == null ? null : this.encoded.acquire();
     }
 
+    private int weight(int minimumWeight) {
+      int capacity = this.encoded == null ? (this.done.isDone() ? 0 : this.maxEncodedCapacity)
+        : this.encoded.capacity();
+      return (int) Math.max(minimumWeight, Math.min(Integer.MAX_VALUE, (long) capacity + 256L));
+    }
+
+    private synchronized int weigh(int minimumWeight) {
+      this.accountedWeight = this.weight(minimumWeight);
+      return this.accountedWeight;
+    }
+
+    private synchronized boolean needsReweigh(int minimumWeight) {
+      return !this.closed && this.accountedWeight >= 0 && this.accountedWeight != this.weight(minimumWeight);
+    }
+
     @Override
     public synchronized void close() {
       if (this.closed) {
@@ -189,6 +205,7 @@ public final class CompressedPayloadCacheService {
     private final Cache<ContentKey, Entry> cache;
     private final Cache<ContentKey, CachedPayload> nativeCache;
     private final ThreadPoolExecutor executor;
+    private final int minimumWeight;
     private volatile boolean active = true;
 
     private Generation(EhConfig config) {
@@ -199,9 +216,10 @@ public final class CompressedPayloadCacheService {
         return thread;
       });
       long maxBytes = config.cacheMaxBytes();
-      int minimumWeight = (int) Math.max(1L, (maxBytes + config.cacheMaxEntries() - 1L) / config.cacheMaxEntries());
+      int maxEntries = config.compressedCacheMaxEntries();
+      this.minimumWeight = (int) Math.max(1L, (maxBytes + maxEntries - 1L) / maxEntries);
       this.cache = Caffeine.newBuilder().maximumWeight(maxBytes)
-        .weigher((ContentKey key, Entry entry) -> Math.max(minimumWeight, entry.maxEncodedCapacity))
+        .weigher((ContentKey key, Entry entry) -> entry.weigh(this.minimumWeight))
         .expireAfterAccess(Duration.ofSeconds(Math.max(1, config.cacheTtlSeconds())))
         .scheduler(Scheduler.systemScheduler())
         .executor(Runnable::run)
@@ -210,9 +228,10 @@ public final class CompressedPayloadCacheService {
         .build();
       long nativeMaxBytes = Math.max(1L, maxBytes / 4L);
       int nativeMinimumWeight = (int) Math.max(1L,
-        (nativeMaxBytes + config.cacheMaxEntries() - 1L) / config.cacheMaxEntries());
+        (nativeMaxBytes + maxEntries - 1L) / maxEntries);
       this.nativeCache = Caffeine.newBuilder().maximumWeight(nativeMaxBytes)
-        .weigher((ContentKey key, CachedPayload payload) -> Math.max(nativeMinimumWeight, payload.capacity()))
+        .weigher((ContentKey key, CachedPayload payload) -> (int) Math.max(nativeMinimumWeight,
+          Math.min(Integer.MAX_VALUE, (long) payload.capacity() + 256L)))
         .expireAfterAccess(Duration.ofSeconds(Math.max(1, config.cacheTtlSeconds())))
         .scheduler(Scheduler.systemScheduler())
         .executor(Runnable::run)
@@ -244,7 +263,7 @@ public final class CompressedPayloadCacheService {
         entry.complete(nativePayload);
         return entry;
       }
-      Task task = new Task(entry, source.retainedDuplicate(), key.threshold());
+      Task task = new Task(this, key, entry, source.retainedDuplicate());
       try {
         this.executor.execute(task);
       } catch (RuntimeException exception) {
@@ -262,6 +281,17 @@ public final class CompressedPayloadCacheService {
       return this.active ? this.cache.get(key, ignored -> this.start(key, source, fingerprint)) : null;
     }
 
+    private void complete(ContentKey key, Entry entry, ByteBuf payload) {
+      entry.complete(payload);
+      this.reweigh(key, entry);
+    }
+
+    private synchronized void reweigh(ContentKey key, Entry entry) {
+      if (this.active && entry.needsReweigh(this.minimumWeight)) {
+        this.cache.asMap().computeIfPresent(key, (ignored, current) -> current);
+      }
+    }
+
     @Override
     public synchronized void close() {
       this.active = false;
@@ -276,15 +306,19 @@ public final class CompressedPayloadCacheService {
   }
 
   private static final class Task implements Runnable {
+    private final Generation generation;
+    private final ContentKey key;
     private final Entry entry;
     private final ByteBuf source;
     private final int threshold;
     private final AtomicBoolean claimed = new AtomicBoolean();
 
-    private Task(Entry entry, ByteBuf source, int threshold) {
+    private Task(Generation generation, ContentKey key, Entry entry, ByteBuf source) {
+      this.generation = generation;
+      this.key = key;
       this.entry = entry;
       this.source = source;
-      this.threshold = threshold;
+      this.threshold = key.threshold();
     }
 
     private void discard() {
@@ -330,8 +364,9 @@ public final class CompressedPayloadCacheService {
         }
         this.entry.complete(output);
         output = null;
+        this.generation.reweigh(this.key, this.entry);
       } catch (RuntimeException | Error exception) {
-        this.entry.complete(null);
+        this.generation.complete(this.key, this.entry, null);
       } finally {
         CachedPayload.release(output);
         this.source.release();
