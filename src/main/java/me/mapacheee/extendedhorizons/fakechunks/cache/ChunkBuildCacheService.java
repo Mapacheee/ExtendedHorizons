@@ -247,6 +247,15 @@ public final class ChunkBuildCacheService {
 
   public record ChunkKey(UUID worldId, long chunkKey) implements Comparable<ChunkKey> {
     @Override
+    public int hashCode() {
+      long mixed = this.chunkKey;
+      mixed = (mixed ^ (mixed >>> 33)) * 0xFF51AFD7ED558CCDL;
+      mixed = (mixed ^ (mixed >>> 33)) * 0xC4CEB9FE1A85EC53L;
+      mixed ^= mixed >>> 33;
+      return 31 * Objects.hashCode(this.worldId) + (int) mixed;
+    }
+
+    @Override
     public int compareTo(ChunkKey other) {
       if (this.worldId != other.worldId) {
         if (this.worldId == null) return -1;
