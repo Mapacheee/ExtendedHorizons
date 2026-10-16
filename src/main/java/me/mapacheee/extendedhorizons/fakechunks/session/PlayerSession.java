@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.longs.LongSets;
 import me.mapacheee.extendedhorizons.fakechunks.dispatch.ChunkSendQueueEntry;
+import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerSyncState;
 import me.mapacheee.extendedhorizons.fakechunks.planner.ChunkPlannerService;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
 
@@ -63,6 +64,7 @@ public final class PlayerSession {
   private final Object dispatchLock = new Object();
   private final Map<UUID, Integer> trackedFarPlayers = new ConcurrentHashMap<>();
   private final Map<UUID, Long> farPlayerSpawnAttempts = new ConcurrentHashMap<>();
+  private final Map<UUID, FarPlayerSyncState> farPlayerSyncStates = new ConcurrentHashMap<>();
   private final Set<UUID> trackingBuffer = ConcurrentHashMap.newKeySet();
   private final Set<Integer> usedFarEntityIdBuffer = ConcurrentHashMap.newKeySet();
   private final Set<Integer> serverTrackedEntityIds = ConcurrentHashMap.newKeySet();
@@ -141,6 +143,10 @@ public final class PlayerSession {
 
   public Map<UUID, Long> farPlayerSpawnAttempts() {
     return this.farPlayerSpawnAttempts;
+  }
+
+  public Map<UUID, FarPlayerSyncState> farPlayerSyncStates() {
+    return this.farPlayerSyncStates;
   }
 
   public Set<Integer> usedFarEntityIdBuffer() {
@@ -927,6 +933,7 @@ public final class PlayerSession {
     this.clearChunkQueue();
     this.trackedFarPlayers.clear();
     this.farPlayerSpawnAttempts.clear();
+    this.farPlayerSyncStates.clear();
     this.pendingUnloads.clear();
     this.trackingBuffer.clear();
     this.usedFarEntityIdBuffer.clear();
@@ -948,6 +955,7 @@ public final class PlayerSession {
     this.resetMovementPrediction();
     this.clearChunkQueue();
     this.farPlayerSpawnAttempts.clear();
+    this.farPlayerSyncStates.clear();
     this.trackingBuffer.clear();
     this.usedFarEntityIdBuffer.clear();
     this.serverTrackedEntityIds.clear();

@@ -10,6 +10,7 @@ import me.mapacheee.extendedhorizons.config.EhConfig;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.backend.FarPlayerBackend;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.cache.FarPlayerCacheService;
 import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerState;
+import me.mapacheee.extendedhorizons.fakechunks.farplayers.model.FarPlayerSyncState;
 import me.mapacheee.extendedhorizons.fakechunks.netty.ChannelInjectionService;
 import me.mapacheee.extendedhorizons.fakechunks.session.PlayerSession;
 import me.mapacheee.extendedhorizons.fakechunks.util.ChunkKeyCodec;
@@ -139,7 +140,12 @@ public final class FarPlayerTrackingService {
         }
         this.spawn(channel, session, state, farEntityId);
       } else {
-        this.moveAndSync(channel, trackedEntityId, state, syncMove, syncEquip);
+        try {
+          this.moveAndSync(channel, session, trackedEntityId, state, syncMove, syncEquip);
+        } catch (RuntimeException | LinkageError exception) {
+          session.farPlayerSyncStates().remove(state.uuid());
+          throw exception;
+        }
       }
     }
 
@@ -153,6 +159,7 @@ public final class FarPlayerTrackingService {
       }
     }
     session.farPlayerSpawnAttempts().keySet().retainAll(trackedFarPlayers.keySet());
+    session.farPlayerSyncStates().keySet().retainAll(trackedFarPlayers.keySet());
   }
 
   private void spawn(
@@ -162,6 +169,7 @@ public final class FarPlayerTrackingService {
     int farEntityId
   ) {
     long expectedEpoch = session.epoch();
+    session.farPlayerSyncStates().remove(state.uuid());
     long attemptId = this.spawnAttemptSequence.incrementAndGet();
     session.farPlayerSpawnAttempts().put(state.uuid(), attemptId);
     if (state.playerInfo() == null) {
@@ -257,6 +265,7 @@ public final class FarPlayerTrackingService {
         return;
       }
       if (session.trackedFarPlayers().remove(state.uuid(), farEntityId)) {
+        session.farPlayerSyncStates().remove(state.uuid());
         session.usedFarEntityIdBuffer().remove(farEntityId);
         this.despawn(channel, farEntityId);
       }
@@ -289,23 +298,55 @@ public final class FarPlayerTrackingService {
   private record SpawnRetryKey(PlayerSession session, long epoch, UUID targetId) {
   }
 
-  private void moveAndSync(Channel channel, int trackedEntityId, FarPlayerState state, boolean syncMove,
-    boolean syncEquip) {
+  private void moveAndSync(Channel channel, PlayerSession session, int trackedEntityId, FarPlayerState state,
+    boolean syncMove, boolean syncEquip) {
+    FarPlayerSyncState previous = session.farPlayerSyncStates().get(state.uuid());
+    if (previous != null && previous.entityId() != trackedEntityId) {
+      previous = null;
+    }
+    FarPlayerState previousMovement = previous == null ? null : previous.movement();
+    FarPlayerState previousEquipment = previous == null ? null : previous.equipment();
+    FarPlayerSyncState next = new FarPlayerSyncState(trackedEntityId,
+      syncMove ? state : previousMovement, syncEquip ? state : previousEquipment);
+    session.farPlayerSyncStates().put(state.uuid(), next);
+
     if (syncMove) {
       FarPlayerState packetState = this.withEntityId(state, trackedEntityId);
       this.channelInjectionService.writeBypass(channel, this.backend.createMovePacket(packetState));
-      this.channelInjectionService.writeBypass(channel,
-        this.backend.createRotateHeadPacket(trackedEntityId, state.headYaw()));
+      if (previousMovement == null || Float.compare(previousMovement.headYaw(), state.headYaw()) != 0) {
+        this.writeSyncPacket(channel, session, state.uuid(),
+          this.backend.createRotateHeadPacket(trackedEntityId, state.headYaw()));
+      }
 
-      if (state.metadata() != null && !state.metadata().isEmpty()) {
-        this.channelInjectionService.writeBypass(channel,
+      if (state.metadata() != null && !state.metadata().isEmpty()
+        && (previousMovement == null || !Objects.equals(previousMovement.metadata(), state.metadata()))) {
+        this.writeSyncPacket(channel, session, state.uuid(),
           this.backend.createMetadataPacket(trackedEntityId, state.metadata()));
       }
     }
 
-    if (syncEquip && state.equipment() != null && !state.equipment().isEmpty()) {
-      this.channelInjectionService.writeBypass(channel,
+    if (syncEquip && state.equipment() != null && !state.equipment().isEmpty()
+      && (previousEquipment == null || previousEquipment.equipment() != state.equipment())) {
+      this.writeSyncPacket(channel, session, state.uuid(),
         this.backend.createEquipmentPacket(trackedEntityId, state.equipment()));
+    }
+  }
+
+  private void writeSyncPacket(Channel channel, PlayerSession session, UUID targetId, Object packet) {
+    try {
+      ChannelPromise promise = this.channelInjectionService.writeBypassFuture(channel, packet);
+      if (promise == null) {
+        session.farPlayerSyncStates().remove(targetId);
+        return;
+      }
+      promise.addListener(future -> {
+        if (!future.isSuccess()) {
+          session.farPlayerSyncStates().remove(targetId);
+        }
+      });
+    } catch (RuntimeException | LinkageError exception) {
+      session.farPlayerSyncStates().remove(targetId);
+      throw exception;
     }
   }
 
@@ -332,6 +373,7 @@ public final class FarPlayerTrackingService {
       return;
     }
     session.farPlayerSpawnAttempts().clear();
+    session.farPlayerSyncStates().clear();
     if (channel == null) {
       return;
     }
