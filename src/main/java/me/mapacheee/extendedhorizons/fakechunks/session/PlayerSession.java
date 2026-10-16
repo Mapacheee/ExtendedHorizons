@@ -320,11 +320,23 @@ public final class PlayerSession {
       int centerX = ChunkKeyCodec.x(this.chunkKey);
       int centerZ = ChunkKeyCodec.z(this.chunkKey);
       List<ChunkSendQueueEntry> entries = new ArrayList<>(this.chunkQueue);
+      ChunkSendQueueEntry refresh = null;
+      for (ChunkSendQueueEntry entry : entries) {
+        if (entry.buildFuture().isDone() && !entry.buildFuture().isCompletedExceptionally()
+          && this.isChunkRefresh(entry.chunkKey())
+          && (refresh == null || entry.queuedAtNanos() < refresh.queuedAtNanos())) {
+          refresh = entry;
+        }
+      }
       entries.sort(Comparator.comparingInt((ChunkSendQueueEntry entry) -> this.isChunkRefresh(entry.chunkKey()) ? 1 : 0)
         .thenComparingDouble(entry -> this.chunkPriority(
         ChunkKeyCodec.x(entry.chunkKey()) - centerX,
         ChunkKeyCodec.z(entry.chunkKey()) - centerZ
       )));
+      if (refresh != null) {
+        entries.remove(refresh);
+        entries.addFirst(refresh);
+      }
       this.chunkQueue.clear();
       this.chunkQueue.addAll(entries);
     }
