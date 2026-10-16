@@ -41,6 +41,7 @@ public final class DiskChunkSerializer {
   private static final int LIGHT_SECTION_OFFSET = 1;
   private static final boolean REMAP_CHAIN = BuiltInRegistries.BLOCK.keySet().stream()
     .noneMatch(key -> "minecraft:chain".equals(key.toString()));
+  private static final Integer LIGHT_VERSION = resolveLightVersion();
   private static volatile boolean directSectionsCompatible = true;
 
   private DiskChunkSerializer() {
@@ -155,21 +156,27 @@ public final class DiskChunkSerializer {
 
   private static ByteBuf writeDirectPacket(CompoundTag rootTag, ServerLevel level,
     int chunkX, int chunkZ, boolean hasSkyLight) {
-    Tag originalSections = rootTag.get(SerializableChunkData.SECTIONS_TAG);
     ListTag tags = rootTag.getList(SerializableChunkData.SECTIONS_TAG).orElseGet(ListTag::new);
     PalettedContainerFactory factory = level.palettedContainerFactory();
-    rootTag.put(SerializableChunkData.SECTIONS_TAG, new ListTag());
-    try {
-      if (!SerializableChunkData.parse(level, factory, rootTag).lightCorrect()) {
+    if (LIGHT_VERSION != null) {
+      if (rootTag.get("isLightOn") == null || rootTag.getIntOr("starlight.light_version", -1) != LIGHT_VERSION) {
         return null;
       }
-    } catch (RuntimeException exception) {
-      return null;
-    } finally {
-      if (originalSections == null) {
-        rootTag.remove(SerializableChunkData.SECTIONS_TAG);
-      } else {
-        rootTag.put(SerializableChunkData.SECTIONS_TAG, originalSections);
+    } else {
+      Tag originalSections = rootTag.get(SerializableChunkData.SECTIONS_TAG);
+      rootTag.put(SerializableChunkData.SECTIONS_TAG, new ListTag());
+      try {
+        if (!SerializableChunkData.parse(level, factory, rootTag).lightCorrect()) {
+          return null;
+        }
+      } catch (RuntimeException exception) {
+        return null;
+      } finally {
+        if (originalSections == null) {
+          rootTag.remove(SerializableChunkData.SECTIONS_TAG);
+        } else {
+          rootTag.put(SerializableChunkData.SECTIONS_TAG, originalSections);
+        }
       }
     }
 
@@ -228,6 +235,16 @@ public final class DiskChunkSerializer {
       }
     } catch (RuntimeException exception) {
       LOGGER.debug("Direct palette serialization failed for [{}, {}], using Paper fallback", chunkX, chunkZ, exception);
+      return null;
+    }
+  }
+
+  private static Integer resolveLightVersion() {
+    try {
+      return (Integer) Class.forName("ca.spottedleaf.moonrise.patches.starlight.util.SaveUtil")
+        .getMethod("getLightVersion").invoke(null);
+    } catch (ReflectiveOperationException | LinkageError exception) {
+      LOGGER.debug("Light version unavailable, using native chunk parser", exception);
       return null;
     }
   }
@@ -294,9 +311,7 @@ public final class DiskChunkSerializer {
       return false;
     }
     String status = rootTag.getStringOr("Status", "");
-    int namespaceSeparator = status.lastIndexOf(':');
-    String statusPath = namespaceSeparator >= 0 ? status.substring(namespaceSeparator + 1) : status;
-    return "full".equals(statusPath);
+    return "full".equals(status) || "minecraft:full".equals(status);
   }
 
   private static ByteBuf writePacket(
