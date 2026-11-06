@@ -1,7 +1,7 @@
 name: ExtendedHorizons
 version: ${version}
 main: me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin
-api-version: '1.21'
+api-version: '26.3'
 folia-supported: true
 description: ${description}
 author: Mapacheee
@@ -10,12 +10,7 @@ dependencies:
     MapacheeeLib:
       load: BEFORE
       required: true
-    WorldEdit:
-      load: BEFORE
-      required: false
-    FastAsyncWorldEdit:
-      load: BEFORE
-      required: false
-    PlaceholderAPI:
-      load: BEFORE
-      required: false
+      join-classpath: true
+permissions:
+  extendedhorizons.admin:
+    default: op
