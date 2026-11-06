@@ -31,13 +31,14 @@ public final class PlayerView {
   private double lastX;
   private double lastZ;
 
-  public PlayerView(Plugin plugin, ChunkSource source, Config settings, ViewMetrics metrics, SendBudget global, Player player) {
+  public PlayerView(Plugin plugin, ChunkSource source, Config settings, ViewMetrics metrics, SendBudget global,
+    CompressionCache compression, Player player) {
     this.plugin = plugin;
     this.source = source;
     this.settings = settings;
     this.player = player;
     this.channel = ((CraftPlayer) player).getHandle().connection.connection.channel;
-    this.stream = new ChunkStream(source, settings, metrics, global, new LongOpenHashSet(player.getSentChunkKeys()));
+    this.stream = new ChunkStream(source, settings, metrics, global, compression, new LongOpenHashSet(player.getSentChunkKeys()));
   }
 
   public void start() {

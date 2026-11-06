@@ -27,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 final class ChunkStream extends ChannelOutboundHandlerAdapter {
 
   private final ChunkSource source;
+  private final ChunkCompression compression;
   private final Config settings;
   private final ViewMetrics metrics;
   private final SendBudget globalBudget;
@@ -47,8 +48,10 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
   private volatile long sleepUntil;
   private boolean needsFlush;
 
-  ChunkStream(ChunkSource source, Config settings, ViewMetrics metrics, SendBudget global, LongOpenHashSet nativeChunks) {
+  ChunkStream(ChunkSource source, Config settings, ViewMetrics metrics, SendBudget global,
+    CompressionCache compression, LongOpenHashSet nativeChunks) {
     this.source = source;
+    this.compression = new ChunkCompression(compression);
     this.settings = settings;
     this.metrics = metrics;
     this.globalBudget = global;
@@ -64,6 +67,7 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
   @Override
   public void handlerRemoved(ChannelHandlerContext ctx) {
     this.reset(false, false);
+    this.compression.remove(ctx);
     this.context = null;
   }
 
@@ -72,6 +76,8 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
     Object outgoing = message instanceof ClientboundBundlePacket bundle ? this.bundle(bundle) : this.observe(message);
     if (outgoing == null) {
       promise.trySuccess();
+    } else if (outgoing instanceof ClientboundLevelChunkWithLightPacket) {
+      this.compression.writeChunk(ctx, outgoing, promise);
     } else {
       ctx.write(outgoing, promise);
     }
@@ -316,7 +322,9 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
       var packet = item.data().packet();
       long version = this.epoch;
       this.needsFlush = true;
-      this.context.write(packet).addListener(result -> {
+      ChannelPromise promise = this.context.newPromise();
+      this.compression.writeChunk(this.context, packet, promise);
+      promise.addListener(result -> {
         if (result.isSuccess()) {
           this.metrics.sent.increment();
           this.metrics.bytes.add(bytes);

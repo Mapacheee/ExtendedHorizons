@@ -12,6 +12,7 @@ import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,6 +27,7 @@ public final class ViewService {
   private volatile ChunkSource source;
   private Config settings;
   private SendBudget budget;
+  private volatile CompressionCache compression;
 
   @Inject
   public ViewService(Plugin plugin, Container<Config> config) {
@@ -40,6 +42,7 @@ public final class ViewService {
       ChunkOrder.offsets(this.settings.distance(), direction);
     }
     this.budget = new SendBudget(this.settings.globalBytesPerSecond());
+    this.compression = new CompressionCache(this.settings.cacheBytes() / 4);
     this.source = new ChunkSource(this.plugin, this.settings.workers(), this.settings.cacheBytes(),
       this.settings.cacheTtlMillis(), this.settings.globalInFlight());
     for (World world : this.plugin.getServer().getWorlds()) {
@@ -72,7 +75,7 @@ public final class ViewService {
     if (this.source == null || !player.isOnline() || this.views.containsKey(player.getUniqueId())) {
       return;
     }
-    PlayerView view = new PlayerView(this.plugin, this.source, this.settings, this.metrics, this.budget, player);
+    PlayerView view = new PlayerView(this.plugin, this.source, this.settings, this.metrics, this.budget, this.compression, player);
     view.start();
     this.views.put(player.getUniqueId(), view);
   }
@@ -110,7 +113,12 @@ public final class ViewService {
   }
 
   public Map<String, Long> deliveryStats() {
-    return this.metrics.snapshot();
+    var stats = new HashMap<>(this.metrics.snapshot());
+    CompressionCache current = this.compression;
+    if (current != null) {
+      stats.putAll(current.stats());
+    }
+    return Map.copyOf(stats);
   }
 
   public Map<String, Long> sourceStats() {
