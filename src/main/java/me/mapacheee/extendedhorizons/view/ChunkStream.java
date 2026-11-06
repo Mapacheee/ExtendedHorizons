@@ -1,7 +1,7 @@
 package me.mapacheee.extendedhorizons.view;
 
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelPromise;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
@@ -16,7 +16,11 @@ import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ChunkTrackingView;
 import net.minecraft.world.level.ChunkPos;
 import org.bukkit.craftbukkit.CraftWorld;
 
@@ -24,7 +28,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 
-final class ChunkStream extends ChannelOutboundHandlerAdapter {
+final class ChunkStream extends ChannelDuplexHandler {
+
+  private static final int RETAIN_MARGIN = 2;
 
   private final ChunkSource source;
   private final ChunkCompression compression;
@@ -32,6 +38,7 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
   private final ViewMetrics metrics;
   private final SendBudget globalBudget;
   private final SendBudget playerBudget;
+  private final SendBudget.Share share;
   private final LongOpenHashSet nativeChunks;
   private final LongOpenHashSet extended = new LongOpenHashSet();
   private final LongOpenHashSet pending = new LongOpenHashSet();
@@ -51,10 +58,11 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
   ChunkStream(ChunkSource source, Config settings, ViewMetrics metrics, SendBudget global,
     CompressionCache compression, LongOpenHashSet nativeChunks) {
     this.source = source;
-    this.compression = new ChunkCompression(compression);
+    this.compression = new ChunkCompression(compression, metrics);
     this.settings = settings;
     this.metrics = metrics;
     this.globalBudget = global;
+    this.share = global.share();
     this.playerBudget = new SendBudget(settings.playerBytesPerSecond());
     this.nativeChunks = nativeChunks;
   }
@@ -68,19 +76,32 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
   public void handlerRemoved(ChannelHandlerContext ctx) {
     this.reset(false, false);
     this.compression.remove(ctx);
+    this.globalBudget.remove(this.share);
     this.context = null;
   }
 
   @Override
   public void write(ChannelHandlerContext ctx, Object message, ChannelPromise promise) {
+    this.compression.invalidate(message);
+    boolean transition = message instanceof ClientboundLevelChunkWithLightPacket chunk
+      && this.extended.contains(ChunkPos.pack(chunk.x(), chunk.z()));
     Object outgoing = message instanceof ClientboundBundlePacket bundle ? this.bundle(bundle) : this.observe(message);
     if (outgoing == null) {
       promise.trySuccess();
-    } else if (outgoing instanceof ClientboundLevelChunkWithLightPacket) {
-      this.compression.writeChunk(ctx, outgoing, promise);
+    } else if (outgoing instanceof ClientboundLevelChunkWithLightPacket chunk) {
+      this.compression.writeChunk(ctx, chunk, promise, transition);
     } else {
       ctx.write(outgoing, promise);
     }
+  }
+
+  @Override
+  public void channelRead(ChannelHandlerContext ctx, Object message) {
+    if (message instanceof ServerboundPlayerActionPacket || message instanceof ServerboundUseItemOnPacket
+      || message instanceof ServerboundUseItemPacket) {
+      this.compression.clear();
+    }
+    ctx.fireChannelRead(message);
   }
 
   private Object bundle(ClientboundBundlePacket bundle) {
@@ -110,12 +131,18 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
     } else if (packet instanceof ClientboundForgetLevelChunkPacket(ChunkPos pos)) {
       long key = pos.pack();
       boolean known = this.nativeChunks.remove(key);
-      if (this.desired(key) && (known || this.extended.contains(key))) {
+      if (this.retained(key) && (known || this.extended.contains(key))) {
+        if (Math.abs(pos.x() - this.view.x()) <= this.view.nativeDistance()
+          && Math.abs(pos.z() - this.view.z()) <= this.view.nativeDistance()) {
+          this.compression.forget(key);
+        }
         this.extended.add(key);
         return null;
       }
       this.extended.remove(key);
+      this.compression.forget(key);
     } else if (packet instanceof ClientboundSetChunkCacheRadiusPacket radius) {
+      this.compression.clear();
       this.advertised = radius.getRadius();
       if (this.view != null && this.view.enabled() && this.advertised < this.view.distance()) {
         this.advertised = this.view.distance();
@@ -234,6 +261,9 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
       }
       int x = ChunkPos.getX(key);
       int z = ChunkPos.getZ(key);
+      if (!this.desired(key)) {
+        continue;
+      }
       int dx = x - this.view.x();
       int dz = z - this.view.z();
       if (dx * dx + dz * dz <= this.view.nativeDistance() * this.view.nativeDistance()) {
@@ -311,7 +341,7 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
         this.metrics.throttled.increment();
         break;
       }
-      if (!this.globalBudget.take(bytes, now)) {
+      if (!this.globalBudget.take(bytes, now, this.share)) {
         this.playerBudget.refund(bytes);
         this.metrics.throttled.increment();
         break;
@@ -336,7 +366,10 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
         }
       });
       var extras = packet.getExtraPackets();
-      extras.forEach(this.context::write);
+      extras.forEach(extra -> {
+        this.compression.invalidate(extra);
+        this.context.write(extra);
+      });
       sent++;
     }
     return sent;
@@ -344,8 +377,14 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
 
   private boolean desired(long key) {
     return this.view != null && this.view.enabled()
-      && Math.abs(ChunkPos.getX(key) - this.view.x()) <= this.view.distance()
-      && Math.abs(ChunkPos.getZ(key) - this.view.z()) <= this.view.distance();
+      && ChunkTrackingView.isWithinDistance(this.view.x(), this.view.z(), this.view.distance(),
+        ChunkPos.getX(key), ChunkPos.getZ(key), false);
+  }
+
+  private boolean retained(long key) {
+    return this.view != null && this.view.enabled()
+      && Math.abs(ChunkPos.getX(key) - this.view.x()) <= this.view.distance() + RETAIN_MARGIN
+      && Math.abs(ChunkPos.getZ(key) - this.view.z()) <= this.view.distance() + RETAIN_MARGIN;
   }
 
   private int area() {
@@ -354,29 +393,46 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
   }
 
   private void queueEdges(ViewSnapshot old, ViewSnapshot next) {
-    int dx = next.x() - old.x();
-    int dz = next.z() - old.z();
     int radius = next.distance();
-    if (this.edges.size() > 4 * radius + 2) {
+    if (this.edges.size() > 8 * radius + 4) {
       this.edges.clear();
       this.cursor = 0;
     }
     for (int index = 0; index <= 2 * radius; index++) {
       int offset = (index & 1) == 0 ? index / 2 : -(index + 1) / 2;
-      if (dx != 0) {
-        this.edges.enqueue(ChunkPos.pack(next.x() + dx * radius, next.z() + offset));
+      int z = next.z() + offset;
+      int extent = rowExtent(radius, offset);
+      int previousExtent = rowExtent(radius, z - old.z());
+      int first = next.x() - extent;
+      int last = next.x() + extent;
+      if (previousExtent < 0) {
+        this.enqueue(first, last, z);
+      } else {
+        this.enqueue(first, Math.min(last, old.x() - previousExtent - 1), z);
+        this.enqueue(Math.max(first, old.x() + previousExtent + 1), last, z);
       }
-      if (dz != 0 && (dx == 0 || offset != dx * radius)) {
-        this.edges.enqueue(ChunkPos.pack(next.x() + offset, next.z() + dz * radius));
-      }
+    }
+  }
+
+  private static int rowExtent(int radius, int z) {
+    if (Math.abs(z) > radius) {
+      return -1;
+    }
+    int inner = Math.max(0, Math.abs(z) - 1);
+    return Math.min(radius, 1 + (int) Math.sqrt(radius * radius - 1 - inner * inner));
+  }
+
+  private void enqueue(int first, int last, int z) {
+    for (int x = first; x <= last; x++) {
+      this.edges.enqueue(ChunkPos.pack(x, z));
     }
   }
 
   private void trim(ViewSnapshot old, ViewSnapshot next) {
     int dx = next.x() - old.x();
     int dz = next.z() - old.z();
-    int radius = old.distance();
-    if (radius == next.distance() && Math.abs(dx) <= 1 && Math.abs(dz) <= 1) {
+    int radius = old.distance() + RETAIN_MARGIN;
+    if (radius == next.distance() + RETAIN_MARGIN && Math.abs(dx) <= 1 && Math.abs(dz) <= 1) {
       for (int offset = -radius; offset <= radius; offset++) {
         if (dx != 0) {
           this.leave(ChunkPos.pack(old.x() - dx * radius, old.z() + offset));
@@ -389,12 +445,12 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
       var iterator = this.extended.iterator();
       while (iterator.hasNext()) {
         long key = iterator.nextLong();
-        if (!this.desired(key)) {
+        if (!this.retained(key)) {
           this.forget(key);
           iterator.remove();
         }
       }
-      this.retries.keySet().removeIf((long key) -> !this.desired(key));
+      this.retries.keySet().removeIf((long key) -> !this.retained(key));
     }
   }
 
@@ -406,11 +462,13 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
   }
 
   private void forget(long key) {
+    this.compression.forget(key);
     this.context.write(new ClientboundForgetLevelChunkPacket(ChunkPos.unpack(key)));
     this.needsFlush = true;
   }
 
   void teleport() {
+    this.compression.clear();
     this.sleepUntil = 0;
     if (this.context != null) {
       this.epoch++;
@@ -432,6 +490,7 @@ final class ChunkStream extends ChannelOutboundHandlerAdapter {
   }
 
   private void reset(boolean unload, boolean keepNative) {
+    this.compression.clear();
     this.epoch++;
     if (unload) {
       this.extended.forEach(this::forget);

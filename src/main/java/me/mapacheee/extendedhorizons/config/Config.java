@@ -30,7 +30,7 @@ public record Config(
     cacheMiB = bounded("cache-mib", cacheMiB, 128, 1, 2048);
     cacheSeconds = bounded("cache-seconds", cacheSeconds, 10, 1, 300);
     playerMiBPerSecond = bounded("player-mib-per-second", playerMiBPerSecond, 8, 1, 256);
-    globalMiBPerSecond = bounded("global-mib-per-second", globalMiBPerSecond, 128, 1, 4096);
+    globalMiBPerSecond = bounded("global-mib-per-second", globalMiBPerSecond, 192, 1, 4096);
     disabledWorlds = disabledWorlds == null ? Set.of() : Set.copyOf(disabledWorlds);
   }
 

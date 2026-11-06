@@ -8,5 +8,5 @@ cache-seconds: 10
 
 # Budgets count uncompressed chunk packet bytes.
 player-mib-per-second: 8
-global-mib-per-second: 128
+global-mib-per-second: 192
 disabled-worlds: []

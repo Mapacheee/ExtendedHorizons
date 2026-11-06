@@ -5,11 +5,24 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.network.CompressionEncoder;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundBundlePacket;
+import net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket;
+import net.minecraft.network.protocol.game.ClientboundExplodePacket;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
+import net.minecraft.world.level.ChunkPos;
 
 final class ChunkCompression extends ChannelOutboundHandlerAdapter {
 
   private final CompressionCache cache;
+  private final ViewMetrics metrics;
+  private final Long2ObjectOpenHashMap<Delivery> delivered = new Long2ObjectOpenHashMap<>();
   private final ChannelOutboundHandlerAdapter capture = new ChannelOutboundHandlerAdapter() {
     @Override
     public void write(ChannelHandlerContext ctx, Object message, ChannelPromise promise) {
@@ -23,17 +36,25 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
   };
   private CompressionCache.Lookup pending;
   private boolean chunk;
+  private boolean deduplicate;
+  private long position;
 
-  ChunkCompression(CompressionCache cache) {
+  ChunkCompression(CompressionCache cache, ViewMetrics metrics) {
     this.cache = cache;
+    this.metrics = metrics;
   }
 
-  void writeChunk(ChannelHandlerContext ctx, Object packet, ChannelPromise promise) {
+  void writeChunk(ChannelHandlerContext ctx, ClientboundLevelChunkWithLightPacket packet, ChannelPromise promise) {
+    this.writeChunk(ctx, packet, promise, false);
+  }
+
+  void writeChunk(ChannelHandlerContext ctx, ClientboundLevelChunkWithLightPacket packet, ChannelPromise promise, boolean deduplicate) {
     var pipeline = ctx.pipeline();
     ChannelHandlerContext compressor = pipeline.context("compress");
     if (compressor == null || !(compressor.handler() instanceof CompressionEncoder)
       || pipeline.context("encoder") == null || !compressor.executor().inEventLoop()
       || !pipeline.context("encoder").executor().inEventLoop()) {
+      this.forget(ChunkPos.pack(packet.x(), packet.z()));
       ctx.write(packet, promise);
       return;
     }
@@ -42,11 +63,17 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
       pipeline.addAfter("compress", "extendedhorizons_compression", this);
     }
     boolean previous = this.chunk;
+    boolean previousDeduplicate = this.deduplicate;
+    long previousPosition = this.position;
     this.chunk = true;
+    this.deduplicate = deduplicate;
+    this.position = ChunkPos.pack(packet.x(), packet.z());
     try {
       ctx.write(packet, promise);
     } finally {
       this.chunk = previous;
+      this.deduplicate = previousDeduplicate;
+      this.position = previousPosition;
     }
   }
 
@@ -59,6 +86,26 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
       return;
     }
     CompressionCache.Lookup lookup = this.cache.lookup(source, encoder.getThreshold());
+    Delivery known = this.delivered.get(this.position);
+    if (this.deduplicate && known != null && known.confirmed && lookup.key().equals(known.key)) {
+      source.release();
+      this.metrics.suppressed.increment();
+      promise.trySuccess();
+      return;
+    }
+    long key = this.position;
+    Delivery delivery = new Delivery(lookup.key());
+    this.delivered.put(key, delivery);
+    promise = promise.unvoid();
+    promise.addListener(result -> {
+      if (this.delivered.get(key) == delivery) {
+        if (result.isSuccess()) {
+          delivery.confirmed = true;
+        } else {
+          this.delivered.remove(key);
+        }
+      }
+    });
     if (lookup.data() != null) {
       ByteBuf copy = Unpooled.wrappedBuffer(lookup.data().clone());
       source.release();
@@ -74,6 +121,31 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
     }
   }
 
+  void invalidate(Object packet) {
+    if (packet instanceof ClientboundBlockUpdatePacket update) {
+      this.forget(ChunkPos.pack(update.getPos().getX() >> 4, update.getPos().getZ() >> 4));
+    } else if (packet instanceof ClientboundBlockEntityDataPacket update) {
+      this.forget(ChunkPos.pack(update.getPos().getX() >> 4, update.getPos().getZ() >> 4));
+    } else if (packet instanceof ClientboundLightUpdatePacket update) {
+      this.forget(ChunkPos.pack(update.x(), update.z()));
+    } else if (packet instanceof ClientboundSectionBlocksUpdatePacket update) {
+      update.runUpdates((pos, state) -> this.forget(ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4)));
+    } else if (packet instanceof ClientboundChunksBiomesPacket || packet instanceof ClientboundExplodePacket
+      || packet instanceof ClientboundBlockEventPacket) {
+      this.clear();
+    } else if (packet instanceof ClientboundBundlePacket bundle) {
+      bundle.subPackets().forEach(this::invalidate);
+    }
+  }
+
+  void forget(long key) {
+    this.delivered.remove(key);
+  }
+
+  void clear() {
+    this.delivered.clear();
+  }
+
   void remove(ChannelHandlerContext ctx) {
     var pipeline = ctx.pipeline();
     if (pipeline.context(this) != null) {
@@ -81,6 +153,15 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
     }
     if (pipeline.context(this.capture) != null) {
       pipeline.remove(this.capture);
+    }
+  }
+
+  private static final class Delivery {
+    private final CompressionCache.Key key;
+    private boolean confirmed;
+
+    private Delivery(CompressionCache.Key key) {
+      this.key = key;
     }
   }
 }
