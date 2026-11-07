@@ -64,7 +64,7 @@ final class ChunkCodec {
     }
     SerializableChunkData data = SerializableChunkData.parse(level, level.palettedContainerFactory(), tag);
     boolean vanillaLight = !tag.contains("starlight.light_version") && tag.getBooleanOr("isLightOn", false);
-    if (data == null || data.chunkStatus() != ChunkStatus.FULL || (!data.lightCorrect() && !vanillaLight)) {
+    if (data.chunkStatus() != ChunkStatus.FULL || !data.lightCorrect() && !vanillaLight) {
       return null;
     }
     int count = level.getSectionsCount();
