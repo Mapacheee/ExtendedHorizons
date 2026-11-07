@@ -72,8 +72,7 @@ public final class ViewService {
   }
 
   void configure(PlayerConfigurationConnection connection) {
-    Config config = this.settings;
-    if (this.source == null || config == null || !config.farPlayers().enabled()) {
+    if (this.source == null) {
       return;
     }
     try {
@@ -160,6 +159,23 @@ public final class ViewService {
 
   public int sessionCount() {
     return this.views.size();
+  }
+
+  public String farPlayerStatus() {
+    Config config = this.settings;
+    boolean enabled = config != null && config.farPlayers().enabled();
+    return (enabled ? "enabled" : "disabled") + ", " + this.farConnections.size() + " observed connections";
+  }
+
+  public void inspectFarPlayer(Player observer, String targetName) {
+    var viewer = this.views.get(observer.getUniqueId());
+    var player = this.plugin.getServer().getPlayerExact(targetName);
+    var target = player == null ? null : this.views.get(player.getUniqueId());
+    if (viewer == null || target == null || viewer == target) {
+      observer.sendMessage("Far players: select another online player with an active EH session.");
+      return;
+    }
+    viewer.inspectFarPlayer(target);
   }
 
   public Map<String, Long> deliveryStats() {

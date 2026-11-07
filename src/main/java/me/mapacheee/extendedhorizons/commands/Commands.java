@@ -4,6 +4,8 @@ import com.google.inject.Inject;
 import com.thewinterframework.command.CommandComponent;
 import com.thewinterframework.service.ReloadServiceManager;
 import me.mapacheee.extendedhorizons.view.ViewService;
+import org.bukkit.entity.Player;
+import org.incendo.cloud.annotations.Argument;
 import org.incendo.cloud.annotations.Command;
 import org.incendo.cloud.annotations.Permission;
 import org.incendo.cloud.paper.util.sender.Source;
@@ -33,6 +35,18 @@ public final class Commands {
     sender.sendMessage("ExtendedHorizons: " + this.views.sessionCount() + " sessions");
     sender.sendMessage("Delivery: " + this.views.deliveryStats());
     sender.sendMessage("Chunk source: " + this.views.sourceStats());
+    sender.sendMessage("Far players: " + this.views.farPlayerStatus());
+  }
+
+  @Command("eh farplayers <target>")
+  @Permission("extendedhorizons.admin")
+  public void farPlayers(Source source, @Argument("target") String target) {
+    var sender = source.source();
+    if (sender instanceof Player player) {
+      this.views.inspectFarPlayer(player, target);
+    } else {
+      sender.sendMessage("Run this command as the player observing the distant player.");
+    }
   }
 
   @Command("eh reload")

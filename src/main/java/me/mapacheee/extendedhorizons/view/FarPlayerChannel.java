@@ -43,6 +43,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 final class FarPlayerChannel extends ChannelDuplexHandler {
 
@@ -51,7 +53,8 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
 
   private final Set<UUID> profiles = new HashSet<>();
   private final Set<UUID> hidden = new HashSet<>();
-  private final IntOpenHashSet nativePlayers = new IntOpenHashSet();
+  private final Set<Integer> nativePlayers = ConcurrentHashMap.newKeySet();
+  private final AtomicBoolean nativePlayerRemoved = new AtomicBoolean();
   private final IntOpenHashSet replicaIds = new IntOpenHashSet();
   private final Map<UUID, FarPlayerState.Snapshot> replicas = new HashMap<>();
   private ChannelHandlerContext context;
@@ -78,11 +81,12 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
   @Override
   public void write(ChannelHandlerContext ctx, Object message, ChannelPromise promise) {
     if (message instanceof ClientboundBundlePacket bundle) {
-      bundle.subPackets().forEach(this::observe);
+      ctx.write(this.observeBundle(bundle), promise);
     } else {
-      this.observe(message);
+      var removal = this.observe(message);
+      ctx.write(removal == null ? message : new ClientboundBundlePacket(
+        List.of(removal, (ClientboundAddEntityPacket) message)), promise);
     }
-    ctx.write(message, promise);
   }
 
   @Override
@@ -94,7 +98,32 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
     ctx.fireChannelRead(message);
   }
 
-  private void observe(Object packet) {
+  private ClientboundBundlePacket observeBundle(ClientboundBundlePacket bundle) {
+    List<Packet<? super ClientGamePacketListener>> packets = null;
+    int observed = 0;
+    for (var packet : bundle.subPackets()) {
+      var removal = this.observe(packet);
+      if (removal != null) {
+        if (packets == null) {
+          packets = new ArrayList<>();
+          for (var previous : bundle.subPackets()) {
+            if (packets.size() == observed) {
+              break;
+            }
+            packets.add(previous);
+          }
+        }
+        packets.add(removal);
+      }
+      if (packets != null) {
+        packets.add(packet);
+      }
+      observed++;
+    }
+    return packets == null ? bundle : new ClientboundBundlePacket(packets);
+  }
+
+  private ClientboundRemoveEntitiesPacket observe(Object packet) {
     if (packet instanceof ClientboundPlayerInfoUpdatePacket info) {
       if (info.actions().contains(ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER)) {
         for (var entry : info.entries()) {
@@ -107,17 +136,34 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
         this.remove(uuid);
       }
     } else if (packet instanceof ClientboundAddEntityPacket spawn && spawn.getType() == EntityTypes.PLAYER) {
-      this.remove(spawn.getUUID());
       this.nativePlayers.add(spawn.getId());
+      return this.removeReplica(spawn.getUUID());
     } else if (packet instanceof ClientboundRemoveEntitiesPacket remove) {
-      this.nativePlayers.removeAll(remove.entityIds());
+      boolean removedPlayer = false;
+      var ids = remove.entityIds().iterator();
+      while (ids.hasNext()) {
+        removedPlayer |= this.nativePlayers.remove(ids.nextInt());
+      }
+      if (removedPlayer) {
+        this.nativePlayerRemoved.set(true);
+      }
     } else if (packet instanceof ClientboundRespawnPacket || packet instanceof ClientboundStartConfigurationPacket) {
       this.clear();
       this.nativePlayers.clear();
+      this.nativePlayerRemoved.set(false);
       if (packet instanceof ClientboundStartConfigurationPacket) {
         this.profiles.clear();
       }
     }
+    return null;
+  }
+
+  boolean tracksNativePlayer(int id) {
+    return this.nativePlayers.contains(id);
+  }
+
+  boolean consumeNativePlayerRemoval() {
+    return this.nativePlayerRemoved.get() && this.nativePlayerRemoved.getAndSet(false);
   }
 
   void hidden(UUID target, boolean value) {
@@ -131,13 +177,20 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
     }
   }
 
+  String details(FarPlayerState.Snapshot target) {
+    var replica = this.replicas.get(target.uuid());
+    return ", profile=" + this.profiles.contains(target.uuid()) + ", hidden=" + this.hidden.contains(target.uuid())
+      + ", vanilla-entity=" + this.nativePlayers.contains(target.nativeId())
+      + ", replica=" + (replica == null ? "absent" : replica.id());
+  }
+
   boolean sync(ChunkStream chunks, List<FarPlayerState.Snapshot> candidates, Config.FarPlayers settings) {
     if (this.context == null || !this.context.channel().isActive()) {
       return false;
     }
     var visible = new HashMap<UUID, FarPlayerState.Snapshot>();
     for (var target : candidates) {
-      if (target.current() && chunks.hasExtended(target.world(), target.chunk())
+      if (target.current() && chunks.hasPlayerTerrain(target.world(), target.chunk())
         && this.profiles.contains(target.uuid()) && !this.hidden.contains(target.uuid())
         && !this.nativePlayers.contains(target.nativeId())) {
         visible.put(target.uuid(), target);
@@ -199,7 +252,8 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
         buffer.release();
       }
     }
-    if (previous.flags() != target.flags() || previous.hand() != target.hand() || previous.pose() != target.pose()) {
+    if (previous.flags() != target.flags() || previous.hand() != target.hand() || previous.pose() != target.pose()
+      || previous.skinParts() != target.skinParts()) {
       packets.add(new ClientboundSetEntityDataPacket(target.id(), target.appearance()));
     }
     if (previous.equipment() != target.equipment()) {
@@ -246,13 +300,21 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
   }
 
   private boolean remove(UUID uuid) {
-    var target = this.replicas.remove(uuid);
-    if (target == null) {
+    var removal = this.removeReplica(uuid);
+    if (removal == null) {
       return false;
     }
-    this.replicaIds.remove(target.id());
-    this.context.write(new ClientboundRemoveEntitiesPacket(target.id()));
+    this.context.write(removal);
     return true;
+  }
+
+  private ClientboundRemoveEntitiesPacket removeReplica(UUID uuid) {
+    var target = this.replicas.remove(uuid);
+    if (target == null) {
+      return null;
+    }
+    this.replicaIds.remove(target.id());
+    return new ClientboundRemoveEntitiesPacket(target.id());
   }
 
   private static final class ConnectionField {

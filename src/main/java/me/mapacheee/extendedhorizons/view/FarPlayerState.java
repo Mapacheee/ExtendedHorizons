@@ -5,6 +5,7 @@ import me.mapacheee.extendedhorizons.config.Config;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Avatar;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -76,6 +77,7 @@ final class FarPlayerState {
     var data = entity.getEntityData();
     byte flags = data.get(Metadata.FLAGS);
     byte hand = data.get(Metadata.HAND);
+    byte skinParts = data.get(Avatar.DATA_PLAYER_MODE_CUSTOMISATION);
     Pose pose = data.get(Metadata.POSE);
     var equipment = previous == null ? List.<Pair<EquipmentSlot, ItemStack>>of() : previous.equipment();
     if (this.settings.equipment()) {
@@ -104,12 +106,13 @@ final class FarPlayerState {
       && previous.x() == location.getX() && previous.y() == location.getY() && previous.z() == location.getZ()
       && previous.yaw() == entity.getYRot() && previous.pitch() == entity.getXRot() && previous.headYaw() == entity.getYHeadRot()
       && previous.onGround() == entity.onGround() && previous.flags() == flags && previous.hand() == hand
-      && previous.pose() == pose && previous.equipment() == equipment && previous.swing() == this.swing) {
+      && previous.skinParts() == skinParts && previous.pose() == pose
+      && previous.equipment() == equipment && previous.swing() == this.swing) {
       return;
     }
     this.snapshot = new Snapshot(this, this.generation, this.uuid, this.replicaId, entity.getId(), world,
       chunk, location.getX(), location.getY(), location.getZ(), entity.getYRot(), entity.getXRot(),
-      entity.getYHeadRot(), entity.onGround(), flags, hand, pose, equipment, this.swing);
+      entity.getYHeadRot(), entity.onGround(), flags, hand, skinParts, pose, equipment, this.swing);
     var nextCell = this.index.cell(world, x, z);
     if (!nextCell.equals(this.cell)) {
       this.index.move(this, this.cell, nextCell);
@@ -139,7 +142,7 @@ final class FarPlayerState {
 
   record Snapshot(FarPlayerState owner, long generation, UUID uuid, int id, int nativeId, World world,
     long chunk, double x, double y, double z, float yaw, float pitch, float headYaw, boolean onGround,
-    byte flags, byte hand, Pose pose, List<Pair<EquipmentSlot, ItemStack>> equipment, Swing swing) {
+    byte flags, byte hand, byte skinParts, Pose pose, List<Pair<EquipmentSlot, ItemStack>> equipment, Swing swing) {
 
     boolean current() {
       return this.generation == this.owner.generation;
@@ -148,6 +151,7 @@ final class FarPlayerState {
     List<SynchedEntityData.DataValue<?>> appearance() {
       return List.of(SynchedEntityData.DataValue.create(Metadata.FLAGS, this.flags),
         SynchedEntityData.DataValue.create(Metadata.HAND, this.hand),
+        SynchedEntityData.DataValue.create(Avatar.DATA_PLAYER_MODE_CUSTOMISATION, this.skinParts),
         SynchedEntityData.DataValue.create(Metadata.POSE, this.pose));
     }
   }

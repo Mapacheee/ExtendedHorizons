@@ -48,7 +48,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   private final LongArrayFIFOQueue edges = new LongArrayFIFOQueue();
   private final ArrayDeque<ReadyChunk> ready = new ArrayDeque<>();
   private ChannelHandlerContext context;
-  private FarPlayerChannel farPlayers;
+  private volatile FarPlayerChannel farPlayers;
   private ResourceKey<?> expectedDimension;
   private ViewSnapshot view;
   private long epoch;
@@ -134,9 +134,6 @@ final class ChunkStream extends ChannelDuplexHandler {
       long key = ChunkPos.pack(chunk.x(), chunk.z());
       this.nativeChunks.add(key);
       this.extended.remove(key);
-      if (this.farPlayers != null) {
-        this.farPlayers.forget(key);
-      }
     } else if (packet instanceof ClientboundForgetLevelChunkPacket(ChunkPos pos)) {
       long key = pos.pack();
       boolean known = this.nativeChunks.remove(key);
@@ -396,8 +393,37 @@ final class ChunkStream extends ChannelDuplexHandler {
         ChunkPos.getX(key), ChunkPos.getZ(key), false);
   }
 
-  boolean hasExtended(org.bukkit.World world, long key) {
-    return this.view != null && this.view.world() == world && this.extended.contains(key) && this.desired(key);
+  boolean hasPlayerTerrain(org.bukkit.World world, long key) {
+    return this.view != null && this.view.world() == world && this.desired(key)
+      && (this.extended.contains(key) || this.nativeChunks.contains(key));
+  }
+
+  boolean tracksNativePlayer(int id) {
+    var players = this.farPlayers;
+    return players != null && players.tracksNativePlayer(id);
+  }
+
+  boolean consumeNativePlayerRemoval() {
+    var players = this.farPlayers;
+    return players != null && players.consumeNativePlayerRemoval();
+  }
+
+  String farPlayerDetails(FarPlayerState.Snapshot target) {
+    ViewSnapshot current = this.view;
+    if (this.context == null || current == null) {
+      return "view not ready";
+    }
+    boolean sameWorld = current.world() == target.world();
+    int x = ChunkPos.getX(target.chunk());
+    int z = ChunkPos.getZ(target.chunk());
+    return "same-world=" + sameWorld + ", offset=[" + (x - current.x()) + ", " + (z - current.z()) + "]"
+      + ", radius=" + current.nativeDistance() + "→" + current.distance()
+      + ", in-range=" + (sameWorld && this.desired(target.chunk()))
+      + ", extended-sent=" + (sameWorld && this.desired(target.chunk()) && this.extended.contains(target.chunk()))
+      + ", terrain-ready=" + this.hasPlayerTerrain(target.world(), target.chunk())
+      + ", snapshot-current=" + target.current()
+      + ", writable=" + this.context.channel().isWritable()
+      + (this.farPlayers == null ? ", profile-observer=missing" : this.farPlayers.details(target));
   }
 
   void hideFar(UUID target, boolean hidden) {

@@ -41,7 +41,7 @@ final class FarPlayerIndex {
     }
   }
 
-  List<FarPlayerState.Snapshot> candidates(Player viewer, ViewSnapshot view, int limit) {
+  List<FarPlayerState.Snapshot> candidates(Player viewer, ViewSnapshot view, ChunkStream stream, int limit) {
     if (!view.enabled() || this.cells.isEmpty()) {
       return List.of();
     }
@@ -63,7 +63,7 @@ final class FarPlayerIndex {
           int targetX = ChunkPos.getX(target.chunk());
           int targetZ = ChunkPos.getZ(target.chunk());
           if (!ChunkTrackingView.isWithinDistance(view.x(), view.z(), radius, targetX, targetZ, false)
-            || viewer.isChunkSent(target.chunk()) || !viewer.canSee(state.player())) {
+            || stream.tracksNativePlayer(target.nativeId()) || !viewer.canSee(state.player())) {
             continue;
           }
           long dx = targetX - (long) view.x();

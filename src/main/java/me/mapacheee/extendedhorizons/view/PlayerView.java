@@ -88,12 +88,14 @@ public final class PlayerView {
     ViewSnapshot next = new ViewSnapshot(world, this.location.getBlockX() >> 4, this.location.getBlockZ() >> 4,
       nativeDistance, distance, direction, enabled);
     boolean sampleFar = this.farState != null && ++this.farTicks >= this.settings.farPlayers().updateTicks();
+    boolean nativeRemoved = this.farState != null && this.stream.consumeNativePlayerRemoval();
     if (sampleFar) {
       this.farTicks = 0;
       this.farState.capture(this.location, worldEnabled);
-      this.farCandidates.set(this.farIndex.candidates(this.player, next, this.settings.farPlayers().maxPerViewer() * 3));
     }
-    if (!sampleFar && next.equals(this.lastPublished) && this.stream.sleeping()) {
+    if (sampleFar || nativeRemoved) {
+      this.farCandidates.set(this.farIndex.candidates(this.player, next, this.stream, this.settings.farPlayers().maxPerViewer() * 3));
+    } else if (next.equals(this.lastPublished) && this.stream.sleeping()) {
       return;
     }
     this.lastPublished = next;
@@ -127,6 +129,29 @@ public final class PlayerView {
     if (this.farState != null) {
       this.channel.eventLoop().execute(() -> this.stream.hideFar(target, hidden));
     }
+  }
+
+  void inspectFarPlayer(PlayerView target) {
+    this.player.getScheduler().run(this.plugin, task -> {
+      if (this.farState == null || target.farState == null) {
+        this.player.sendMessage("Far players: disabled for this session.");
+        return;
+      }
+      var snapshot = target.farState.snapshot();
+      if (snapshot == null) {
+        this.player.sendMessage("Far players: target has no eligible snapshot. Check the target's world, invisibility and game mode.");
+        return;
+      }
+      boolean visible = this.player.canSee(target.player);
+      boolean vanillaSent = this.player.getWorld() == snapshot.world() && this.player.isChunkSent(snapshot.chunk());
+      this.channel.eventLoop().execute(() -> {
+        var details = this.stream.farPlayerDetails(snapshot);
+        this.player.getScheduler().run(this.plugin, result -> {
+          this.player.sendMessage("Far players: target=" + snapshot.uuid() + ", can-see=" + visible + ", vanilla-sent=" + vanillaSent);
+          this.player.sendMessage("Far players: " + details);
+        }, null);
+      });
+    }, null);
   }
 
   public void close() {
