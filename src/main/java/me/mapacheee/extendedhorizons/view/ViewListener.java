@@ -1,7 +1,9 @@
 package me.mapacheee.extendedhorizons.view;
 
 import com.google.inject.Inject;
-import com.thewinterframework.paper.listener.ListenerComponent;
+import com.thewinterframework.component.annotation.Component;
+import com.thewinterframework.component.annotation.HandledBy;
+import com.thewinterframework.paper.listener.handler.ListenerComponentHandler;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -12,7 +14,8 @@ import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.event.world.WorldUnloadEvent;
 
-@ListenerComponent
+@Component
+@HandledBy(ListenerComponentHandler.class)
 public final class ViewListener implements Listener {
 
   private final ViewService views;

@@ -2,7 +2,8 @@ package me.mapacheee.extendedhorizons.view;
 
 import com.google.inject.Inject;
 import com.thewinterframework.configurate.Container;
-import com.thewinterframework.service.annotation.Service;
+import com.thewinterframework.component.annotation.Component;
+import com.thewinterframework.component.annotation.SyncLoading;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
 import com.thewinterframework.service.annotation.lifecycle.OnReload;
@@ -17,7 +18,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Service
+@Component
+@SyncLoading
 public final class ViewService {
 
   private final Plugin plugin;

@@ -23,7 +23,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly(libs.mapacheeelib) { isTransitive = false }
+    compileOnly(libs.mapacheeelib)
     annotationProcessor(libs.winter.paper)
     annotationProcessor(libs.winter.command)
     annotationProcessor(libs.winter.configuration)
@@ -41,6 +41,7 @@ tasks {
         archiveClassifier.set("plain")
     }
     processResources {
+        exclude("winter.properties")
         inputs.property("version", project.version)
         inputs.property("description", project.description)
         filteringCharset = "UTF-8"

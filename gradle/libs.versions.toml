@@ -1,5 +1,5 @@
 [versions]
-mapacheeelib = "1.0.2"
+mapacheeelib = "1.1.0"
 paper-dev-bundle = "26.3.build.175-stable"
 checkstyle = "10.12.5"
 shadow = "9.2.2"
@@ -7,9 +7,9 @@ paperweight = "2.0.0-beta.21"
 
 [libraries]
 mapacheeelib = { module = "me.mapacheee:MapacheeeLib", version.ref = "mapacheeelib" }
-winter-paper = { module = "com.thewinterframework:paper", version = "2.1.5" }
+winter-paper = { module = "com.thewinterframework:paper", version = "3.0.0" }
 winter-command = { module = "com.thewinterframework:command", version = "2.0.0" }
-winter-configuration = { module = "com.thewinterframework:configuration", version = "2.0.2" }
+winter-configuration = { module = "com.thewinterframework:configuration", version = "2.0.3" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
