@@ -24,6 +24,7 @@ repositories {
 
 dependencies {
     compileOnly(libs.mapacheeelib)
+    compileOnly(libs.winter.configuration)
     compileOnly(libs.fawe.core) { isTransitive = false }
     compileOnly(libs.fawe.bukkit) { isTransitive = false }
     annotationProcessor(libs.winter.paper)

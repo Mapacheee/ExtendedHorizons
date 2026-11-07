@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.view;
 
 import com.google.inject.Inject;
 import com.thewinterframework.configurate.Container;
+import com.thewinterframework.configurate.module.ConfigurationReloads;
 import com.thewinterframework.component.annotation.Component;
 import com.thewinterframework.component.annotation.SyncLoading;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
@@ -97,11 +98,8 @@ public final class ViewService {
     }
   }
 
-  @OnReload
+  @OnReload(after = ConfigurationReloads.class)
   public synchronized void reload() {
-    if (!this.config.reload()) {
-      throw new IllegalStateException("Cannot reload config.yml");
-    }
     if (!this.config.get().equals(this.settings)) {
       this.stopViews();
       this.start();

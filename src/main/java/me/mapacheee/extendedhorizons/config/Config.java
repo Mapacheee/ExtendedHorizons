@@ -1,13 +1,14 @@
 package me.mapacheee.extendedhorizons.config;
 
 import com.thewinterframework.configurate.config.Configurate;
+import com.thewinterframework.configurate.config.OptionalNode;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Setting;
 
 import java.util.Set;
 
 @ConfigSerializable
-@Configurate("config")
+@Configurate(value = "config", fillMissing = true)
 public record Config(
   @Setting("view-distance") Integer distance,
   @Setting("send-per-tick") Integer sendsPerTick,
@@ -19,7 +20,7 @@ public record Config(
   @Setting("player-mib-per-second") Integer playerMiBPerSecond,
   @Setting("global-mib-per-second") Integer globalMiBPerSecond,
   @Setting("disabled-worlds") Set<String> disabledWorlds,
-  @Setting("far-players") FarPlayers farPlayers,
+  @Setting("far-players") @OptionalNode FarPlayers farPlayers,
   @Setting("chunk-updates") ChunkUpdates chunkUpdates
 ) {
 
