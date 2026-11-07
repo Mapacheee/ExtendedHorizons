@@ -47,7 +47,7 @@ tasks {
         inputs.property("version", project.version)
         inputs.property("description", project.description)
         filteringCharset = "UTF-8"
-        filesMatching("paper-plugin.yml") {
+        filesMatching(listOf("paper-plugin.yml", "plugin.yml")) {
             expand(mapOf("version" to project.version, "description" to project.description))
         }
     }
