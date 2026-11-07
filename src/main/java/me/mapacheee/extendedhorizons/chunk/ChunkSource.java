@@ -139,6 +139,18 @@ public final class ChunkSource implements AutoCloseable {
     return job.result.copy();
   }
 
+  public synchronized void invalidateEdited(World world, int x, int z) {
+    if (this.closed || this.revisions == null) {
+      return;
+    }
+    Key key = new Key(world.getUID(), x, z);
+    Job previous = this.pending.get(key);
+    if (!waitingForEdit(previous)) {
+      this.discardEdited(key, previous);
+      this.pending.remove(key);
+    }
+  }
+
   private static boolean waitingForEdit(Job job) {
     return job != null && job.refreshWorld != null && job.attempts == 0;
   }

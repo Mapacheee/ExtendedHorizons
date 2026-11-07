@@ -17,6 +17,7 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.ChunkPos;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -33,6 +34,7 @@ public final class ViewService {
   private final Container<Config> config;
   private final Map<UUID, PlayerView> views = new ConcurrentHashMap<>();
   private final ViewMetrics metrics = new ViewMetrics();
+  private final BulkChunkUpdates bulkUpdates;
   private final FarPlayerIndex farPlayers = new FarPlayerIndex();
   private final Set<Channel> farConnections = ConcurrentHashMap.newKeySet();
   private final AtomicBoolean farConnectionWarning = new AtomicBoolean();
@@ -45,6 +47,7 @@ public final class ViewService {
   public ViewService(Plugin plugin, Container<Config> config) {
     this.plugin = plugin;
     this.config = config;
+    this.bulkUpdates = new BulkChunkUpdates(plugin, this.views.values());
   }
 
   @OnEnable
@@ -195,6 +198,28 @@ public final class ViewService {
     }
   }
 
+  public boolean worldEditEnabled(World world) {
+    Config config = this.settings;
+    ChunkSource current = this.source;
+    return current != null && config != null && config.chunkUpdates().enabled() && config.chunkUpdates().worldedit()
+      && !config.disabledWorlds().contains(world.getName()) && !current.protectedWorld(world);
+  }
+
+  public void editedChunk(World world, long key) {
+    ChunkSource current = this.source;
+    if (current == null || !this.worldEditEnabled(world)) {
+      return;
+    }
+    int x = ChunkPos.getX(key);
+    int z = ChunkPos.getZ(key);
+    current.invalidateEdited(world, x, z);
+    this.bulkUpdates.offer(world, key, () -> {
+      if (current == this.source) {
+        this.refreshChunk(current, world, x, z);
+      }
+    });
+  }
+
   public int sessionCount() {
     return this.views.size();
   }
@@ -246,6 +271,7 @@ public final class ViewService {
   private void stopViews() {
     ChunkSource current = this.source;
     this.source = null;
+    this.bulkUpdates.clear();
     this.views.values().forEach(PlayerView::close);
     this.views.clear();
     if (current != null) {

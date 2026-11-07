@@ -11,6 +11,14 @@ dependencies:
       load: BEFORE
       required: true
       join-classpath: true
+    WorldEdit:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    FastAsyncWorldEdit:
+      load: BEFORE
+      required: false
+      join-classpath: true
 permissions:
   extendedhorizons.admin:
     default: op

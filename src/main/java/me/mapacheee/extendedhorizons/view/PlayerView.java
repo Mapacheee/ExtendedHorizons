@@ -128,6 +128,27 @@ public final class PlayerView {
     }
   }
 
+  void checkEdits(List<BulkChunkUpdates.Edit> edits) {
+    ViewSnapshot snapshot = this.lastPublished;
+    if (this.closed.get() || snapshot == null || !snapshot.enabled()) {
+      return;
+    }
+    for (var edit : edits) {
+      if (snapshot.world() == edit.world() && ChunkStream.retained(snapshot, ChunkPos.getX(edit.key()), ChunkPos.getZ(edit.key()))) {
+        this.channel.eventLoop().execute(() -> {
+          if (!this.closed.get()) {
+            for (var candidate : edits) {
+              if (this.stream.watchesUpdate(candidate.world(), candidate.key())) {
+                candidate.request();
+              }
+            }
+          }
+        });
+        return;
+      }
+    }
+  }
+
   void swing(InteractionHand hand) {
     if (this.farState != null) {
       this.farState.swing(hand);

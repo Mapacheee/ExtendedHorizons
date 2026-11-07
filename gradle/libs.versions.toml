@@ -1,5 +1,6 @@
 [versions]
 mapacheeelib = "1.1.0"
+fawe = "2.16.2"
 paper-dev-bundle = "26.3.build.175-stable"
 checkstyle = "10.12.5"
 shadow = "9.2.2"
@@ -7,6 +8,8 @@ paperweight = "2.0.0-beta.21"
 
 [libraries]
 mapacheeelib = { module = "me.mapacheee:MapacheeeLib", version.ref = "mapacheeelib" }
+fawe-core = { module = "com.fastasyncworldedit:FastAsyncWorldEdit-Core", version.ref = "fawe" }
+fawe-bukkit = { module = "com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit", version.ref = "fawe" }
 winter-paper = { module = "com.thewinterframework:paper", version = "3.0.0" }
 winter-command = { module = "com.thewinterframework:command", version = "2.0.0" }
 winter-configuration = { module = "com.thewinterframework:configuration", version = "2.0.3" }

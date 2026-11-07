@@ -20,3 +20,4 @@ far-players:
 
 chunk-updates:
   enabled: false
+  worldedit: false
