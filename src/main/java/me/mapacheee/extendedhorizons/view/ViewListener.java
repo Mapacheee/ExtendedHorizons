@@ -11,6 +11,12 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockMultiPlaceEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.SignChangeEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerHideEntityEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -70,6 +76,39 @@ public final class ViewListener implements Listener {
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onTeleport(PlayerTeleportEvent event) {
     this.views.teleport(event.getPlayer().getUniqueId());
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+  public void onBlockPlace(BlockPlaceEvent event) {
+    if (event.canBuild()) {
+      if (event instanceof BlockMultiPlaceEvent multi) {
+        for (var block : multi.getReplacedBlockStates()) {
+          this.views.blockChanged(block.getWorld(), block.getX(), block.getZ());
+        }
+      } else {
+        this.views.chunkChanged(event.getBlockPlaced());
+      }
+    }
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+  public void onBlockBreak(BlockBreakEvent event) {
+    this.views.chunkChanged(event.getBlock());
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+  public void onBucketEmpty(PlayerBucketEmptyEvent event) {
+    this.views.chunkChanged(event.getBlock());
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+  public void onBucketFill(PlayerBucketFillEvent event) {
+    this.views.chunkChanged(event.getBlock());
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+  public void onSignChange(SignChangeEvent event) {
+    this.views.chunkChanged(event.getBlock());
   }
 
   @EventHandler(priority = EventPriority.MONITOR)

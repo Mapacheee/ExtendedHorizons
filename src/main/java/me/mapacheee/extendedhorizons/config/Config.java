@@ -19,7 +19,8 @@ public record Config(
   @Setting("player-mib-per-second") Integer playerMiBPerSecond,
   @Setting("global-mib-per-second") Integer globalMiBPerSecond,
   @Setting("disabled-worlds") Set<String> disabledWorlds,
-  @Setting("far-players") FarPlayers farPlayers
+  @Setting("far-players") FarPlayers farPlayers,
+  @Setting("chunk-updates") ChunkUpdates chunkUpdates
 ) {
 
   public Config {
@@ -34,6 +35,15 @@ public record Config(
     globalMiBPerSecond = bounded("global-mib-per-second", globalMiBPerSecond, 192, 1, 4096);
     disabledWorlds = disabledWorlds == null ? Set.of() : Set.copyOf(disabledWorlds);
     farPlayers = farPlayers == null ? new FarPlayers(null, null, null, null, null) : farPlayers;
+    chunkUpdates = chunkUpdates == null ? new ChunkUpdates(null) : chunkUpdates;
+  }
+
+  @ConfigSerializable
+  public record ChunkUpdates(Boolean enabled) {
+
+    public ChunkUpdates {
+      enabled = Boolean.TRUE.equals(enabled);
+    }
   }
 
   @ConfigSerializable

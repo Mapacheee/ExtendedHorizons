@@ -12,10 +12,14 @@ public final class ViewMetrics {
   public final LongAdder failures = new LongAdder();
   public final LongAdder throttled = new LongAdder();
   public final LongAdder suppressed = new LongAdder();
+  public final LongAdder refreshes = new LongAdder();
+  public final LongAdder updated = new LongAdder();
+  public final LongAdder updateBytes = new LongAdder();
 
   public Map<String, Long> snapshot() {
     return Map.of("sent", this.sent.sum(), "bytes", this.bytes.sum(), "obsolete", this.obsolete.sum(),
       "unavailable", this.unavailable.sum(), "failures", this.failures.sum(), "throttled", this.throttled.sum(),
-      "suppressedChunks", this.suppressed.sum());
+      "suppressedChunks", this.suppressed.sum(), "refreshes", this.refreshes.sum(), "updated", this.updated.sum(),
+      "updateBytes", this.updateBytes.sum());
   }
 }

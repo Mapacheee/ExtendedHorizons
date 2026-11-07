@@ -3,8 +3,10 @@ package me.mapacheee.extendedhorizons.view;
 import io.netty.channel.Channel;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.mapacheee.extendedhorizons.config.Config;
+import me.mapacheee.extendedhorizons.chunk.ChunkData;
 import me.mapacheee.extendedhorizons.chunk.ChunkSource;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.ChunkPos;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -32,7 +34,7 @@ public final class PlayerView {
   private final Location location = new Location(null, 0, 0, 0);
   private volatile ScheduledTask task;
   private World lastWorld;
-  private ViewSnapshot lastPublished;
+  private volatile ViewSnapshot lastPublished;
   private double lastX;
   private double lastZ;
   private int farTicks;
@@ -117,6 +119,13 @@ public final class PlayerView {
     }
     this.latest.set(null);
     this.channel.eventLoop().execute(this.stream::teleport);
+  }
+
+  void updateChunk(World world, int x, int z, ChunkData data) {
+    ViewSnapshot snapshot = this.lastPublished;
+    if (!this.closed.get() && snapshot != null && snapshot.world() == world && ChunkStream.retained(snapshot, x, z)) {
+      this.channel.eventLoop().execute(() -> this.stream.updateChunk(world, ChunkPos.pack(x, z), data));
+    }
   }
 
   void swing(InteractionHand hand) {

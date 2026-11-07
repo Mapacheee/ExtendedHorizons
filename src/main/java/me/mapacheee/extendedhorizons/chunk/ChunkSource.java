@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.chunk;
 import ca.spottedleaf.concurrentutil.executor.Cancellable;
 import ca.spottedleaf.concurrentutil.util.Priority;
 import ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO;
+import com.google.common.collect.MapMaker;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.LevelChunk;
 import org.bukkit.Bukkit;
@@ -10,6 +11,7 @@ import org.bukkit.World;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.plugin.Plugin;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,7 +22,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -35,6 +36,7 @@ public final class ChunkSource implements AutoCloseable {
   private final long ttlNanos;
   private final Map<Key, Entry> cache = new LinkedHashMap<>(256, 0.75f, true);
   private final Map<Key, Job> pending = new HashMap<>();
+  private final Map<Key, ChunkData.Revision> revisions;
   private final LongAdder hits = new LongAdder();
   private final LongAdder shared = new LongAdder();
   private final LongAdder reads = new LongAdder();
@@ -47,11 +49,12 @@ public final class ChunkSource implements AutoCloseable {
   private long cacheBytes;
   private volatile boolean closed;
 
-  public ChunkSource(Plugin plugin, int workerCount, long maxCacheBytes, long ttlMillis, int maxInFlight) {
+  public ChunkSource(Plugin plugin, int workerCount, long maxCacheBytes, long ttlMillis, int maxInFlight, boolean updates) {
     this.plugin = plugin;
     this.maxCacheBytes = maxCacheBytes;
     this.ttlNanos = TimeUnit.MILLISECONDS.toNanos(ttlMillis);
     this.permits = new Semaphore(maxInFlight);
+    this.revisions = updates ? new MapMaker().weakValues().makeMap() : null;
     AtomicInteger sequence = new AtomicInteger();
     this.workers = new ThreadPoolExecutor(workerCount, workerCount, 0, TimeUnit.MILLISECONDS,
       new ArrayBlockingQueue<>(maxInFlight), task -> {
@@ -94,7 +97,8 @@ public final class ChunkSource implements AutoCloseable {
         this.throttled.increment();
         return null;
       }
-      job = new Job(key);
+      job = new Job(key, this.revision(key), null);
+      job.holdingPermit = true;
       this.pending.put(key, job);
       this.active.incrementAndGet();
     }
@@ -111,6 +115,76 @@ public final class ChunkSource implements AutoCloseable {
       this.finish(job, null, exception);
     }
     return job.result.copy();
+  }
+
+  public CompletableFuture<ChunkData> refresh(World world, int x, int z) {
+    if (this.revisions == null || this.closed || this.protectedWorld(world)) {
+      return null;
+    }
+    Key key = new Key(world.getUID(), x, z);
+    Job job;
+    synchronized (this) {
+      if (this.closed) {
+        return null;
+      }
+      Job previous = this.pending.get(key);
+      if (waitingForEdit(previous)) {
+        return null;
+      }
+      this.discardEdited(key, previous);
+      job = new Job(key, this.revision(key), world);
+      this.pending.put(key, job);
+    }
+    this.scheduleRefresh(job, 2L);
+    return job.result.copy();
+  }
+
+  private static boolean waitingForEdit(Job job) {
+    return job != null && job.refreshWorld != null && job.attempts == 0;
+  }
+
+  private void discardEdited(Key key, Job previous) {
+    var revision = this.revisions.remove(key);
+    if (revision != null) {
+      revision.current = false;
+    }
+    this.removeCached(key);
+    if (previous != null) {
+      previous.invalidated = true;
+    }
+  }
+
+  private ChunkData.Revision revision(Key key) {
+    return this.revisions == null ? null : this.revisions.computeIfAbsent(key, ignored -> new ChunkData.Revision());
+  }
+
+  private void scheduleRefresh(Job job, long delay) {
+    try {
+      Bukkit.getRegionScheduler().runDelayed(this.plugin, job.refreshWorld, job.key.x(), job.key.z(),
+        task -> this.refresh(job), delay);
+    } catch (RuntimeException | LinkageError exception) {
+      job.invalidated = true;
+      this.finish(job, null, exception);
+    }
+  }
+
+  private void refresh(Job job) {
+    boolean acquired;
+    synchronized (this) {
+      acquired = !this.closed && !job.invalidated && this.permits.tryAcquire();
+      if (acquired) {
+        job.holdingPermit = true;
+        job.attempts++;
+        this.active.incrementAndGet();
+      }
+    }
+    if (this.closed || job.invalidated) {
+      this.finish(job, null, null);
+    } else if (acquired) {
+      this.capture(job.refreshWorld, ((CraftWorld) job.refreshWorld).getHandle(), job);
+    } else {
+      this.scheduleRefresh(job, 2L);
+    }
   }
 
   private void capture(World world, ServerLevel level, Job job) {
@@ -163,26 +237,33 @@ public final class ChunkSource implements AutoCloseable {
   }
 
   private void finish(Job job, ChunkData data, Throwable failure) {
-    if (!job.finished.compareAndSet(false, true)) {
-      return;
-    }
+    boolean retry;
     synchronized (this) {
-      this.pending.remove(job.key, job);
-      if (!this.closed && !job.invalidated) {
-        long duration = data == null ? TimeUnit.SECONDS.toNanos(1) : this.ttlNanos;
-        Entry entry = new Entry(data, System.nanoTime() + duration);
-        Entry previous = this.cache.put(job.key, entry);
-        this.cacheBytes += entry.weight() - (previous == null ? 0 : previous.weight());
-        var iterator = this.cache.entrySet().iterator();
-        while (this.cacheBytes > this.maxCacheBytes && iterator.hasNext()) {
-          this.cacheBytes -= iterator.next().getValue().weight();
-          iterator.remove();
+      if (job.finished) {
+        return;
+      }
+      if (job.holdingPermit) {
+        job.holdingPermit = false;
+        this.permits.release();
+        this.active.decrementAndGet();
+      }
+      retry = data == null && !this.closed && !job.invalidated && job.refreshWorld != null && job.attempts < 4;
+      if (!retry) {
+        job.finished = true;
+        this.pending.remove(job.key, job);
+        if (!this.closed && !job.invalidated) {
+          if (data != null && job.revision != null) {
+            data = new ChunkData(data.packet(), data.bytes(), job.revision);
+          }
+          this.cache(job.key, data);
         }
       }
     }
-    this.permits.release();
-    this.active.decrementAndGet();
-    if (failure != null) {
+    if (retry) {
+      this.scheduleRefresh(job, 1L << job.attempts);
+    } else if (job.revision != null && !job.revision.current) {
+      job.result.complete(new ChunkData(null, 0, job.revision));
+    } else if (failure != null) {
       this.failures.increment();
       long now = System.nanoTime();
       long previous = this.nextWarning.get();
@@ -198,35 +279,58 @@ public final class ChunkSource implements AutoCloseable {
     }
   }
 
+  private void cache(Key key, ChunkData data) {
+    long duration = data == null ? TimeUnit.SECONDS.toNanos(1) : this.ttlNanos;
+    Entry entry = new Entry(data, System.nanoTime() + duration);
+    Entry previous = this.cache.put(key, entry);
+    this.cacheBytes += entry.weight() - (previous == null ? 0 : previous.weight());
+    var iterator = this.cache.entrySet().iterator();
+    while (this.cacheBytes > this.maxCacheBytes && iterator.hasNext()) {
+      this.cacheBytes -= iterator.next().getValue().weight();
+      iterator.remove();
+    }
+  }
+
   public void invalidate(World world, int x, int z) {
     this.invalidate(new Key(world.getUID(), x, z));
   }
 
   private synchronized void invalidate(Key key) {
-    Entry entry = this.cache.remove(key);
-    if (entry != null) {
-      this.cacheBytes -= entry.weight();
-    }
+    this.removeCached(key);
     Job job = this.pending.get(key);
-    if (job != null) {
+    if (job != null && job.refreshWorld == null) {
       job.invalidated = true;
     }
   }
 
-  public synchronized void invalidate(World world) {
+  private void removeCached(Key key) {
+    Entry entry = this.cache.remove(key);
+    if (entry != null) {
+      this.cacheBytes -= entry.weight();
+    }
+  }
+
+  public void invalidate(World world) {
     UUID id = world.getUID();
-    this.cache.entrySet().removeIf(entry -> {
-      if (entry.getKey().world().equals(id)) {
-        this.cacheBytes -= entry.getValue().weight();
-        return true;
-      }
-      return false;
-    });
-    this.pending.forEach((key, job) -> {
-      if (key.world().equals(id)) {
-        job.invalidated = true;
-      }
-    });
+    var cancelled = new ArrayList<Job>();
+    synchronized (this) {
+      this.cache.entrySet().removeIf(entry -> {
+        if (entry.getKey().world().equals(id)) {
+          this.cacheBytes -= entry.getValue().weight();
+          return true;
+        }
+        return false;
+      });
+      this.pending.forEach((key, job) -> {
+        if (key.world().equals(id)) {
+          job.invalidated = true;
+          if (job.refreshWorld != null) {
+            cancelled.add(job);
+          }
+        }
+      });
+    }
+    cancelled.forEach(job -> this.finish(job, null, null));
   }
 
   public synchronized Map<String, Long> stats() {
@@ -275,13 +379,19 @@ public final class ChunkSource implements AutoCloseable {
 
   private static final class Job {
     private final Key key;
+    private final ChunkData.Revision revision;
+    private final World refreshWorld;
     private final CompletableFuture<ChunkData> result = new CompletableFuture<>();
-    private final AtomicBoolean finished = new AtomicBoolean();
+    private boolean finished;
+    private boolean holdingPermit;
+    private int attempts;
     private volatile boolean invalidated;
     private volatile Cancellable io;
 
-    private Job(Key key) {
+    private Job(Key key, ChunkData.Revision revision, World refreshWorld) {
       this.key = key;
+      this.revision = revision;
+      this.refreshWorld = refreshWorld;
     }
   }
 }

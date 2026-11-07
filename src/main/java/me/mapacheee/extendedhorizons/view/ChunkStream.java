@@ -4,6 +4,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelPromise;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.mapacheee.extendedhorizons.config.Config;
@@ -23,6 +24,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ChunkTrackingView;
 import net.minecraft.world.level.ChunkPos;
 import org.bukkit.craftbukkit.CraftWorld;
+import org.bukkit.World;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -47,6 +49,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   private final Long2LongOpenHashMap retries = new Long2LongOpenHashMap();
   private final LongArrayFIFOQueue edges = new LongArrayFIFOQueue();
   private final ArrayDeque<ReadyChunk> ready = new ArrayDeque<>();
+  private final Long2ObjectLinkedOpenHashMap<ChunkData> updates;
   private ChannelHandlerContext context;
   private volatile FarPlayerChannel farPlayers;
   private ResourceKey<?> expectedDimension;
@@ -68,6 +71,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     this.share = global.share();
     this.playerBudget = new SendBudget(settings.playerBytesPerSecond());
     this.nativeChunks = nativeChunks;
+    this.updates = settings.chunkUpdates().enabled() ? new Long2ObjectLinkedOpenHashMap<>() : null;
   }
 
   @Override
@@ -134,6 +138,9 @@ final class ChunkStream extends ChannelDuplexHandler {
       long key = ChunkPos.pack(chunk.x(), chunk.z());
       this.nativeChunks.add(key);
       this.extended.remove(key);
+      if (this.updates != null) {
+        this.updates.remove(key);
+      }
     } else if (packet instanceof ClientboundForgetLevelChunkPacket(ChunkPos pos)) {
       long key = pos.pack();
       boolean known = this.nativeChunks.remove(key);
@@ -146,6 +153,9 @@ final class ChunkStream extends ChannelDuplexHandler {
         return null;
       }
       this.extended.remove(key);
+      if (this.updates != null) {
+        this.updates.remove(key);
+      }
       this.compression.forget(key);
       if (this.farPlayers != null) {
         this.farPlayers.forget(key);
@@ -217,9 +227,11 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.cursor = 0;
     }
     if (this.context.channel().isWritable()) {
-      int sent = this.sendReady(this.settings.sendsPerTick(), now);
+      int limit = this.settings.sendsPerTick();
+      int sent = this.updates == null ? 0 : this.sendUpdates(Math.max(1, limit / 4), now);
+      sent += this.sendReady(limit - sent, now);
       this.fill(now);
-      this.sendReady(this.settings.sendsPerTick() - sent, now);
+      this.sendReady(limit - sent, now);
     } else {
       this.metrics.throttled.increment();
     }
@@ -227,7 +239,8 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.needsFlush = true;
     }
     this.flush();
-    this.sleepUntil = this.pending.isEmpty() && this.edges.isEmpty() && this.cursor >= this.area() ? this.nextRetry : 0;
+    boolean updating = this.updates != null && !this.updates.isEmpty();
+    this.sleepUntil = !updating && this.pending.isEmpty() && this.edges.isEmpty() && this.cursor >= this.area() ? this.nextRetry : 0;
   }
 
   boolean sleeping() {
@@ -323,6 +336,8 @@ final class ChunkStream extends ChannelDuplexHandler {
     if (!this.desired(key) || this.nativeChunks.contains(key)) {
       this.pending.remove(key);
       this.metrics.obsolete.increment();
+    } else if (data != null && !data.current()) {
+      this.retryObsolete(key);
     } else if (data == null || error != null) {
       this.pending.remove(key);
       long retry = System.nanoTime() + 2_000_000_000L;
@@ -348,43 +363,103 @@ final class ChunkStream extends ChannelDuplexHandler {
         this.metrics.obsolete.increment();
         continue;
       }
-      int bytes = item.data().bytes();
-      if (!this.playerBudget.take(bytes, now)) {
-        this.metrics.throttled.increment();
-        break;
+      if (!item.data().current()) {
+        this.ready.removeFirst();
+        this.retryObsolete(item.key());
+        continue;
       }
-      if (!this.globalBudget.take(bytes, now, this.share)) {
-        this.playerBudget.refund(bytes);
-        this.metrics.throttled.increment();
+      if (!this.takeBudget(item.data().bytes(), now)) {
         break;
       }
       this.ready.removeFirst();
       this.pending.remove(item.key());
       this.extended.add(item.key());
-      var packet = item.data().packet();
-      long version = this.epoch;
-      this.needsFlush = true;
-      ChannelPromise promise = this.context.newPromise();
-      this.compression.writeChunk(this.context, packet, promise);
-      promise.addListener(result -> {
-        if (result.isSuccess()) {
-          this.metrics.sent.increment();
-          this.metrics.bytes.add(bytes);
-        } else if (version == this.epoch) {
-          this.extended.remove(item.key());
-          this.cursor = 0;
-          this.sleepUntil = 0;
-          this.metrics.failures.increment();
-        }
-      });
-      var extras = packet.getExtraPackets();
-      extras.forEach(extra -> {
-        this.compression.invalidate(extra);
-        this.context.write(extra);
-      });
+      this.writeChunk(item.key(), item.data(), false);
       sent++;
     }
     return sent;
+  }
+
+  private void retryObsolete(long key) {
+    this.pending.remove(key);
+    this.edges.enqueue(key);
+    this.sleepUntil = 0;
+    this.metrics.obsolete.increment();
+  }
+
+  void updateChunk(World world, long key, ChunkData data) {
+    if (this.watchesUpdate(world, key) && data.current()) {
+      this.updates.put(key, data);
+      this.sleepUntil = 0;
+    }
+  }
+
+  boolean watchesUpdate(World world, long key) {
+    return this.updates != null && this.context != null && this.view != null && this.view.world() == world && this.canUpdate(key);
+  }
+
+  private boolean canUpdate(long key) {
+    return this.extended.contains(key) && !this.nativeChunks.contains(key) && this.retained(key);
+  }
+
+  private int sendUpdates(int limit, long now) {
+    int sent = 0;
+    while (sent < limit && !this.updates.isEmpty() && this.context.channel().isWritable()) {
+      long key = this.updates.firstLongKey();
+      ChunkData data = this.updates.get(key);
+      if (!data.current() || !this.canUpdate(key)) {
+        this.updates.removeFirst();
+        continue;
+      }
+      if (!this.takeBudget(data.bytes(), now)) {
+        break;
+      }
+      this.updates.removeFirst();
+      this.writeChunk(key, data, true);
+      sent++;
+    }
+    return sent;
+  }
+
+  private boolean takeBudget(int bytes, long now) {
+    if (this.playerBudget.take(bytes, now)) {
+      if (this.globalBudget.take(bytes, now, this.share)) {
+        return true;
+      }
+      this.playerBudget.refund(bytes);
+    }
+    this.metrics.throttled.increment();
+    return false;
+  }
+
+  private void writeChunk(long key, ChunkData data, boolean update) {
+    long version = this.epoch;
+    this.needsFlush = true;
+    ChannelPromise promise = this.context.newPromise();
+    var packet = data.packet();
+    this.compression.writeChunk(this.context, packet, promise);
+    promise.addListener(result -> {
+      if (result.isSuccess()) {
+        if (update) {
+          this.metrics.updated.increment();
+          this.metrics.updateBytes.add(data.bytes());
+        } else {
+          this.metrics.sent.increment();
+          this.metrics.bytes.add(data.bytes());
+        }
+      } else if (version == this.epoch) {
+        if (!update) {
+          this.extended.remove(key);
+          this.cursor = 0;
+          this.sleepUntil = 0;
+        }
+        this.metrics.failures.increment();
+      }
+    });
+    packet.getExtraPackets().forEach(extra -> {
+      this.compression.invalidate(extra);
+      this.context.write(extra);
+    });
   }
 
   private boolean desired(long key) {
@@ -433,9 +508,12 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private boolean retained(long key) {
-    return this.view != null && this.view.enabled()
-      && Math.abs(ChunkPos.getX(key) - this.view.x()) <= this.view.distance() + RETAIN_MARGIN
-      && Math.abs(ChunkPos.getZ(key) - this.view.z()) <= this.view.distance() + RETAIN_MARGIN;
+    return this.view != null && retained(this.view, ChunkPos.getX(key), ChunkPos.getZ(key));
+  }
+
+  static boolean retained(ViewSnapshot view, int x, int z) {
+    return view.enabled() && Math.abs(x - view.x()) <= view.distance() + RETAIN_MARGIN
+      && Math.abs(z - view.z()) <= view.distance() + RETAIN_MARGIN;
   }
 
   private int area() {
@@ -513,6 +591,9 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private void forget(long key) {
+    if (this.updates != null) {
+      this.updates.remove(key);
+    }
     this.compression.forget(key);
     if (this.farPlayers != null) {
       this.farPlayers.forget(key);
@@ -556,6 +637,9 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.extended.forEach(this::forget);
     }
     this.extended.clear();
+    if (this.updates != null) {
+      this.updates.clear();
+    }
     this.edges.clear();
     this.pending.clear();
     this.ready.clear();

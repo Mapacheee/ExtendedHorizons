@@ -17,3 +17,6 @@ far-players:
   update-ticks: 3
   equipment: true
   actions: true
+
+chunk-updates:
+  enabled: false
