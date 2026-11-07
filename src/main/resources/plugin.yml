@@ -1,0 +1,12 @@
+name: ExtendedHorizons
+version: ${version}
+main: me.mapacheee.extendedhorizons.ExtendedHorizonsPlugin
+api-version: '26.3'
+folia-supported: true
+description: ${description}
+author: Mapacheee
+depend: [MapacheeeLib]
+softdepend: [WorldEdit, FastAsyncWorldEdit]
+permissions:
+  extendedhorizons.admin:
+    default: op
