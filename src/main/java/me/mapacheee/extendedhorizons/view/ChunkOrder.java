@@ -38,9 +38,13 @@ public final class ChunkOrder {
     }
     int directionX = DIRECTION_X[direction];
     int directionZ = DIRECTION_Z[direction];
-    Arrays.sort(offsets, Comparator.comparingInt(Offset::ring)
-      .thenComparingInt(offset -> -(offset.x * directionX + offset.z * directionZ))
-      .thenComparingInt(Offset::distanceSquared)
+    Comparator<Offset> order = Comparator.comparingInt(Offset::distanceSquared);
+    if (direction != 0) {
+      order = Comparator.comparingInt(Offset::ring)
+        .thenComparingInt(offset -> -(offset.x * directionX + offset.z * directionZ))
+        .thenComparing(order);
+    }
+    Arrays.sort(offsets, order
       .thenComparingInt(Offset::z)
       .thenComparingInt(Offset::x));
 
