@@ -7,16 +7,22 @@ import com.thewinterframework.component.annotation.SyncLoading;
 import com.thewinterframework.service.annotation.lifecycle.OnDisable;
 import com.thewinterframework.service.annotation.lifecycle.OnEnable;
 import com.thewinterframework.service.annotation.lifecycle.OnReload;
+import io.netty.channel.Channel;
+import io.papermc.paper.connection.PlayerConfigurationConnection;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.mapacheee.extendedhorizons.chunk.ChunkSource;
 import me.mapacheee.extendedhorizons.config.Config;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
+import net.minecraft.world.InteractionHand;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 @SyncLoading
@@ -26,8 +32,11 @@ public final class ViewService {
   private final Container<Config> config;
   private final Map<UUID, PlayerView> views = new ConcurrentHashMap<>();
   private final ViewMetrics metrics = new ViewMetrics();
+  private final FarPlayerIndex farPlayers = new FarPlayerIndex();
+  private final Set<Channel> farConnections = ConcurrentHashMap.newKeySet();
+  private final AtomicBoolean farConnectionWarning = new AtomicBoolean();
   private volatile ChunkSource source;
-  private Config settings;
+  private volatile Config settings;
   private SendBudget budget;
   private volatile CompressionCache compression;
 
@@ -62,13 +71,36 @@ public final class ViewService {
     player.getScheduler().run(this.plugin, task -> this.attach(player), null);
   }
 
+  void configure(PlayerConfigurationConnection connection) {
+    Config config = this.settings;
+    if (this.source == null || config == null || !config.farPlayers().enabled()) {
+      return;
+    }
+    try {
+      Channel channel = FarPlayerChannel.connection(connection);
+      if (channel != null) {
+        channel.eventLoop().execute(() -> {
+          if (this.source != null && channel.isActive() && channel.pipeline().get(FarPlayerChannel.NAME) == null) {
+            channel.pipeline().addBefore("packet_handler", FarPlayerChannel.NAME, new FarPlayerChannel());
+            this.farConnections.add(channel);
+            channel.closeFuture().addListener(ignored -> this.farConnections.remove(channel));
+          }
+        });
+      }
+    } catch (RuntimeException | LinkageError | ReflectiveOperationException error) {
+      if (this.farConnectionWarning.compareAndSet(false, true)) {
+        this.plugin.getSLF4JLogger().warn("Cannot observe far player profiles", error);
+      }
+    }
+  }
+
   @OnReload
   public synchronized void reload() {
     if (!this.config.reload()) {
       throw new IllegalStateException("Cannot reload config.yml");
     }
     if (!this.config.get().equals(this.settings)) {
-      this.stop();
+      this.stopViews();
       this.start();
     }
   }
@@ -77,9 +109,25 @@ public final class ViewService {
     if (this.source == null || !player.isOnline() || this.views.containsKey(player.getUniqueId())) {
       return;
     }
-    PlayerView view = new PlayerView(this.plugin, this.source, this.settings, this.metrics, this.budget, this.compression, player);
+    var stream = new ChunkStream(this.source, this.settings, this.metrics, this.budget, this.compression,
+      new LongOpenHashSet(player.getSentChunkKeys()));
+    PlayerView view = new PlayerView(this.plugin, this.source, this.settings, player, stream, this.farPlayers);
     view.start();
     this.views.put(player.getUniqueId(), view);
+  }
+
+  void swing(UUID playerId, InteractionHand hand) {
+    PlayerView view = this.views.get(playerId);
+    if (view != null) {
+      view.swing(hand);
+    }
+  }
+
+  void hide(UUID viewer, UUID target, boolean hidden) {
+    PlayerView view = this.views.get(viewer);
+    if (view != null) {
+      view.hide(target, hidden);
+    }
   }
 
   public void detach(UUID playerId) {
@@ -130,6 +178,18 @@ public final class ViewService {
 
   @OnDisable
   public synchronized void stop() {
+    this.stopViews();
+    for (Channel channel : this.farConnections) {
+      channel.eventLoop().execute(() -> {
+        if (channel.pipeline().get(FarPlayerChannel.NAME) != null) {
+          channel.pipeline().remove(FarPlayerChannel.NAME);
+        }
+      });
+    }
+    this.farConnections.clear();
+  }
+
+  private void stopViews() {
     ChunkSource current = this.source;
     this.source = null;
     this.views.values().forEach(PlayerView::close);

@@ -18,7 +18,8 @@ public record Config(
   @Setting("cache-seconds") Integer cacheSeconds,
   @Setting("player-mib-per-second") Integer playerMiBPerSecond,
   @Setting("global-mib-per-second") Integer globalMiBPerSecond,
-  @Setting("disabled-worlds") Set<String> disabledWorlds
+  @Setting("disabled-worlds") Set<String> disabledWorlds,
+  @Setting("far-players") FarPlayers farPlayers
 ) {
 
   public Config {
@@ -32,6 +33,20 @@ public record Config(
     playerMiBPerSecond = bounded("player-mib-per-second", playerMiBPerSecond, 8, 1, 256);
     globalMiBPerSecond = bounded("global-mib-per-second", globalMiBPerSecond, 192, 1, 4096);
     disabledWorlds = disabledWorlds == null ? Set.of() : Set.copyOf(disabledWorlds);
+    farPlayers = farPlayers == null ? new FarPlayers(null, null, null, null, null) : farPlayers;
+  }
+
+  @ConfigSerializable
+  public record FarPlayers(Boolean enabled, @Setting("max-per-viewer") Integer maxPerViewer,
+    @Setting("update-ticks") Integer updateTicks, Boolean equipment, Boolean actions) {
+
+    public FarPlayers {
+      enabled = Boolean.TRUE.equals(enabled);
+      maxPerViewer = bounded("far-players.max-per-viewer", maxPerViewer, 12, 1, 64);
+      updateTicks = bounded("far-players.update-ticks", updateTicks, 3, 1, 20);
+      equipment = equipment == null || equipment;
+      actions = actions == null || actions;
+    }
   }
 
   private static int bounded(String path, Integer value, int fallback, int min, int max) {

@@ -10,3 +10,10 @@ cache-seconds: 10
 player-mib-per-second: 8
 global-mib-per-second: 192
 disabled-worlds: []
+
+far-players:
+  enabled: false
+  max-per-viewer: 12
+  update-ticks: 3
+  equipment: true
+  actions: true

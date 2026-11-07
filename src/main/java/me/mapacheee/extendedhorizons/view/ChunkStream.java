@@ -26,6 +26,8 @@ import org.bukkit.craftbukkit.CraftWorld;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 final class ChunkStream extends ChannelDuplexHandler {
@@ -46,6 +48,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   private final LongArrayFIFOQueue edges = new LongArrayFIFOQueue();
   private final ArrayDeque<ReadyChunk> ready = new ArrayDeque<>();
   private ChannelHandlerContext context;
+  private FarPlayerChannel farPlayers;
   private ResourceKey<?> expectedDimension;
   private ViewSnapshot view;
   private long epoch;
@@ -70,6 +73,9 @@ final class ChunkStream extends ChannelDuplexHandler {
   @Override
   public void handlerAdded(ChannelHandlerContext ctx) {
     this.context = ctx;
+    if (this.settings.farPlayers().enabled()) {
+      this.farPlayers = (FarPlayerChannel) ctx.pipeline().get(FarPlayerChannel.NAME);
+    }
   }
 
   @Override
@@ -128,6 +134,9 @@ final class ChunkStream extends ChannelDuplexHandler {
       long key = ChunkPos.pack(chunk.x(), chunk.z());
       this.nativeChunks.add(key);
       this.extended.remove(key);
+      if (this.farPlayers != null) {
+        this.farPlayers.forget(key);
+      }
     } else if (packet instanceof ClientboundForgetLevelChunkPacket(ChunkPos pos)) {
       long key = pos.pack();
       boolean known = this.nativeChunks.remove(key);
@@ -141,6 +150,9 @@ final class ChunkStream extends ChannelDuplexHandler {
       }
       this.extended.remove(key);
       this.compression.forget(key);
+      if (this.farPlayers != null) {
+        this.farPlayers.forget(key);
+      }
     } else if (packet instanceof ClientboundSetChunkCacheRadiusPacket radius) {
       this.compression.clear();
       this.advertised = radius.getRadius();
@@ -158,7 +170,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     return packet;
   }
 
-  void tick(ViewSnapshot next) {
+  void tick(ViewSnapshot next, List<FarPlayerState.Snapshot> candidates) {
     if (this.context == null || !this.context.channel().isActive()) {
       return;
     }
@@ -213,6 +225,9 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.sendReady(this.settings.sendsPerTick() - sent, now);
     } else {
       this.metrics.throttled.increment();
+    }
+    if (candidates != null && this.farPlayers != null && this.farPlayers.sync(this, candidates, this.settings.farPlayers())) {
+      this.needsFlush = true;
     }
     this.flush();
     this.sleepUntil = this.pending.isEmpty() && this.edges.isEmpty() && this.cursor >= this.area() ? this.nextRetry : 0;
@@ -381,6 +396,16 @@ final class ChunkStream extends ChannelDuplexHandler {
         ChunkPos.getX(key), ChunkPos.getZ(key), false);
   }
 
+  boolean hasExtended(org.bukkit.World world, long key) {
+    return this.view != null && this.view.world() == world && this.extended.contains(key) && this.desired(key);
+  }
+
+  void hideFar(UUID target, boolean hidden) {
+    if (this.context != null && this.farPlayers != null) {
+      this.farPlayers.hidden(target, hidden);
+    }
+  }
+
   private boolean retained(long key) {
     return this.view != null && this.view.enabled()
       && Math.abs(ChunkPos.getX(key) - this.view.x()) <= this.view.distance() + RETAIN_MARGIN
@@ -463,12 +488,18 @@ final class ChunkStream extends ChannelDuplexHandler {
 
   private void forget(long key) {
     this.compression.forget(key);
+    if (this.farPlayers != null) {
+      this.farPlayers.forget(key);
+    }
     this.context.write(new ClientboundForgetLevelChunkPacket(ChunkPos.unpack(key)));
     this.needsFlush = true;
   }
 
   void teleport() {
     this.compression.clear();
+    if (this.farPlayers != null) {
+      this.farPlayers.clear();
+    }
     this.sleepUntil = 0;
     if (this.context != null) {
       this.epoch++;
@@ -491,6 +522,9 @@ final class ChunkStream extends ChannelDuplexHandler {
 
   private void reset(boolean unload, boolean keepNative) {
     this.compression.clear();
+    if (this.farPlayers != null) {
+      this.farPlayers.clear();
+    }
     this.epoch++;
     if (unload) {
       this.extended.forEach(this::forget);
