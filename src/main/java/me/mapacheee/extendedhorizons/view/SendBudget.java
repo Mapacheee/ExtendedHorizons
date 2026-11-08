@@ -1,7 +1,7 @@
 package me.mapacheee.extendedhorizons.view;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class SendBudget {
 
@@ -9,7 +9,7 @@ public final class SendBudget {
   private final long burst;
   private double available;
   private long updated = System.nanoTime();
-  private final Set<Share> participants = new HashSet<>();
+  private final List<Share> participants = new ArrayList<>();
   private long nextCount;
   private int active = 1;
 
@@ -33,16 +33,24 @@ public final class SendBudget {
   }
 
   public Share share() {
-    return new Share();
+    return new Share(this);
   }
 
   public synchronized void remove(Share share) {
-    this.participants.remove(share);
-    this.nextCount = 0;
+    if (share.budget == this && share.registered) {
+      this.participants.remove(share);
+      share.registered = false;
+      this.nextCount = 0;
+    }
   }
 
   public synchronized boolean take(int bytes, long now, Share share) {
-    if (this.participants.add(share)) {
+    if (share.budget != this) {
+      throw new IllegalArgumentException("Share belongs to a different budget");
+    }
+    if (!share.registered) {
+      this.participants.add(share);
+      share.registered = true;
       this.nextCount = 0;
     }
     share.demanded = Math.max(share.demanded, now);
@@ -72,9 +80,15 @@ public final class SendBudget {
   }
 
   public static final class Share {
+    private final SendBudget budget;
     private long updated = System.nanoTime();
     private long demanded;
     private double available;
+    private boolean registered;
+
+    private Share(SendBudget budget) {
+      this.budget = budget;
+    }
   }
 
   private void refill(long now) {

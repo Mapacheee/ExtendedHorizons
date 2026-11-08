@@ -51,35 +51,41 @@ final class CompressionCache {
 
   void store(Lookup lookup, ByteBuf compressed) {
     int weight = compressed.readableBytes() + 192;
-    if (weight > this.maxBytes) {
+    Key key = lookup.key();
+    if (weight > this.maxBytes || this.entries.containsKey(key)) {
       return;
     }
     byte[] data = new byte[compressed.readableBytes()];
     compressed.getBytes(compressed.readerIndex(), data);
     Entry entry = new Entry(data);
     synchronized (this.eviction) {
-      Entry previous = this.order.remove(lookup.key());
-      if (previous != null) {
-        this.bytes -= previous.weight();
+      if (this.order.containsKey(key)) {
+        return;
       }
-      this.order.put(lookup.key(), entry);
-      this.entries.put(lookup.key(), entry);
-      this.bytes += entry.weight();
-      var iterator = this.order.entrySet().iterator();
-      while (this.bytes > this.maxBytes && iterator.hasNext()) {
-        var removed = iterator.next();
-        this.entries.remove(removed.getKey(), removed.getValue());
-        this.bytes -= removed.getValue().weight();
-        iterator.remove();
+      this.order.put(key, entry);
+      this.entries.put(key, entry);
+      this.bytes += weight;
+      if (this.bytes > this.maxBytes) {
+        var iterator = this.order.entrySet().iterator();
+        while (this.bytes > this.maxBytes) {
+          var removed = iterator.next();
+          this.entries.remove(removed.getKey(), removed.getValue());
+          this.bytes -= removed.getValue().weight();
+          iterator.remove();
+        }
       }
     }
   }
 
   Map<String, Long> stats() {
+    long size;
+    long count;
     synchronized (this.eviction) {
-      return Map.of("compressionHits", this.hits.sum(), "compressionMisses", this.misses.sum(),
-        "compressionBytes", this.bytes, "compressionEntries", (long) this.entries.size());
+      size = this.bytes;
+      count = this.order.size();
     }
+    return Map.of("compressionHits", this.hits.sum(), "compressionMisses", this.misses.sum(),
+      "compressionBytes", size, "compressionEntries", count);
   }
 
   record Key(int threshold, int size, long a, long b, long c, long d) {}
