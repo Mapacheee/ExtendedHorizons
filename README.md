@@ -20,6 +20,7 @@
 
 Clients receive lightweight snapshots that dramatically expand visible render distance while keeping server tick times, memory usage, and entity tick loops completely unburdened.
 
+> [!NOTE] 
 > - **Shared chunk reads & compression cache:** Compressed packet data is cached and shared across players viewing identical terrain.
 > - **Direction-aware delivery:** Prioritizes chunks along the player's vector of travel, smoothly filling surrounding terrain when stationary.
 > - **Native Anti-Xray integration:** Custom block masking in distant chunks to protect ores without leaking underground data.
@@ -27,7 +28,7 @@ Clients receive lightweight snapshots that dramatically expand visible render di
 
 ---
 
-## ⚡ Performance Comparison (Vanilla vs v4)
+## Performance Comparison (Vanilla vs v4)
 
 Benchmark conducted on **Paper 26.3** with **50 simulated Java clients**, 35 seconds of active flight across the same pregenerated world, target view distance of **32 chunks** (vanilla server radius was 4 chunks):
 
@@ -68,7 +69,7 @@ Benchmark conducted on **Paper 26.3** with **50 simulated Java clients**, 35 sec
 
 ---
 
-## ⚙️ Configuration Reference
+## Configuration Reference
 
 A snippet of key settings in `config.yml`:
 
@@ -102,7 +103,7 @@ All commands require the `extendedhorizons.admin` permission (granted to OPs by 
 
 ---
 
-## 🛠️ Building from Source
+## Building from Source
 
 ExtendedHorizons is built with [TheWinterFramework](https://github.com/thewinterframework/winter) and Gradle:
 
@@ -121,14 +122,16 @@ The output JAR will be available in `build/libs/ExtendedHorizons-<version>.jar`.
 
 ---
 
-## 📊 Metrics
+## Metrics
 
 ExtendedHorizons collects anonymous metrics via FastStats (integrated through MapacheeeLib).  
 You can view global stats at the **[FastStats Dashboard](https://faststats.dev/project/extendedhorizons/minecraft-plugin)**.
 
+[![Servers & Players](https://www.faststats.dev/embed/default:fec66100-50ff-435f-b9ea-542e113a8312:servers-and-players.svg?w=960&h=340&theme=dark)](https://www.faststats.dev/project/extendedhorizons/dashboards/minecraft-plugin)
+
 ---
 
-## 🤝 Contributing & Support
+## Contributing & Support
 
 - **Bug Reports & Feature Requests:** Open an issue on our [GitHub Issues](https://github.com/Mapacheee/ExtendedHorizons/issues). Please attach your server version, plugin list, and relevant logs.
 - **Discord Community:** Join our community for help and discussion at [discord.gg/yA3vD2S8Zj](https://discord.gg/yA3vD2S8Zj).
