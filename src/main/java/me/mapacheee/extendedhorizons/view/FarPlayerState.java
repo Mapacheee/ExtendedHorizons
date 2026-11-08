@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.view;
 
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import com.mojang.datafixers.util.Pair;
 import me.mapacheee.extendedhorizons.config.Config;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -12,8 +13,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.SwingAnimation;
-import net.minecraft.world.level.ChunkPos;
-import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -71,7 +70,7 @@ final class FarPlayerState {
     int x = location.getBlockX() >> 4;
     int z = location.getBlockZ() >> 4;
     if (this.replicaId == 0) {
-      this.replicaId = Bukkit.getUnsafe().nextEntityId(world);
+      this.replicaId = FarPlayerPackets.nextEntityId(world);
     }
     Snapshot previous = this.snapshot;
     var data = entity.getEntityData();
@@ -101,7 +100,7 @@ final class FarPlayerState {
         equipment = List.copyOf(changes);
       }
     }
-    long chunk = ChunkPos.pack(x, z);
+    long chunk = PacketAccess.chunkKey(x, z);
     if (previous != null && previous.world() == world && previous.chunk() == chunk
       && previous.x() == location.getX() && previous.y() == location.getY() && previous.z() == location.getZ()
       && previous.yaw() == entity.getYRot() && previous.pitch() == entity.getXRot() && previous.headYaw() == entity.getYHeadRot()
@@ -122,7 +121,7 @@ final class FarPlayerState {
 
   synchronized void swing(InteractionHand hand) {
     if (!this.closed && this.settings.actions()) {
-      var animation = ((CraftPlayer) this.player).getHandle().getItemInHand(hand).getAttackAnimation();
+      var animation = FarPlayerPackets.animation(((CraftPlayer) this.player).getHandle().getItemInHand(hand));
       this.swing = new Swing(hand, animation, System.nanoTime());
     }
   }

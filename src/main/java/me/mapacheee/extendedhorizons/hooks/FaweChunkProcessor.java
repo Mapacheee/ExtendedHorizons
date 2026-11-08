@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.hooks;
 
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import com.fastasyncworldedit.core.configuration.Settings;
 import com.fastasyncworldedit.core.extent.processor.ProcessorScope;
 import com.fastasyncworldedit.core.queue.IBatchProcessor;
@@ -9,7 +10,6 @@ import com.fastasyncworldedit.core.queue.IChunkSet;
 import com.sk89q.worldedit.event.extent.EditSessionEvent;
 import com.sk89q.worldedit.extent.Extent;
 import me.mapacheee.extendedhorizons.view.ViewService;
-import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
 
@@ -41,11 +41,11 @@ record FaweChunkProcessor(Plugin plugin, ViewService views, World world) impleme
   public Future<?> postProcessSet(IChunk chunk, IChunkGet get, IChunkSet set) {
     int x = chunk.getX();
     int z = chunk.getZ();
-    this.views.editedChunk(this.world, ChunkPos.pack(x, z));
-    this.views.editedChunk(this.world, ChunkPos.pack(x - 1, z));
-    this.views.editedChunk(this.world, ChunkPos.pack(x + 1, z));
-    this.views.editedChunk(this.world, ChunkPos.pack(x, z - 1));
-    this.views.editedChunk(this.world, ChunkPos.pack(x, z + 1));
+    this.views.editedChunk(this.world, PacketAccess.chunkKey(x, z));
+    this.views.editedChunk(this.world, PacketAccess.chunkKey(x - 1, z));
+    this.views.editedChunk(this.world, PacketAccess.chunkKey(x + 1, z));
+    this.views.editedChunk(this.world, PacketAccess.chunkKey(x, z - 1));
+    this.views.editedChunk(this.world, PacketAccess.chunkKey(x, z + 1));
     return CompletableFuture.completedFuture(null);
   }
 

@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.view;
 
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelPromise;
@@ -99,7 +100,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   public void write(ChannelHandlerContext ctx, Object message, ChannelPromise promise) {
     this.compression.invalidate(message);
     boolean transition = message instanceof ClientboundLevelChunkWithLightPacket chunk
-      && this.extended.contains(ChunkPos.pack(chunk.x(), chunk.z()));
+      && this.extended.contains(PacketAccess.chunkKey(chunk));
     Object outgoing = message instanceof ClientboundBundlePacket bundle ? this.bundle(bundle) : this.observe(message);
     if (outgoing == null) {
       promise.trySuccess();
@@ -141,22 +142,22 @@ final class ChunkStream extends ChannelDuplexHandler {
 
   private Object observe(Object packet) {
     if (packet instanceof ClientboundLevelChunkWithLightPacket chunk) {
-      long key = ChunkPos.pack(chunk.x(), chunk.z());
+      long key = PacketAccess.chunkKey(chunk);
       this.nativeChunks.add(key);
       this.extended.remove(key);
       if (this.updates != null) {
         this.updates.remove(key);
       }
     } else if (packet instanceof ClientboundForgetLevelChunkPacket(ChunkPos pos)) {
-      long key = pos.pack();
+      long key = PacketAccess.chunkKey(PacketAccess.x(pos), PacketAccess.z(pos));
       boolean known = this.nativeChunks.remove(key);
       if (known && this.retained(key) && this.source.masking()) {
         this.retries.remove(key);
         this.edges.enqueue(key);
         this.sleepUntil = 0;
       } else if (this.retained(key) && (known || this.extended.contains(key))) {
-        if (Math.abs(pos.x() - this.view.x()) <= this.view.nativeDistance()
-          && Math.abs(pos.z() - this.view.z()) <= this.view.nativeDistance()) {
+        if (Math.abs(PacketAccess.x(pos) - this.view.x()) <= this.view.nativeDistance()
+          && Math.abs(PacketAccess.z(pos) - this.view.z()) <= this.view.nativeDistance()) {
           this.compression.forget(key);
         }
         this.extended.add(key);
@@ -207,7 +208,7 @@ final class ChunkStream extends ChannelDuplexHandler {
       update.runUpdates((pos, state) -> {
         if (!result[0]) {
           result[0] = true;
-          result[1] = this.extended.contains(ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4));
+          result[1] = this.extended.contains(PacketAccess.chunkKey(pos.getX() >> 4, pos.getZ() >> 4));
         }
       });
       return result[1];
@@ -216,7 +217,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private boolean maskedChunk(BlockPos pos) {
-    return this.extended.contains(ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4));
+    return this.extended.contains(PacketAccess.chunkKey(pos.getX() >> 4, pos.getZ() >> 4));
   }
 
   void tick(ViewSnapshot next, List<FarPlayerState.Snapshot> candidates) {
@@ -324,7 +325,7 @@ final class ChunkStream extends ChannelDuplexHandler {
         }
       } else {
         long offset = offsets[this.cursor++];
-        key = ChunkPos.pack(this.view.x() + ChunkPos.getX(offset), this.view.z() + ChunkPos.getZ(offset));
+        key = PacketAccess.chunkKey(this.view.x() + ChunkPos.getX(offset), this.view.z() + ChunkPos.getZ(offset));
       }
       int x = ChunkPos.getX(key);
       int z = ChunkPos.getZ(key);
@@ -595,7 +596,7 @@ final class ChunkStream extends ChannelDuplexHandler {
 
   private void enqueue(int first, int last, int z) {
     for (int x = first; x <= last; x++) {
-      this.edges.enqueue(ChunkPos.pack(x, z));
+      this.edges.enqueue(PacketAccess.chunkKey(x, z));
     }
   }
 
@@ -606,10 +607,10 @@ final class ChunkStream extends ChannelDuplexHandler {
     if (radius == next.distance() + RETAIN_MARGIN && Math.abs(dx) <= 1 && Math.abs(dz) <= 1) {
       for (int offset = -radius; offset <= radius; offset++) {
         if (dx != 0) {
-          this.leave(ChunkPos.pack(old.x() - dx * radius, old.z() + offset));
+          this.leave(PacketAccess.chunkKey(old.x() - dx * radius, old.z() + offset));
         }
         if (dz != 0) {
-          this.leave(ChunkPos.pack(old.x() + offset, old.z() - dz * radius));
+          this.leave(PacketAccess.chunkKey(old.x() + offset, old.z() - dz * radius));
         }
       }
     } else {
@@ -640,7 +641,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     if (this.farPlayers != null) {
       this.farPlayers.forget(key);
     }
-    this.context.write(new ClientboundForgetLevelChunkPacket(ChunkPos.unpack(key)));
+    this.context.write(new ClientboundForgetLevelChunkPacket(new ChunkPos(ChunkPos.getX(key), ChunkPos.getZ(key))));
     this.needsFlush = true;
   }
 

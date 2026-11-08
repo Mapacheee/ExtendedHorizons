@@ -2,6 +2,7 @@ package me.mapacheee.extendedhorizons.view;
 
 import com.mojang.datafixers.util.Pair;
 import io.netty.buffer.Unpooled;
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -15,7 +16,6 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
-import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
@@ -24,14 +24,10 @@ import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
-import net.minecraft.network.protocol.game.ClientboundSwingAnimationPacket;
-import net.minecraft.network.protocol.game.ServerboundAttackPacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.server.network.ServerCommonPacketListenerImpl;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.PositionPath;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 
@@ -91,8 +87,8 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object message) {
-    if (message instanceof ServerboundAttackPacket attack && this.replicaIds.contains(attack.entityId())
-      || message instanceof ServerboundInteractPacket interact && this.replicaIds.contains(interact.entityId())) {
+    if (FarPlayerPackets.attacksReplica(message, this.replicaIds)
+      || message instanceof ServerboundInteractPacket interact && this.replicaIds.contains(PacketAccess.interactionId(interact))) {
       return;
     }
     ctx.fireChannelRead(message);
@@ -135,12 +131,12 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
         this.profiles.remove(uuid);
         this.remove(uuid);
       }
-    } else if (packet instanceof ClientboundAddEntityPacket spawn && spawn.getType() == EntityTypes.PLAYER) {
+    } else if (packet instanceof ClientboundAddEntityPacket spawn && spawn.getType() == FarPlayerPackets.PLAYER) {
       this.nativePlayers.add(spawn.getId());
       return this.removeReplica(spawn.getUUID());
     } else if (packet instanceof ClientboundRemoveEntitiesPacket remove) {
       boolean removedPlayer = false;
-      var ids = remove.entityIds().iterator();
+      var ids = PacketAccess.removedIds(remove).iterator();
       while (ids.hasNext()) {
         removedPlayer |= this.nativePlayers.remove(ids.nextInt());
       }
@@ -217,7 +213,7 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
         if (previous == null) {
           this.replicaIds.add(target.id());
           packets.add(new ClientboundAddEntityPacket(target.id(), target.uuid(), target.x(), target.y(), target.z(),
-            target.pitch(), target.yaw(), EntityTypes.PLAYER, 0, Vec3.ZERO, target.headYaw()));
+            target.pitch(), target.yaw(), FarPlayerPackets.PLAYER, 0, Vec3.ZERO, target.headYaw()));
           packets.add(new ClientboundSetEntityDataPacket(target.id(), target.appearance()));
           if (!target.equipment().isEmpty()) {
             packets.add(new ClientboundSetEquipmentPacket(target.id(), target.equipment(), true));
@@ -239,8 +235,7 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
     if (previous.x() != target.x() || previous.y() != target.y() || previous.z() != target.z()
       || previous.yaw() != target.yaw() || previous.pitch() != target.pitch()
       || previous.onGround() != target.onGround()) {
-      packets.add(new ClientboundEntityPositionSyncPacket(target.id(),
-        PositionPath.of(new Vec3(target.x(), target.y(), target.z())), target.yaw(), target.pitch(), target.onGround()));
+      packets.add(FarPlayerPackets.position(target));
     }
     if (Mth.packDegrees(previous.headYaw()) != Mth.packDegrees(target.headYaw())) {
       var buffer = new FriendlyByteBuf(Unpooled.buffer(6));
@@ -270,7 +265,7 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
     }
     var swing = target.swing();
     if (swing != null && swing != previous.swing() && now - swing.at() < SWING_MAX_AGE_NANOS) {
-      packets.add(new ClientboundSwingAnimationPacket(target.id(), swing.hand(), swing.animation()));
+      packets.add(FarPlayerPackets.swing(target.id(), swing));
     }
   }
 
@@ -322,13 +317,13 @@ final class FarPlayerChannel extends ChannelDuplexHandler {
     private static final Field LISTENER = listener();
 
     private static Field listener() {
-      try {
-        var field = PaperCommonConnection.class.getDeclaredField("packetListener");
-        field.setAccessible(true);
-        return field;
-      } catch (ReflectiveOperationException exception) {
-        throw new IllegalStateException("Cannot resolve the Paper configuration connection", exception);
+      for (Field field : PaperCommonConnection.class.getDeclaredFields()) {
+        if (field.getType() == ServerCommonPacketListenerImpl.class) {
+          field.setAccessible(true);
+          return field;
+        }
       }
+      throw new IllegalStateException("Cannot resolve the Paper configuration connection");
     }
   }
 }

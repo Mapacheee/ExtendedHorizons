@@ -1,6 +1,6 @@
 package me.mapacheee.extendedhorizons.view;
 
-import net.minecraft.world.level.ChunkPos;
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -51,7 +51,7 @@ public final class ChunkOrder {
     long[] result = new long[offsets.length];
     for (int i = 0; i < offsets.length; i++) {
       Offset offset = offsets[i];
-      result[i] = ChunkPos.pack(offset.x, offset.z);
+      result[i] = PacketAccess.chunkKey(offset.x, offset.z);
     }
     if (ORDERS.size() >= MAX_CACHED_ORDERS) {
       ORDERS.remove(ORDERS.keySet().iterator().next());

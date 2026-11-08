@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.hooks;
 
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.extent.AbstractDelegateExtent;
 import com.sk89q.worldedit.extent.Extent;
@@ -8,7 +9,6 @@ import com.sk89q.worldedit.world.biome.BiomeType;
 import com.sk89q.worldedit.world.block.BlockStateHolder;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.mapacheee.extendedhorizons.view.ViewService;
-import net.minecraft.world.level.ChunkPos;
 import org.bukkit.World;
 import org.bukkit.plugin.IllegalPluginAccessException;
 import org.bukkit.plugin.Plugin;
@@ -82,7 +82,7 @@ final class ChangedChunkExtent extends AbstractDelegateExtent {
   }
 
   private void mark(int x, int z) {
-    long key = ChunkPos.pack(x, z);
+    long key = PacketAccess.chunkKey(x, z);
     if (this.pending.add(key)) {
       this.views.editedChunk(this.world, key);
     }

@@ -1,5 +1,7 @@
 package me.mapacheee.extendedhorizons.chunk;
 
+import me.mapacheee.extendedhorizons.compat.LightPacketAccess;
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import ca.spottedleaf.moonrise.patches.starlight.light.SWMRNibbleArray;
 import ca.spottedleaf.moonrise.patches.starlight.storage.StarlightSectionData;
 import io.netty.buffer.ByteBuf;
@@ -29,6 +31,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 final class ChunkCodec {
 
@@ -55,7 +58,8 @@ final class ChunkCodec {
       }
       var pos = chunk.getPos();
       var light = new ClientboundLightUpdatePacketData(pos, lightEngine, null, null);
-      return encode(level, pos.x(), pos.z(), sections, heights, entities, light);
+      return encode(level, PacketAccess.x(pos), PacketAccess.z(pos), sections, heights, entities,
+        output -> LightPacketAccess.write(output, light));
     }
     var packet = new ClientboundLevelChunkWithLightPacket(chunk, lightEngine, null, null, false);
     ByteBuf buffer = Unpooled.buffer(4096, MAX_PACKET_BYTES);
@@ -110,11 +114,12 @@ final class ChunkCodec {
     if (mask != null) {
       mask.apply(level, sections);
     }
-    return encode(level, x, z, sections, data.heightmaps(), diskBlockEntities(level, data, sections), lightData(skyLight, blockLight));
+    return encode(level, x, z, sections, data.heightmaps(), diskBlockEntities(level, data, sections),
+      output -> writeLight(output, skyLight, blockLight));
   }
 
   private static ChunkData encode(ServerLevel level, int x, int z, LevelChunkSection[] sections,
-    Map<Heightmap.Types, long[]> heights, List<BlockEntity> entities, ClientboundLightUpdatePacketData light) {
+    Map<Heightmap.Types, long[]> heights, List<BlockEntity> entities, Consumer<RegistryFriendlyByteBuf> writeLight) {
     int sectionBytes = 0;
     for (LevelChunkSection section : sections) {
       sectionBytes += section.getSerializedSize();
@@ -133,7 +138,7 @@ final class ChunkCodec {
         sections[i].write(output, null, i);
       }
       writeBlockEntities(output, level, entities);
-      ClientboundLightUpdatePacketData.STREAM_CODEC.encode(output, light);
+      writeLight.accept(output);
       int bytes = buffer.readableBytes();
       var packet = ClientboundLevelChunkWithLightPacket.STREAM_CODEC.decode(output);
       if (output.isReadable()) {
@@ -192,7 +197,7 @@ final class ChunkCodec {
       BlockPos pos = BlockEntity.getPosFromTag(data.chunkPos(), tag);
       int sectionIndex = (pos.getY() >> 4) - level.getMinSectionY();
       if (sectionIndex < 0 || sectionIndex >= sections.length
-        || (pos.getX() >> 4) != data.chunkPos().x() || (pos.getZ() >> 4) != data.chunkPos().z()) {
+        || (pos.getX() >> 4) != PacketAccess.x(data.chunkPos()) || (pos.getZ() >> 4) != PacketAccess.z(data.chunkPos())) {
         continue;
       }
       var state = sections[sectionIndex].getBlockState(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15);
@@ -219,14 +224,14 @@ final class ChunkCodec {
     }
   }
 
-  private static ClientboundLightUpdatePacketData lightData(DataLayer[] sky, DataLayer[] block) {
+  private static void writeLight(RegistryFriendlyByteBuf output, DataLayer[] sky, DataLayer[] block) {
     BitSet skyMask = new BitSet();
     BitSet blockMask = new BitSet();
     BitSet emptySky = new BitSet();
     BitSet emptyBlock = new BitSet();
     List<byte[]> skyUpdates = lightUpdates(sky, skyMask, emptySky);
     List<byte[]> blockUpdates = lightUpdates(block, blockMask, emptyBlock);
-    return new ClientboundLightUpdatePacketData(skyMask, blockMask, emptySky, emptyBlock, skyUpdates, blockUpdates);
+    LightPacketAccess.write(output, skyMask, blockMask, emptySky, emptyBlock, skyUpdates, blockUpdates);
   }
 
   private static List<byte[]> lightUpdates(DataLayer[] layers, BitSet mask, BitSet empty) {

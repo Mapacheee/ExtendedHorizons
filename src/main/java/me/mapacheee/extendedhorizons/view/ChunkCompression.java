@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.view;
 
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -16,7 +17,6 @@ import net.minecraft.network.protocol.game.ClientboundExplodePacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
-import net.minecraft.world.level.ChunkPos;
 
 final class ChunkCompression extends ChannelOutboundHandlerAdapter {
 
@@ -54,7 +54,7 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
     if (compressor == null || !(compressor.handler() instanceof CompressionEncoder)
       || pipeline.context("encoder") == null || !compressor.executor().inEventLoop()
       || !pipeline.context("encoder").executor().inEventLoop()) {
-      this.forget(ChunkPos.pack(packet.x(), packet.z()));
+      this.forget(PacketAccess.chunkKey(packet));
       ctx.write(packet, promise);
       return;
     }
@@ -67,7 +67,7 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
     long previousPosition = this.position;
     this.chunk = true;
     this.deduplicate = deduplicate;
-    this.position = ChunkPos.pack(packet.x(), packet.z());
+    this.position = PacketAccess.chunkKey(packet);
     try {
       ctx.write(packet, promise);
     } finally {
@@ -123,13 +123,13 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
 
   void invalidate(Object packet) {
     if (packet instanceof ClientboundBlockUpdatePacket update) {
-      this.forget(ChunkPos.pack(update.getPos().getX() >> 4, update.getPos().getZ() >> 4));
+      this.forget(PacketAccess.chunkKey(update.getPos().getX() >> 4, update.getPos().getZ() >> 4));
     } else if (packet instanceof ClientboundBlockEntityDataPacket update) {
-      this.forget(ChunkPos.pack(update.getPos().getX() >> 4, update.getPos().getZ() >> 4));
+      this.forget(PacketAccess.chunkKey(update.getPos().getX() >> 4, update.getPos().getZ() >> 4));
     } else if (packet instanceof ClientboundLightUpdatePacket update) {
-      this.forget(ChunkPos.pack(update.x(), update.z()));
+      this.forget(PacketAccess.chunkKey(update));
     } else if (packet instanceof ClientboundSectionBlocksUpdatePacket update) {
-      update.runUpdates((pos, state) -> this.forget(ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4)));
+      update.runUpdates((pos, state) -> this.forget(PacketAccess.chunkKey(pos.getX() >> 4, pos.getZ() >> 4)));
     } else if (packet instanceof ClientboundChunksBiomesPacket || packet instanceof ClientboundExplodePacket
       || packet instanceof ClientboundBlockEventPacket) {
       this.clear();

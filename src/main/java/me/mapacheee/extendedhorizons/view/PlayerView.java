@@ -1,5 +1,6 @@
 package me.mapacheee.extendedhorizons.view;
 
+import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import io.netty.channel.Channel;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.mapacheee.extendedhorizons.config.Config;
@@ -124,7 +125,7 @@ public final class PlayerView {
   void updateChunk(World world, int x, int z, ChunkData data) {
     ViewSnapshot snapshot = this.lastPublished;
     if (!this.closed.get() && snapshot != null && snapshot.world() == world && ChunkStream.retained(snapshot, x, z)) {
-      this.channel.eventLoop().execute(() -> this.stream.updateChunk(world, ChunkPos.pack(x, z), data));
+      this.channel.eventLoop().execute(() -> this.stream.updateChunk(world, PacketAccess.chunkKey(x, z), data));
     }
   }
 
