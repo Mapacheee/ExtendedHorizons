@@ -27,6 +27,22 @@ Clients receive lightweight snapshots that dramatically expand visible render di
 
 ---
 
+## ⚡ Performance Comparison (Vanilla vs v4)
+
+Benchmark conducted on **Paper 26.3** with **50 simulated Java clients**, 35 seconds of active flight across the same pregenerated world, target view distance of **32 chunks** (vanilla server radius was 4 chunks):
+
+| Metric | Paper Vanilla (radius 4) | EH v4 (radius 32) |
+| :--- | :---: | :---: |
+| **Terrain Coverage (end of flight)** | 3.2% | **99.5%** |
+| **Network Traffic (flight)** | 493 MiB | **1,006 MiB** |
+| **Mean Server CPU** | 29.3% | **27.5%** |
+| **Local RTT (p95)** | 986.1 ms | **651.8 ms** |
+| **Median Time to 95% Coverage** | — | **35.7 s** |
+
+*EH v4 delivers near 100% terrain coverage at 32 chunks while maintaining lower CPU overhead and improved network latency compared to vanilla under heavy flight load.*
+
+---
+
 ##  Requirements
 
 - **Java 25**
