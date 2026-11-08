@@ -60,10 +60,15 @@ public final class ViewService {
     this.budget = new SendBudget(this.settings.globalBytesPerSecond());
     this.compression = new CompressionCache(this.settings.cacheBytes() / 4);
     this.source = new ChunkSource(this.plugin, this.settings.workers(), this.settings.cacheBytes(),
-      this.settings.cacheTtlMillis(), this.settings.globalInFlight(), this.settings.chunkUpdates().enabled());
+      this.settings.cacheTtlMillis(), this.settings.globalInFlight(), this.settings.chunkUpdates().enabled(),
+      this.settings.antiXray());
+    if (this.settings.antiXray().enabled() && !this.source.masking()) {
+      this.plugin.getSLF4JLogger().warn("ExtendedHorizons Anti-Xray has no effect because anti-xray.hidden-blocks is empty.");
+    }
     for (World world : this.plugin.getServer().getWorlds()) {
       if (!this.settings.disabledWorlds().contains(world.getName()) && this.source.protectedWorld(world)) {
-        this.plugin.getSLF4JLogger().info("Skipping extended chunks in {} because Paper anti-xray is enabled.", world.getName());
+        this.plugin.getSLF4JLogger().info("Skipping extended chunks in {} because Paper Anti-Xray is enabled and EH masking is disabled.",
+          world.getName());
       }
     }
     for (Player player : this.plugin.getServer().getOnlinePlayers()) {

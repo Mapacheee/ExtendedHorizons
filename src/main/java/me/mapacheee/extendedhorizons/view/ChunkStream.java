@@ -10,12 +10,17 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.mapacheee.extendedhorizons.config.Config;
 import me.mapacheee.extendedhorizons.chunk.ChunkData;
 import me.mapacheee.extendedhorizons.chunk.ChunkSource;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
@@ -117,7 +122,8 @@ final class ChunkStream extends ChannelDuplexHandler {
   private Object bundle(ClientboundBundlePacket bundle) {
     for (var sub : bundle.subPackets()) {
       if (sub instanceof ClientboundForgetLevelChunkPacket || sub instanceof ClientboundSetChunkCacheRadiusPacket
-        || sub instanceof ClientboundLevelChunkWithLightPacket || sub instanceof ClientboundRespawnPacket) {
+        || sub instanceof ClientboundLevelChunkWithLightPacket || sub instanceof ClientboundRespawnPacket
+        || this.suppressMaskedUpdate(sub)) {
         var packets = new ArrayList<Packet<? super ClientGamePacketListener>>();
         for (var packet : bundle.subPackets()) {
           Object result = this.observe(packet);
@@ -144,7 +150,11 @@ final class ChunkStream extends ChannelDuplexHandler {
     } else if (packet instanceof ClientboundForgetLevelChunkPacket(ChunkPos pos)) {
       long key = pos.pack();
       boolean known = this.nativeChunks.remove(key);
-      if (this.retained(key) && (known || this.extended.contains(key))) {
+      if (known && this.retained(key) && this.source.masking()) {
+        this.retries.remove(key);
+        this.edges.enqueue(key);
+        this.sleepUntil = 0;
+      } else if (this.retained(key) && (known || this.extended.contains(key))) {
         if (Math.abs(pos.x() - this.view.x()) <= this.view.nativeDistance()
           && Math.abs(pos.z() - this.view.z()) <= this.view.nativeDistance()) {
           this.compression.forget(key);
@@ -173,8 +183,40 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.expectedDimension = respawn.commonPlayerSpawnInfo().dimension();
       this.advertised = -1;
       this.sleepUntil = 0;
+    } else if (this.suppressMaskedUpdate(packet)) {
+      return null;
     }
     return packet;
+  }
+
+  private boolean suppressMaskedUpdate(Object packet) {
+    if (!this.source.masking() || this.extended.isEmpty()) {
+      return false;
+    }
+    if (packet instanceof ClientboundBlockUpdatePacket update) {
+      return this.maskedChunk(update.getPos());
+    }
+    if (packet instanceof ClientboundBlockEntityDataPacket update) {
+      return this.maskedChunk(update.getPos());
+    }
+    if (packet instanceof ClientboundBlockEventPacket event) {
+      return this.maskedChunk(event.getPos());
+    }
+    if (packet instanceof ClientboundSectionBlocksUpdatePacket update) {
+      boolean[] result = new boolean[2];
+      update.runUpdates((pos, state) -> {
+        if (!result[0]) {
+          result[0] = true;
+          result[1] = this.extended.contains(ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4));
+        }
+      });
+      return result[1];
+    }
+    return false;
+  }
+
+  private boolean maskedChunk(BlockPos pos) {
+    return this.extended.contains(ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4));
   }
 
   void tick(ViewSnapshot next, List<FarPlayerState.Snapshot> candidates) {

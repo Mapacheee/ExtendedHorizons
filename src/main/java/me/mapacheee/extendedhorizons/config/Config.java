@@ -2,10 +2,14 @@ package me.mapacheee.extendedhorizons.config;
 
 import com.thewinterframework.configurate.config.Configurate;
 import com.thewinterframework.configurate.config.OptionalNode;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.Block;
 import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 import org.spongepowered.configurate.objectmapping.meta.Setting;
 
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @ConfigSerializable
 @Configurate(value = "config", fillMissing = true)
@@ -21,7 +25,8 @@ public record Config(
   @Setting("global-mib-per-second") Integer globalMiBPerSecond,
   @Setting("disabled-worlds") Set<String> disabledWorlds,
   @Setting("far-players") @OptionalNode FarPlayers farPlayers,
-  @Setting("chunk-updates") ChunkUpdates chunkUpdates
+  @Setting("chunk-updates") ChunkUpdates chunkUpdates,
+  @Setting("anti-xray") AntiXray antiXray
 ) {
 
   public Config {
@@ -37,6 +42,30 @@ public record Config(
     disabledWorlds = disabledWorlds == null ? Set.of() : Set.copyOf(disabledWorlds);
     farPlayers = farPlayers == null ? new FarPlayers(null, null, null, null, null) : farPlayers;
     chunkUpdates = chunkUpdates == null ? new ChunkUpdates(null, null) : chunkUpdates;
+    antiXray = antiXray == null ? new AntiXray(null, null) : antiXray;
+  }
+
+  @ConfigSerializable
+  public record AntiXray(Boolean enabled, @Setting("hidden-blocks") @OptionalNode Set<String> hiddenBlocks) {
+
+    public AntiXray {
+      enabled = Boolean.TRUE.equals(enabled);
+      hiddenBlocks = hiddenBlocks == null ? Set.of() : Set.copyOf(hiddenBlocks);
+      hiddenBlocks.forEach(AntiXray::block);
+    }
+
+    public Set<Block> blocks() {
+      return this.hiddenBlocks.stream().map(AntiXray::block).collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static Block block(String value) {
+      Identifier id = Identifier.tryParse(value);
+      Block block = id == null ? null : BuiltInRegistries.BLOCK.getOptional(id).orElse(null);
+      if (block == null || block.defaultBlockState().isAir()) {
+        throw new IllegalArgumentException("Invalid block in anti-xray.hidden-blocks: " + value);
+      }
+      return block;
+    }
   }
 
   @ConfigSerializable

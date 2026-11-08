@@ -4,7 +4,9 @@ import ca.spottedleaf.concurrentutil.executor.Cancellable;
 import ca.spottedleaf.concurrentutil.util.Priority;
 import ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO;
 import com.google.common.collect.MapMaker;
+import me.mapacheee.extendedhorizons.config.Config;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.chunk.LevelChunk;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -15,9 +17,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -37,6 +41,8 @@ public final class ChunkSource implements AutoCloseable {
   private final Map<Key, Entry> cache = new LinkedHashMap<>(256, 0.75f, true);
   private final Map<Key, Job> pending = new HashMap<>();
   private final Map<Key, ChunkData.Revision> revisions;
+  private final Set<Block> hiddenBlocks;
+  private final Map<ServerLevel, ChunkMask> masks = new ConcurrentHashMap<>();
   private final LongAdder hits = new LongAdder();
   private final LongAdder shared = new LongAdder();
   private final LongAdder reads = new LongAdder();
@@ -49,10 +55,12 @@ public final class ChunkSource implements AutoCloseable {
   private long cacheBytes;
   private volatile boolean closed;
 
-  public ChunkSource(Plugin plugin, int workerCount, long maxCacheBytes, long ttlMillis, int maxInFlight, boolean updates) {
+  public ChunkSource(Plugin plugin, int workerCount, long maxCacheBytes, long ttlMillis, int maxInFlight,
+    boolean updates, Config.AntiXray antiXray) {
     this.plugin = plugin;
     this.maxCacheBytes = maxCacheBytes;
     this.ttlNanos = TimeUnit.MILLISECONDS.toNanos(ttlMillis);
+    this.hiddenBlocks = antiXray.enabled() ? antiXray.blocks() : Set.of();
     this.permits = new Semaphore(maxInFlight);
     this.revisions = updates ? new MapMaker().weakValues().makeMap() : null;
     AtomicInteger sequence = new AtomicInteger();
@@ -65,8 +73,16 @@ public final class ChunkSource implements AutoCloseable {
       });
   }
 
+  public boolean masking() {
+    return !this.hiddenBlocks.isEmpty();
+  }
+
   public boolean protectedWorld(World world) {
-    return ((CraftWorld) world).getHandle().paperConfig().anticheat.antiXray.enabled;
+    return !this.masking() && ((CraftWorld) world).getHandle().paperConfig().anticheat.antiXray.enabled;
+  }
+
+  private ChunkMask mask(ServerLevel level) {
+    return this.masking() ? this.masks.computeIfAbsent(level, key -> new ChunkMask(key, this.hiddenBlocks)) : null;
   }
 
   public CompletableFuture<ChunkData> tryRead(World world, int x, int z) {
@@ -210,7 +226,7 @@ public final class ChunkSource implements AutoCloseable {
         this.readDisk(level, job);
       } else {
         this.captures.increment();
-        this.finish(job, this.protectedWorld(world) ? null : ChunkCodec.loaded(level, chunk), null);
+        this.finish(job, ChunkCodec.loaded(level, chunk, this.mask(level)), null);
       }
     } catch (RuntimeException | LinkageError exception) {
       this.finish(job, null, exception);
@@ -233,7 +249,7 @@ public final class ChunkSource implements AutoCloseable {
           this.workers.execute(() -> {
             try {
               ChunkData data = this.closed || job.invalidated ? null
-                : ChunkCodec.disk(level, job.key.x(), job.key.z(), tag);
+                : ChunkCodec.disk(level, job.key.x(), job.key.z(), tag, this.mask(level));
               this.finish(job, data, null);
             } catch (RuntimeException | LinkageError exception) {
               this.finish(job, null, exception);
@@ -323,6 +339,7 @@ public final class ChunkSource implements AutoCloseable {
   }
 
   public void invalidate(World world) {
+    this.masks.remove(((CraftWorld) world).getHandle());
     UUID id = world.getUID();
     var cancelled = new ArrayList<Job>();
     synchronized (this) {

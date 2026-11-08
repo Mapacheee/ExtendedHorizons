@@ -8,7 +8,6 @@ import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
@@ -38,11 +37,27 @@ final class ChunkCodec {
   private ChunkCodec() {
   }
 
-  static ChunkData loaded(ServerLevel level, LevelChunk chunk) {
+  static ChunkData loaded(ServerLevel level, LevelChunk chunk, ChunkMask mask) {
     if (!chunk.isLightCorrect()) {
       return null;
     }
-    var packet = new ClientboundLevelChunkWithLightPacket(chunk, level.getChunkSource().getLightEngine(), null, null, false);
+    var lightEngine = level.getChunkSource().getLightEngine();
+    if (mask != null) {
+      var sections = chunk.getSections().clone();
+      mask.apply(level, sections);
+      var entities = chunk.getBlockEntities().values().stream().filter(entity -> {
+        var state = chunk.getBlockState(entity.getBlockPos());
+        return !mask.test(state) && entity.isValidBlockState(state);
+      }).toList();
+      Map<Heightmap.Types, long[]> heights = new EnumMap<>(Heightmap.Types.class);
+      for (var entry : chunk.getHeightmaps()) {
+        heights.put(entry.getKey(), entry.getValue().getRawData());
+      }
+      var pos = chunk.getPos();
+      var light = new ClientboundLightUpdatePacketData(pos, lightEngine, null, null);
+      return encode(level, pos.x(), pos.z(), sections, heights, entities, light);
+    }
+    var packet = new ClientboundLevelChunkWithLightPacket(chunk, lightEngine, null, null, false);
     ByteBuf buffer = Unpooled.buffer(4096, MAX_PACKET_BYTES);
     try {
       ClientboundLevelChunkWithLightPacket.STREAM_CODEC.encode(new RegistryFriendlyByteBuf(buffer, level.registryAccess()), packet);
@@ -52,7 +67,7 @@ final class ChunkCodec {
     }
   }
 
-  static ChunkData disk(ServerLevel level, int x, int z, CompoundTag tag) {
+  static ChunkData disk(ServerLevel level, int x, int z, CompoundTag tag, ChunkMask mask) {
     int version = tag.getIntOr("DataVersion", -1);
     int currentVersion = SharedConstants.getCurrentVersion().dataVersion().version();
     if (version < 0 || version > currentVersion
@@ -92,6 +107,14 @@ final class ChunkCodec {
         sections[i] = empty;
       }
     }
+    if (mask != null) {
+      mask.apply(level, sections);
+    }
+    return encode(level, x, z, sections, data.heightmaps(), diskBlockEntities(level, data, sections), lightData(skyLight, blockLight));
+  }
+
+  private static ChunkData encode(ServerLevel level, int x, int z, LevelChunkSection[] sections,
+    Map<Heightmap.Types, long[]> heights, List<BlockEntity> entities, ClientboundLightUpdatePacketData light) {
     int sectionBytes = 0;
     for (LevelChunkSection section : sections) {
       sectionBytes += section.getSerializedSize();
@@ -104,13 +127,13 @@ final class ChunkCodec {
       RegistryFriendlyByteBuf output = new RegistryFriendlyByteBuf(buffer, level.registryAccess());
       output.writeInt(x);
       output.writeInt(z);
-      writeHeightmaps(output, level, sections, data.heightmaps());
+      writeHeightmaps(output, level, sections, heights);
       output.writeVarInt(sectionBytes);
       for (int i = 0; i < sections.length; i++) {
         sections[i].write(output, null, i);
       }
-      writeBlockEntities(output, level, data, sections);
-      writeLight(output, skyLight, blockLight);
+      writeBlockEntities(output, level, entities);
+      ClientboundLightUpdatePacketData.STREAM_CODEC.encode(output, light);
       int bytes = buffer.readableBytes();
       var packet = ClientboundLevelChunkWithLightPacket.STREAM_CODEC.decode(output);
       if (output.isReadable()) {
@@ -163,8 +186,7 @@ final class ChunkCodec {
     });
   }
 
-  private static void writeBlockEntities(RegistryFriendlyByteBuf output, ServerLevel level,
-    SerializableChunkData data, LevelChunkSection[] sections) {
+  private static List<BlockEntity> diskBlockEntities(ServerLevel level, SerializableChunkData data, LevelChunkSection[] sections) {
     List<BlockEntity> entities = new ArrayList<>();
     for (CompoundTag tag : data.blockEntities()) {
       BlockPos pos = BlockEntity.getPosFromTag(data.chunkPos(), tag);
@@ -174,11 +196,18 @@ final class ChunkCodec {
         continue;
       }
       var state = sections[sectionIndex].getBlockState(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15);
+      if (!state.hasBlockEntity()) {
+        continue;
+      }
       BlockEntity entity = BlockEntity.loadStatic(pos, state, tag, level.registryAccess());
       if (entity != null && entity.isValidBlockState(state)) {
         entities.add(entity);
       }
     }
+    return entities;
+  }
+
+  private static void writeBlockEntities(RegistryFriendlyByteBuf output, ServerLevel level, List<BlockEntity> entities) {
     output.writeVarInt(entities.size());
     for (BlockEntity entity : entities) {
       BlockPos pos = entity.getBlockPos();
@@ -190,15 +219,14 @@ final class ChunkCodec {
     }
   }
 
-  private static void writeLight(FriendlyByteBuf output, DataLayer[] sky, DataLayer[] block) {
+  private static ClientboundLightUpdatePacketData lightData(DataLayer[] sky, DataLayer[] block) {
     BitSet skyMask = new BitSet();
     BitSet blockMask = new BitSet();
     BitSet emptySky = new BitSet();
     BitSet emptyBlock = new BitSet();
     List<byte[]> skyUpdates = lightUpdates(sky, skyMask, emptySky);
     List<byte[]> blockUpdates = lightUpdates(block, blockMask, emptyBlock);
-    ClientboundLightUpdatePacketData.STREAM_CODEC.encode(output,
-      new ClientboundLightUpdatePacketData(skyMask, blockMask, emptySky, emptyBlock, skyUpdates, blockUpdates));
+    return new ClientboundLightUpdatePacketData(skyMask, blockMask, emptySky, emptyBlock, skyUpdates, blockUpdates);
   }
 
   private static List<byte[]> lightUpdates(DataLayer[] layers, BitSet mask, BitSet empty) {
