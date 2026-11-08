@@ -57,7 +57,7 @@ public final class SendBudget {
       this.nextCount = now + 100_000_000L;
     }
     long shareRate = this.rate / this.active;
-    long shareBurst = Math.max(65536, shareRate / 20);
+    long shareBurst = Math.max(65536, shareRate / 10);
     if (now > share.updated) {
       share.available = Math.min(shareBurst, share.available + (now - share.updated) * (shareRate / 1.0e9));
       share.updated = now;
