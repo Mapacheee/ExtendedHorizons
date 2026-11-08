@@ -32,7 +32,7 @@ Clients receive lightweight snapshots that dramatically expand visible render di
 
 Benchmark conducted on **Paper 26.3** with **50 simulated Java clients**, 35 seconds of active flight across the same pregenerated world, target view distance of **32 chunks** (vanilla server radius was 4 chunks):
 
-| Metric | Paper Vanilla (radius 4) | EH v4 (radius 32) |
+| Metric | Paper Vanilla (radius 32) | EH v4 (radius 32) |
 | :--- | :---: | :---: |
 | **Terrain Coverage (end of flight)** | 3.2% | **99.5%** |
 | **Network Traffic (flight)** | 493 MiB | **1,006 MiB** |
