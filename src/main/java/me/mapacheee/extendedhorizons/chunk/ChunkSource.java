@@ -90,34 +90,49 @@ public final class ChunkSource implements AutoCloseable {
       return CompletableFuture.completedFuture(null);
     }
     Key key = new Key(world.getUID(), x, z);
-    Job job;
+    Entry cached;
+    Job job = null;
+    boolean start = false;
     synchronized (this) {
       if (this.closed) {
         return CompletableFuture.completedFuture(null);
       }
-      Entry cached = this.cache.get(key);
-      if (cached != null) {
-        if (System.nanoTime() < cached.expires()) {
-          this.hits.increment();
-          return CompletableFuture.completedFuture(cached.data());
-        }
+      cached = this.cache.get(key);
+      if (cached != null && System.nanoTime() >= cached.expires()) {
         this.cache.remove(key);
         this.cacheBytes -= cached.weight();
+        cached = null;
       }
-      Job existing = this.pending.get(key);
-      if (existing != null) {
-        this.shared.increment();
-        return existing.result.copy();
+      if (cached == null) {
+        job = this.pending.get(key);
+        if (job == null && this.permits.tryAcquire()) {
+          job = new Job(key, this.revision(key), null);
+          job.holdingPermit = true;
+          this.pending.put(key, job);
+          this.active.incrementAndGet();
+          start = true;
+        }
       }
-      if (!this.permits.tryAcquire()) {
-        this.throttled.increment();
-        return null;
-      }
-      job = new Job(key, this.revision(key), null);
-      job.holdingPermit = true;
-      this.pending.put(key, job);
-      this.active.incrementAndGet();
     }
+    if (cached != null) {
+      this.hits.increment();
+      return CompletableFuture.completedFuture(cached.data());
+    }
+    if (job == null) {
+      this.throttled.increment();
+      return null;
+    }
+    if (start) {
+      this.startRead(world, job);
+    } else {
+      this.shared.increment();
+    }
+    return job.result.copy();
+  }
+
+  private void startRead(World world, Job job) {
+    int x = job.key.x();
+    int z = job.key.z();
     try {
       ServerLevel level = ((CraftWorld) world).getHandle();
       if (level.getChunkSource().getChunkAtIfLoadedImmediately(x, z) == null) {
@@ -130,7 +145,6 @@ public final class ChunkSource implements AutoCloseable {
     } catch (RuntimeException | LinkageError exception) {
       this.finish(job, null, exception);
     }
-    return job.result.copy();
   }
 
   public CompletableFuture<ChunkData> refresh(World world, int x, int z) {
@@ -155,15 +169,19 @@ public final class ChunkSource implements AutoCloseable {
     return job.result.copy();
   }
 
-  public synchronized void invalidateEdited(World world, int x, int z) {
-    if (this.closed || this.revisions == null) {
+  public void invalidateEdited(World world, int x, int z) {
+    if (this.revisions == null) {
       return;
     }
     Key key = new Key(world.getUID(), x, z);
-    Job previous = this.pending.get(key);
-    if (!waitingForEdit(previous)) {
-      this.discardEdited(key, previous);
-      this.pending.remove(key);
+    synchronized (this) {
+      if (!this.closed) {
+        Job previous = this.pending.get(key);
+        if (!waitingForEdit(previous)) {
+          this.discardEdited(key, previous);
+          this.pending.remove(key);
+        }
+      }
     }
   }
 
@@ -362,10 +380,16 @@ public final class ChunkSource implements AutoCloseable {
     cancelled.forEach(job -> this.finish(job, null, null));
   }
 
-  public synchronized Map<String, Long> stats() {
+  public Map<String, Long> stats() {
+    long bytes;
+    long entries;
+    synchronized (this) {
+      bytes = this.cacheBytes;
+      entries = this.cache.size();
+    }
     return Map.ofEntries(
-      Map.entry("cacheBytes", this.cacheBytes),
-      Map.entry("cacheEntries", (long) this.cache.size()),
+      Map.entry("cacheBytes", bytes),
+      Map.entry("cacheEntries", entries),
       Map.entry("cacheHits", this.hits.sum()),
       Map.entry("sharedReads", this.shared.sum()),
       Map.entry("diskReads", this.reads.sum()),
