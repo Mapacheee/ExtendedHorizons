@@ -23,6 +23,7 @@ public record Config(
   @Setting("cache-seconds") Integer cacheSeconds,
   @Setting("player-mib-per-second") Integer playerMiBPerSecond,
   @Setting("global-mib-per-second") Integer globalMiBPerSecond,
+  @Setting("consolidate-flushes") Boolean consolidateFlushes,
   @Setting("disabled-worlds") Set<String> disabledWorlds,
   @Setting("far-players") @OptionalNode FarPlayers farPlayers,
   @Setting("chunk-updates") ChunkUpdates chunkUpdates,
@@ -39,6 +40,7 @@ public record Config(
     cacheSeconds = bounded("cache-seconds", cacheSeconds, 30, 1, 300);
     playerMiBPerSecond = bounded("player-mib-per-second", playerMiBPerSecond, 8, 1, 256);
     globalMiBPerSecond = bounded("global-mib-per-second", globalMiBPerSecond, 192, 1, 4096);
+    consolidateFlushes = consolidateFlushes == null || consolidateFlushes;
     disabledWorlds = disabledWorlds == null ? Set.of() : Set.copyOf(disabledWorlds);
     farPlayers = farPlayers == null ? new FarPlayers(null, null, null, null, null) : farPlayers;
     chunkUpdates = chunkUpdates == null ? new ChunkUpdates(null, null) : chunkUpdates;

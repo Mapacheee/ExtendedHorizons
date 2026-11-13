@@ -4,6 +4,8 @@ import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelPromise;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.flush.FlushConsolidationHandler;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
@@ -66,6 +68,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   private long nextRetry = Long.MAX_VALUE;
   private volatile long sleepUntil;
   private boolean needsFlush;
+  private FlushConsolidationHandler flushConsolidation;
 
   ChunkStream(ChunkSource source, Config settings, ViewMetrics metrics, SendBudget global,
     CompressionCache compression, LongOpenHashSet nativeChunks) {
@@ -91,6 +94,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   @Override
   public void handlerRemoved(ChannelHandlerContext ctx) {
     this.reset(false, false);
+    this.consolidateFlushes(false);
     this.compression.remove(ctx);
     this.globalBudget.remove(this.share);
     this.context = null;
@@ -235,6 +239,7 @@ final class ChunkStream extends ChannelDuplexHandler {
       previous = null;
     }
     this.view = next;
+    this.consolidateFlushes(next.enabled());
     if (!next.enabled()) {
       if (previous != null && previous.enabled()) {
         this.reset(true, true);
@@ -294,6 +299,22 @@ final class ChunkStream extends ChannelDuplexHandler {
     if (this.needsFlush) {
       this.needsFlush = false;
       this.context.flush();
+    }
+  }
+
+  private void consolidateFlushes(boolean enabled) {
+    var pipeline = this.context.pipeline();
+    if (enabled && this.settings.consolidateFlushes() && this.context.channel() instanceof SocketChannel) {
+      if (this.flushConsolidation == null) {
+        var handler = new FlushConsolidationHandler(256, true);
+        pipeline.addFirst("extendedhorizons_flush", handler);
+        this.flushConsolidation = handler;
+      }
+    } else if (this.flushConsolidation != null) {
+      if (pipeline.context(this.flushConsolidation) != null) {
+        pipeline.remove(this.flushConsolidation);
+      }
+      this.flushConsolidation = null;
     }
   }
 
