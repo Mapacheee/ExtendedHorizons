@@ -35,8 +35,8 @@ public record Config(
     inFlightPerPlayer = bounded("inflight-per-player", inFlightPerPlayer, 8, 1, 32);
     workers = bounded("workers", workers, 2, 1, 16);
     globalInFlight = bounded("global-inflight", globalInFlight, 64, 1, 512);
-    cacheMiB = bounded("cache-mib", cacheMiB, 128, 1, 2048);
-    cacheSeconds = bounded("cache-seconds", cacheSeconds, 10, 1, 300);
+    cacheMiB = bounded("cache-mib", cacheMiB, 256, 1, 2048);
+    cacheSeconds = bounded("cache-seconds", cacheSeconds, 30, 1, 300);
     playerMiBPerSecond = bounded("player-mib-per-second", playerMiBPerSecond, 8, 1, 256);
     globalMiBPerSecond = bounded("global-mib-per-second", globalMiBPerSecond, 192, 1, 4096);
     disabledWorlds = disabledWorlds == null ? Set.of() : Set.copyOf(disabledWorlds);

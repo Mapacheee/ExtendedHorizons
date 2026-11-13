@@ -3,8 +3,8 @@ workers: 2
 send-per-tick: 8
 inflight-per-player: 8
 global-inflight: 64
-cache-mib: 128
-cache-seconds: 10
+cache-mib: 256
+cache-seconds: 30
 
 # Budgets count uncompressed chunk packet bytes.
 player-mib-per-second: 8

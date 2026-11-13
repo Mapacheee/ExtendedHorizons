@@ -2,7 +2,6 @@ package me.mapacheee.extendedhorizons.view;
 
 import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
@@ -51,9 +50,9 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
   void writeChunk(ChannelHandlerContext ctx, ClientboundLevelChunkWithLightPacket packet, ChannelPromise promise, boolean deduplicate) {
     var pipeline = ctx.pipeline();
     ChannelHandlerContext compressor = pipeline.context("compress");
+    ChannelHandlerContext encoder = pipeline.context("encoder");
     if (compressor == null || !(compressor.handler() instanceof CompressionEncoder)
-      || pipeline.context("encoder") == null || !compressor.executor().inEventLoop()
-      || !pipeline.context("encoder").executor().inEventLoop()) {
+      || encoder == null || !compressor.executor().inEventLoop() || !encoder.executor().inEventLoop()) {
       this.forget(PacketAccess.chunkKey(packet));
       ctx.write(packet, promise);
       return;
@@ -79,9 +78,12 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
 
   @Override
   public void write(ChannelHandlerContext ctx, Object message, ChannelPromise promise) {
+    if (!this.chunk || !(message instanceof ByteBuf source)) {
+      ctx.write(message, promise);
+      return;
+    }
     ChannelHandlerContext compressor = ctx.pipeline().context("compress");
-    if (!this.chunk || !(message instanceof ByteBuf source) || compressor == null
-      || !(compressor.handler() instanceof CompressionEncoder encoder)) {
+    if (compressor == null || !(compressor.handler() instanceof CompressionEncoder encoder)) {
       ctx.write(message, promise);
       return;
     }
@@ -107,7 +109,8 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
       }
     });
     if (lookup.data() != null) {
-      ByteBuf copy = Unpooled.wrappedBuffer(lookup.data().clone());
+      byte[] data = lookup.data();
+      ByteBuf copy = ctx.alloc().ioBuffer(data.length, data.length).writeBytes(data);
       source.release();
       compressor.write(copy, promise);
       return;
