@@ -62,7 +62,7 @@ final class ChunkCodec {
         output -> LightPacketAccess.write(output, light));
     }
     var packet = new ClientboundLevelChunkWithLightPacket(chunk, lightEngine, null, null, false);
-    ByteBuf buffer = PooledByteBufAllocator.DEFAULT.heapBuffer(4096, MAX_PACKET_BYTES);
+    ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(4096, MAX_PACKET_BYTES);
     try {
       ClientboundLevelChunkWithLightPacket.STREAM_CODEC.encode(new RegistryFriendlyByteBuf(buffer, level.registryAccess()), packet);
       return new ChunkData(packet, buffer.readableBytes());
@@ -127,7 +127,7 @@ final class ChunkCodec {
     if (sectionBytes > 2 * 1024 * 1024) {
       return null;
     }
-    ByteBuf buffer = PooledByteBufAllocator.DEFAULT.heapBuffer(sectionBytes + 1024, MAX_PACKET_BYTES);
+    ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(sectionBytes + 1024, MAX_PACKET_BYTES);
     try {
       RegistryFriendlyByteBuf output = new RegistryFriendlyByteBuf(buffer, level.registryAccess());
       output.writeInt(x);

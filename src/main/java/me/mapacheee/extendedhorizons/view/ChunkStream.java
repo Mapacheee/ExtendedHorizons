@@ -332,6 +332,7 @@ final class ChunkStream extends ChannelDuplexHandler {
       return;
     }
     long[] offsets = ChunkOrder.offsets(this.settings.distance(), this.view.direction());
+    int nativeDistanceSq = this.view.nativeDistance() * this.view.nativeDistance();
     int scanEnd = Math.min(end, this.cursor + 1024);
     int starts = 0;
     int edgeStarts = 0;
@@ -339,24 +340,33 @@ final class ChunkStream extends ChannelDuplexHandler {
       && this.pending.size() < this.settings.inFlightPerPlayer()) {
       boolean edge = !this.edges.isEmpty() && (this.cursor >= scanEnd || edgeStarts < Math.max(1, this.settings.inFlightPerPlayer() / 4));
       long key;
+      int x;
+      int z;
       if (edge) {
         key = this.edges.dequeueLong();
         if (!this.desired(key)) {
           continue;
         }
+        x = ChunkPos.getX(key);
+        z = ChunkPos.getZ(key);
+        int dx = x - this.view.x();
+        int dz = z - this.view.z();
+        if (dx * dx + dz * dz <= nativeDistanceSq) {
+          continue;
+        }
       } else {
         long offset = offsets[this.cursor++];
-        key = PacketAccess.chunkKey(this.view.x() + ChunkPos.getX(offset), this.view.z() + ChunkPos.getZ(offset));
-      }
-      int x = ChunkPos.getX(key);
-      int z = ChunkPos.getZ(key);
-      if (!this.desired(key)) {
-        continue;
-      }
-      int dx = x - this.view.x();
-      int dz = z - this.view.z();
-      if (dx * dx + dz * dz <= this.view.nativeDistance() * this.view.nativeDistance()) {
-        continue;
+        int ox = ChunkPos.getX(offset);
+        int oz = ChunkPos.getZ(offset);
+        if (ox * ox + oz * oz <= nativeDistanceSq) {
+          continue;
+        }
+        x = this.view.x() + ox;
+        z = this.view.z() + oz;
+        key = PacketAccess.chunkKey(x, z);
+        if (!this.desired(key)) {
+          continue;
+        }
       }
       if (this.nativeChunks.contains(key) || this.extended.contains(key) || this.pending.contains(key)) {
         continue;
