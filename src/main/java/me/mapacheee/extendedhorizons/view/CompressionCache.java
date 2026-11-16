@@ -1,6 +1,7 @@
 package me.mapacheee.extendedhorizons.view;
 
 import io.netty.buffer.ByteBuf;
+import com.google.common.collect.MapMaker;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -13,11 +14,13 @@ final class CompressionCache {
   private static final long C2 = 0x4cf5ad432745937fL;
 
   private final ConcurrentHashMap<Key, Entry> entries = new ConcurrentHashMap<>();
+  private final Map<Object, Alias> packets = new MapMaker().weakKeys().makeMap();
   private final Map<Key, Entry> order = new LinkedHashMap<>();
   private final Object eviction = new Object();
   private final long maxBytes;
   private final LongAdder hits = new LongAdder();
   private final LongAdder misses = new LongAdder();
+  private final LongAdder encodedHits = new LongAdder();
   private long bytes;
 
   CompressionCache(long maxBytes) {
@@ -33,6 +36,31 @@ final class CompressionCache {
     }
     this.misses.increment();
     return new Lookup(key, null);
+  }
+
+  Lookup lookup(Object packet, int threshold, int packetId) {
+    Alias alias = this.packets.get(packet);
+    if (alias == null || alias.packetId() != packetId || alias.key().threshold() != threshold) {
+      return null;
+    }
+    Entry entry = this.entries.get(alias.key());
+    if (entry == null) {
+      return null;
+    }
+    this.hits.increment();
+    this.encodedHits.increment();
+    return new Lookup(alias.key(), entry.data());
+  }
+
+  void remember(Object packet, int packetId, Key key) {
+    this.packets.put(packet, new Alias(packetId, key));
+  }
+
+  void forgetPacket(Object packet) {
+    Alias alias = this.packets.get(packet);
+    if (alias != null) {
+      this.packets.remove(packet, alias);
+    }
   }
 
   void store(Lookup lookup, ByteBuf compressed) {
@@ -71,7 +99,7 @@ final class CompressionCache {
       count = this.order.size();
     }
     return Map.of("compressionHits", this.hits.sum(), "compressionMisses", this.misses.sum(),
-      "compressionBytes", size, "compressionEntries", count);
+      "compressionBytes", size, "compressionEntries", count, "encodedHits", this.encodedHits.sum());
   }
 
   private static Key hashKey(ByteBuf source, int threshold) {
@@ -160,6 +188,8 @@ final class CompressionCache {
   record Key(int threshold, int size, long a, long b) {}
 
   record Lookup(Key key, byte[] data) {}
+
+  private record Alias(int packetId, Key key) {}
 
   private record Entry(byte[] data) {
     int weight() {

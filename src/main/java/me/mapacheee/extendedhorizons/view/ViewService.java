@@ -43,6 +43,7 @@ public final class ViewService {
   private volatile Config settings;
   private SendBudget budget;
   private volatile CompressionCache compression;
+  private volatile DistancePermissions permissions;
 
   @Inject
   public ViewService(Plugin plugin, Container<Config> config) {
@@ -54,6 +55,8 @@ public final class ViewService {
   @OnEnable
   public synchronized void start() {
     this.settings = this.config.get();
+    this.permissions = new DistancePermissions(this.plugin, this.settings, this::permissionsChanged,
+      () -> this.views.values().forEach(PlayerView::permissionsChanged));
     for (int direction = 0; direction <= 8; direction++) {
       ChunkOrder.offsets(this.settings.distance(), direction);
     }
@@ -108,6 +111,8 @@ public final class ViewService {
     if (!this.config.get().equals(this.settings)) {
       this.stopViews();
       this.start();
+    } else {
+      this.views.values().forEach(PlayerView::permissionsChanged);
     }
   }
 
@@ -117,7 +122,7 @@ public final class ViewService {
     }
     var stream = new ChunkStream(this.source, this.settings, this.metrics, this.budget, this.compression,
       new LongOpenHashSet(player.getSentChunkKeys()));
-    PlayerView view = new PlayerView(this.plugin, this.source, this.settings, player, stream, this.farPlayers);
+    PlayerView view = new PlayerView(this.plugin, this.source, this.settings, player, stream, this.farPlayers, this.permissions);
     view.start();
     this.views.put(player.getUniqueId(), view);
   }
@@ -126,6 +131,20 @@ public final class ViewService {
     PlayerView view = this.views.get(playerId);
     if (view != null) {
       view.swing(hand);
+    }
+  }
+
+  private void permissionsChanged(UUID playerId) {
+    PlayerView view = this.views.get(playerId);
+    if (view != null) {
+      view.permissionsChanged();
+    }
+  }
+
+  synchronized void permissionProviderChanged(boolean available) {
+    if (this.permissions != null) {
+      this.permissions.refreshProvider(available);
+      this.views.values().forEach(PlayerView::permissionsChanged);
     }
   }
 
@@ -233,6 +252,12 @@ public final class ViewService {
     return (enabled ? "enabled" : "disabled") + ", " + this.farConnections.size() + " observed connections";
   }
 
+  public String distancePermissionStatus() {
+    DistancePermissions current = this.permissions;
+    return current == null || !current.enabled() ? "disabled"
+      : current.eventDriven() ? "enabled, LuckPerms events" : "enabled, periodic refresh";
+  }
+
   public void inspectFarPlayer(Player observer, String targetName) {
     var viewer = this.views.get(observer.getUniqueId());
     var player = this.plugin.getServer().getPlayerExact(targetName);
@@ -277,6 +302,10 @@ public final class ViewService {
     this.bulkUpdates.clear();
     this.views.values().forEach(PlayerView::close);
     this.views.clear();
+    if (this.permissions != null) {
+      this.permissions.close();
+      this.permissions = null;
+    }
     if (current != null) {
       current.close();
     }

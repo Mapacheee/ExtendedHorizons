@@ -5,6 +5,7 @@ import ca.spottedleaf.concurrentutil.util.Priority;
 import ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO;
 import com.google.common.collect.MapMaker;
 import me.mapacheee.extendedhorizons.config.Config;
+import me.mapacheee.extendedhorizons.compat.LightPacketAccess;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -244,7 +245,7 @@ public final class ChunkSource implements AutoCloseable {
         this.readDisk(level, job);
       } else {
         this.captures.increment();
-        this.finish(job, ChunkCodec.loaded(level, chunk, this.mask(level)), null);
+        this.finish(job, ChunkCodec.loaded(level, chunk, this.mask(level), this.revisions != null), null);
       }
     } catch (RuntimeException | LinkageError exception) {
       this.finish(job, null, exception);
@@ -267,7 +268,7 @@ public final class ChunkSource implements AutoCloseable {
           this.workers.execute(() -> {
             try {
               ChunkData data = this.closed || job.invalidated ? null
-                : ChunkCodec.disk(level, job.key.x(), job.key.z(), tag, this.mask(level));
+                : ChunkCodec.disk(level, job.key.x(), job.key.z(), tag, this.mask(level), this.revisions != null);
               this.finish(job, data, null);
             } catch (RuntimeException | LinkageError exception) {
               this.finish(job, null, exception);
@@ -299,7 +300,7 @@ public final class ChunkSource implements AutoCloseable {
         this.pending.remove(job.key, job);
         if (!this.closed && !job.invalidated) {
           if (data != null && job.revision != null) {
-            data = new ChunkData(data.packet(), data.bytes(), job.revision);
+            data = new ChunkData(data.packet(), data.bytes(), job.revision, data.signature(), data.lightPacket());
           }
           this.cache(job.key, data);
         }
@@ -426,7 +427,8 @@ public final class ChunkSource implements AutoCloseable {
 
   private record Entry(ChunkData data, long expires) {
     private int weight() {
-      return this.data == null ? 128 : this.data.bytes() + 1024;
+      return this.data == null ? 128 : this.data.bytes() + 1024
+        + (this.data.signature() != null && LightPacketAccess.copiesData() ? this.data.signature().lightBytes() : 0);
     }
   }
 

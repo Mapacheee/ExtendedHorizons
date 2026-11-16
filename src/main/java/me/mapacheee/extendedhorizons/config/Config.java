@@ -24,7 +24,9 @@ public record Config(
   @Setting("player-mib-per-second") Integer playerMiBPerSecond,
   @Setting("global-mib-per-second") Integer globalMiBPerSecond,
   @Setting("consolidate-flushes") Boolean consolidateFlushes,
+  @Setting("reuse-encoded-chunks") Boolean reuseEncodedChunks,
   @Setting("disabled-worlds") Set<String> disabledWorlds,
+  @Setting("distance-permissions") DistancePermissions distancePermissions,
   @Setting("far-players") @OptionalNode FarPlayers farPlayers,
   @Setting("chunk-updates") ChunkUpdates chunkUpdates,
   @Setting("anti-xray") AntiXray antiXray
@@ -41,10 +43,26 @@ public record Config(
     playerMiBPerSecond = bounded("player-mib-per-second", playerMiBPerSecond, 8, 1, 256);
     globalMiBPerSecond = bounded("global-mib-per-second", globalMiBPerSecond, 192, 1, 4096);
     consolidateFlushes = consolidateFlushes == null || consolidateFlushes;
+    reuseEncodedChunks = reuseEncodedChunks == null || reuseEncodedChunks;
     disabledWorlds = disabledWorlds == null ? Set.of() : Set.copyOf(disabledWorlds);
+    distancePermissions = distancePermissions == null ? new DistancePermissions(null, null, null) : distancePermissions;
     farPlayers = farPlayers == null ? new FarPlayers(null, null, null, null, null) : farPlayers;
     chunkUpdates = chunkUpdates == null ? new ChunkUpdates(null, null) : chunkUpdates;
     antiXray = antiXray == null ? new AntiXray(null, null) : antiXray;
+  }
+
+  @ConfigSerializable
+  public record DistancePermissions(Boolean enabled, @Setting("default-distance") Integer defaultDistance,
+    @Setting("refresh-seconds") Integer refreshSeconds) {
+
+    public DistancePermissions {
+      enabled = Boolean.TRUE.equals(enabled);
+      defaultDistance = defaultDistance == null ? -1 : defaultDistance;
+      if (defaultDistance != -1 && (defaultDistance < 2 || defaultDistance > 128)) {
+        throw new IllegalArgumentException("distance-permissions.default-distance must be -1 or between 2 and 128");
+      }
+      refreshSeconds = bounded("distance-permissions.refresh-seconds", refreshSeconds, 5, 1, 300);
+    }
   }
 
   @ConfigSerializable

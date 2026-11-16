@@ -29,6 +29,10 @@ public final class PlayerView {
   private final ChunkStream stream;
   private final FarPlayerIndex farIndex;
   private final FarPlayerState farState;
+  private final DistancePermissions permissions;
+  private final AtomicBoolean permissionsDirty = new AtomicBoolean(true);
+  private int permissionDistance = -1;
+  private long nextPermissionCheck;
   private final AtomicReference<List<FarPlayerState.Snapshot>> farCandidates = new AtomicReference<>();
   private final AtomicBoolean closed = new AtomicBoolean();
   private final AtomicReference<ViewSnapshot> latest = new AtomicReference<>();
@@ -40,12 +44,14 @@ public final class PlayerView {
   private double lastZ;
   private int farTicks;
 
-  PlayerView(Plugin plugin, ChunkSource source, Config settings, Player player, ChunkStream stream, FarPlayerIndex farIndex) {
+  PlayerView(Plugin plugin, ChunkSource source, Config settings, Player player, ChunkStream stream, FarPlayerIndex farIndex,
+    DistancePermissions permissions) {
     this.plugin = plugin;
     this.source = source;
     this.settings = settings;
     this.player = player;
     this.farIndex = farIndex;
+    this.permissions = permissions;
     this.farState = settings.farPlayers().enabled() ? new FarPlayerState(player, farIndex, settings.farPlayers()) : null;
     this.channel = ((CraftPlayer) player).getHandle().connection.connection.channel;
     this.stream = stream;
@@ -72,6 +78,16 @@ public final class PlayerView {
     }
     this.player.getLocation(this.location);
     World world = this.location.getWorld();
+    if (this.permissions.enabled()) {
+      boolean dirty = this.permissionsDirty.getAndSet(false);
+      long now = this.permissions.eventDriven() ? 0 : System.nanoTime();
+      if (dirty || world != this.lastWorld || (!this.permissions.eventDriven() && now >= this.nextPermissionCheck)) {
+        boolean first = this.permissionDistance < 0;
+        this.permissionDistance = this.permissions.resolve(this.player);
+        long interval = this.settings.distancePermissions().refreshSeconds() * 1_000_000_000L;
+        this.nextPermissionCheck = now + (first ? 1 + Math.floorMod(this.player.getUniqueId().getLeastSignificantBits(), interval) : interval);
+      }
+    }
     double x = this.location.getX();
     double z = this.location.getZ();
     int direction = world == this.lastWorld ? ChunkOrder.direction(x - this.lastX, z - this.lastZ) : 0;
@@ -84,7 +100,7 @@ public final class PlayerView {
     }
     int client = Math.max(2, this.player.getClientViewDistance());
     nativeDistance = Math.min(nativeDistance, client);
-    int distance = Math.min(this.settings.distance(), client);
+    int distance = Math.min(this.permissions.enabled() ? this.permissionDistance : this.settings.distance(), client);
     boolean worldEnabled = (this.farState != null || distance > nativeDistance)
       && !this.settings.disabledWorlds().contains(world.getName()) && !this.source.protectedWorld(world);
     boolean enabled = distance > nativeDistance && worldEnabled;
@@ -114,12 +130,17 @@ public final class PlayerView {
   }
 
   public void teleport() {
+    this.permissionsChanged();
     if (this.farState != null) {
       this.farState.reset();
       this.farCandidates.set(null);
     }
     this.latest.set(null);
     this.channel.eventLoop().execute(this.stream::teleport);
+  }
+
+  void permissionsChanged() {
+    this.permissionsDirty.set(true);
   }
 
   void updateChunk(World world, int x, int z, ChunkData data) {

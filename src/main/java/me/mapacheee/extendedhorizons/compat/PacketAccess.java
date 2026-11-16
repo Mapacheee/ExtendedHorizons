@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.compat;
 import it.unimi.dsi.fastutil.ints.IntList;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.world.level.ChunkPos;
@@ -17,6 +18,8 @@ public final class PacketAccess {
   private static final MethodHandle CHUNK_Z = accessor(ClientboundLevelChunkWithLightPacket.class, int.class, "z", "getZ");
   private static final MethodHandle LIGHT_X = accessor(ClientboundLightUpdatePacket.class, int.class, "x", "getX");
   private static final MethodHandle LIGHT_Z = accessor(ClientboundLightUpdatePacket.class, int.class, "z", "getZ");
+  private static final MethodHandle CHUNK_LIGHT = accessor(ClientboundLevelChunkWithLightPacket.class,
+    ClientboundLightUpdatePacketData.class, "lightData", "getLightData");
   private static final MethodHandle POS_X = accessor(ChunkPos.class, int.class, "x");
   private static final MethodHandle POS_Z = accessor(ChunkPos.class, int.class, "z");
   private static final MethodHandle REMOVED = accessor(ClientboundRemoveEntitiesPacket.class, IntList.class, "entityIds", "getEntityIds");
@@ -42,6 +45,14 @@ public final class PacketAccess {
 
   public static long chunkKey(ClientboundLightUpdatePacket packet) {
     return chunkKey(integer(LIGHT_X, packet), integer(LIGHT_Z, packet));
+  }
+
+  public static ClientboundLightUpdatePacketData lightData(ClientboundLevelChunkWithLightPacket packet) {
+    try {
+      return (ClientboundLightUpdatePacketData) CHUNK_LIGHT.invokeExact((Object) packet);
+    } catch (Throwable failure) {
+      throw new IllegalStateException("Cannot read chunk light data", failure);
+    }
   }
 
   public static int interactionId(ServerboundInteractPacket packet) {

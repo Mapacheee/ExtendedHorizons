@@ -6,7 +6,9 @@ folia-supported: true
 description: ${description}
 author: Mapacheee
 depend: [MapacheeeLib]
-softdepend: [WorldEdit, FastAsyncWorldEdit]
+softdepend: [WorldEdit, FastAsyncWorldEdit, LuckPerms]
 permissions:
+  extendedhorizons.bypass:
+    default: false
   extendedhorizons.admin:
     default: op

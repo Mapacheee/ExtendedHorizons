@@ -24,6 +24,7 @@ repositories {
 
 dependencies {
     compileOnly(libs.mapacheeelib)
+    compileOnly(libs.luckperms.api)
     compileOnly(libs.winter.configuration)
     compileOnly(libs.fawe.core) { isTransitive = false }
     compileOnly(libs.fawe.bukkit) { isTransitive = false }

@@ -11,6 +11,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.server.PluginEnableEvent;
+import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockMultiPlaceEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -36,6 +38,20 @@ public final class ViewListener implements Listener {
   @Inject
   public ViewListener(ViewService views) {
     this.views = views;
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR)
+  public void onPluginEnable(PluginEnableEvent event) {
+    if (event.getPlugin().getName().equals("LuckPerms")) {
+      this.views.permissionProviderChanged(true);
+    }
+  }
+
+  @EventHandler(priority = EventPriority.MONITOR)
+  public void onPluginDisable(PluginDisableEvent event) {
+    if (event.getPlugin().getName().equals("LuckPerms")) {
+      this.views.permissionProviderChanged(false);
+    }
   }
 
   @EventHandler(priority = EventPriority.MONITOR)

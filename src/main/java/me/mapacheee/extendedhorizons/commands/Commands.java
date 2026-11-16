@@ -36,6 +36,7 @@ public final class Commands {
     sender.sendMessage("Delivery: " + this.views.deliveryStats());
     sender.sendMessage("Chunk source: " + this.views.sourceStats());
     sender.sendMessage("Far players: " + this.views.farPlayerStatus());
+    sender.sendMessage("Distance permissions: " + this.views.distancePermissionStatus());
   }
 
   @Command("eh farplayers <target>")

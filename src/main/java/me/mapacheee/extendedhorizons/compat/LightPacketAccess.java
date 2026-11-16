@@ -1,7 +1,9 @@
 package me.mapacheee.extendedhorizons.compat;
 
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
+import io.netty.buffer.PooledByteBufAllocator;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -12,8 +14,41 @@ import java.util.List;
 public final class LightPacketAccess {
 
   private static final MethodHandle LEGACY_WRITE = legacyWriter();
+  private static final MethodHandle PACKET_CONSTRUCTOR = packetConstructor();
 
   private LightPacketAccess() {}
+
+  public static boolean copiesData() {
+    return PACKET_CONSTRUCTOR == null;
+  }
+
+  public static ClientboundLightUpdatePacket packet(int x, int z, ClientboundLightUpdatePacketData data) {
+    if (PACKET_CONSTRUCTOR != null) {
+      try {
+        return (ClientboundLightUpdatePacket) PACKET_CONSTRUCTOR.invokeExact(x, z, data);
+      } catch (Throwable failure) {
+        throw new IllegalStateException("Cannot construct light update", failure);
+      }
+    }
+    var buffer = new FriendlyByteBuf(PooledByteBufAllocator.DEFAULT.directBuffer(4096, 8 * 1024 * 1024));
+    try {
+      buffer.writeVarInt(x);
+      buffer.writeVarInt(z);
+      write(buffer, data);
+      return ClientboundLightUpdatePacket.STREAM_CODEC.decode(buffer);
+    } finally {
+      buffer.release();
+    }
+  }
+
+  private static MethodHandle packetConstructor() {
+    try {
+      return MethodHandles.publicLookup().findConstructor(ClientboundLightUpdatePacket.class,
+        MethodType.methodType(void.class, int.class, int.class, ClientboundLightUpdatePacketData.class));
+    } catch (NoSuchMethodException | IllegalAccessException ignored) {
+      return null;
+    }
+  }
 
   public static void write(FriendlyByteBuf output, ClientboundLightUpdatePacketData light) {
     if (LEGACY_WRITE == null) {

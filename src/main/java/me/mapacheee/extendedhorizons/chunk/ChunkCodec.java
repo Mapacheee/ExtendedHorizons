@@ -17,6 +17,7 @@ import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.util.SimpleBitStorage;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -32,15 +33,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.nio.ByteBuffer;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 final class ChunkCodec {
 
   private static final int MAX_PACKET_BYTES = 8 * 1024 * 1024;
+  private static final ThreadLocal<MessageDigest> DIGEST = ThreadLocal.withInitial(() -> {
+    try {
+      return MessageDigest.getInstance("SHA-256");
+    } catch (NoSuchAlgorithmException exception) {
+      throw new IllegalStateException(exception);
+    }
+  });
 
   private ChunkCodec() {
   }
 
-  static ChunkData loaded(ServerLevel level, LevelChunk chunk, ChunkMask mask) {
+  static ChunkData loaded(ServerLevel level, LevelChunk chunk, ChunkMask mask, boolean updates) {
     if (!chunk.isLightCorrect()) {
       return null;
     }
@@ -59,19 +70,29 @@ final class ChunkCodec {
       var pos = chunk.getPos();
       var light = new ClientboundLightUpdatePacketData(pos, lightEngine, null, null);
       return encode(level, PacketAccess.x(pos), PacketAccess.z(pos), sections, heights, entities,
-        output -> LightPacketAccess.write(output, light));
+        output -> LightPacketAccess.write(output, light), updates);
     }
     var packet = new ClientboundLevelChunkWithLightPacket(chunk, lightEngine, null, null, false);
-    ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(4096, MAX_PACKET_BYTES);
+    ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(4096, updates ? MAX_PACKET_BYTES * 2 : MAX_PACKET_BYTES);
     try {
-      ClientboundLevelChunkWithLightPacket.STREAM_CODEC.encode(new RegistryFriendlyByteBuf(buffer, level.registryAccess()), packet);
-      return new ChunkData(packet, buffer.readableBytes());
+      var output = new RegistryFriendlyByteBuf(buffer, level.registryAccess());
+      ClientboundLevelChunkWithLightPacket.STREAM_CODEC.encode(output, packet);
+      int bytes = output.writerIndex();
+      if (bytes > MAX_PACKET_BYTES) {
+        throw new IllegalStateException("Chunk packet exceeds " + MAX_PACKET_BYTES + " bytes");
+      }
+      if (!updates || !packet.getExtraPackets().isEmpty()) {
+        return new ChunkData(packet, bytes);
+      }
+      LightPacketAccess.write(output, PacketAccess.lightData(packet));
+      int lightBytes = output.writerIndex() - bytes;
+      return snapshot(packet, buffer, bytes - lightBytes, bytes);
     } finally {
       buffer.release();
     }
   }
 
-  static ChunkData disk(ServerLevel level, int x, int z, CompoundTag tag, ChunkMask mask) {
+  static ChunkData disk(ServerLevel level, int x, int z, CompoundTag tag, ChunkMask mask, boolean updates) {
     int version = tag.getIntOr("DataVersion", -1);
     int currentVersion = SharedConstants.getCurrentVersion().dataVersion().version();
     if (version < 0 || version > currentVersion
@@ -115,11 +136,11 @@ final class ChunkCodec {
       mask.apply(level, sections);
     }
     return encode(level, x, z, sections, data.heightmaps(), diskBlockEntities(level, data, sections),
-      output -> writeLight(output, skyLight, blockLight));
+      output -> writeLight(output, skyLight, blockLight), updates);
   }
 
   private static ChunkData encode(ServerLevel level, int x, int z, LevelChunkSection[] sections,
-    Map<Heightmap.Types, long[]> heights, List<BlockEntity> entities, Consumer<RegistryFriendlyByteBuf> writeLight) {
+    Map<Heightmap.Types, long[]> heights, List<BlockEntity> entities, Consumer<RegistryFriendlyByteBuf> writeLight, boolean updates) {
     int sectionBytes = 0;
     for (LevelChunkSection section : sections) {
       sectionBytes += section.getSerializedSize();
@@ -138,6 +159,7 @@ final class ChunkCodec {
         sections[i].write(output, null, i);
       }
       writeBlockEntities(output, level, entities);
+      int lightStart = output.writerIndex();
       writeLight.accept(output);
       int bytes = buffer.readableBytes();
       var packet = ClientboundLevelChunkWithLightPacket.STREAM_CODEC.decode(output);
@@ -145,10 +167,29 @@ final class ChunkCodec {
         throw new IllegalStateException("Chunk packet has " + output.readableBytes() + " trailing bytes of " + bytes);
       }
       packet.setReady(true);
-      return new ChunkData(packet, bytes);
+      return updates ? snapshot(packet, buffer, lightStart, bytes) : new ChunkData(packet, bytes);
     } finally {
       buffer.release();
     }
+  }
+
+  private static ChunkData snapshot(ClientboundLevelChunkWithLightPacket packet, ByteBuf buffer, int lightStart, int bytes) {
+    ByteBuffer terrain = fingerprint(buffer, 0, lightStart);
+    ByteBuffer light = fingerprint(buffer, lightStart, bytes - lightStart);
+    var signature = new ChunkData.Signature(terrain.getLong(), terrain.getLong(), terrain.getLong(), terrain.getLong(),
+      light.getLong(), light.getLong(), light.getLong(), light.getLong(), bytes - lightStart);
+    long key = PacketAccess.chunkKey(packet);
+    return new ChunkData(packet, bytes, null, signature,
+      LightPacketAccess.packet(ChunkPos.getX(key), ChunkPos.getZ(key), PacketAccess.lightData(packet)));
+  }
+
+  private static ByteBuffer fingerprint(ByteBuf buffer, int offset, int size) {
+    MessageDigest digest = DIGEST.get();
+    digest.reset();
+    for (ByteBuffer part : buffer.nioBuffers(offset, size)) {
+      digest.update(part);
+    }
+    return ByteBuffer.wrap(digest.digest());
   }
 
   private static DataLayer light(DataLayer data, int state) {

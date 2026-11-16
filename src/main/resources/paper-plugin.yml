@@ -7,6 +7,10 @@ description: ${description}
 author: Mapacheee
 dependencies:
   server:
+    LuckPerms:
+      load: BEFORE
+      required: false
+      join-classpath: true
     MapacheeeLib:
       load: BEFORE
       required: true
@@ -20,5 +24,7 @@ dependencies:
       required: false
       join-classpath: true
 permissions:
+  extendedhorizons.bypass:
+    default: false
   extendedhorizons.admin:
     default: op

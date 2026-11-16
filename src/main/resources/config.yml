@@ -10,17 +10,23 @@ cache-seconds: 30
 player-mib-per-second: 8
 global-mib-per-second: 192
 consolidate-flushes: true
+reuse-encoded-chunks: true
 disabled-worlds: []
 
+distance-permissions:
+  enabled: true
+  default-distance: -1
+  refresh-seconds: 5
+
 far-players:
-  enabled: false
-  max-per-viewer: 12
+  enabled: true
+  max-per-viewer: 20
   update-ticks: 3
   equipment: true
   actions: true
 
 chunk-updates:
-  enabled: false
+  enabled: true
   worldedit: false
 
 anti-xray:

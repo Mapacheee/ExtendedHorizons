@@ -90,20 +90,32 @@ A snippet of key settings in `config.yml`:
 | :--- | :---: | :--- |
 | `view-distance` | `32` | Target view radius in chunks (includes native server distance). |
 | `disabled-worlds` | `[]` | List of world names where extended chunks are disabled. |
+| `distance-permissions.enabled` | `true` | Assigns target distances through `extendedhorizons.max.<distance>` permissions. |
+| `distance-permissions.default-distance` | `-1` | Uses `view-distance` for players without a matching permission. An explicit value from 2 to 128 sets a separate fallback. |
+| `distance-permissions.refresh-seconds` | `5` | Permission refresh interval when LuckPerms event integration is unavailable. |
 | `player-mib-per-second` | `8` | Maximum uncompressed chunk packet bandwidth per player per second. |
 | `global-mib-per-second` | `192` | Global server-wide bandwidth budget for chunk streaming. |
 | `consolidate-flushes` | `true` | Batches TCP flushes on active EH connections to reduce transport overhead. |
+| `reuse-encoded-chunks` | `true` | Reuses cached wire payloads for unchanged EH snapshots on supported native TCP pipelines. |
 | `workers` | `2` | Background worker threads for chunk reading and processing. |
 | `cache-mib` | `256` | Snapshot cache budget in MiB. The compressed packet cache has an additional budget of one quarter of this value. |
 | `cache-seconds` | `30` | Maximum age of a cached snapshot. Enabled chunk updates invalidate edited snapshots before this expires. |
-| `far-players.enabled` | `false` | Renders distant players in fake chunks (with equipment and action support). |
-| `chunk-updates.enabled` | `false` | Dynamically updates fake chunks on block break, place, growth, and physics. |
+| `far-players.enabled` | `true` | Renders distant players in fake chunks (with equipment and action support). |
+| `chunk-updates.enabled` | `true` | Dynamically updates fake chunks on block break, place, growth, and physics. |
 | `chunk-updates.worldedit`| `false` | Listens to WorldEdit / FAWE commits to update distant terrain after large edits. |
 | `anti-xray.enabled` | `false` | Obfuscates specified ores/blocks in extended chunks. |
 | `anti-xray.hidden-blocks`| *Ore list* | List of block IDs to mask out in fake chunk packets. |
 
 > [!TIP]
 > **Anti-Xray Notice:** If Paper's engine Anti-Xray is active for a world, ExtendedHorizons requires its own `anti-xray.enabled: true` with a configured block list to send extended chunks in that world.
+
+### Distance permissions
+
+Set `distance-permissions.enabled: true` to assign view distances through permissions. Players without a matching node use `distance-permissions.default-distance`. Its default, `-1`, follows the current `view-distance`, including changes applied with `/eh reload`; an explicit value from 2 through 128 overrides that fallback. Existing numeric values are preserved when upgrading, so change an existing `8` to `-1` to adopt inheritance. The highest granted `extendedhorizons.max.<distance>` node wins, from 2 through 128. For example, `extendedhorizons.max.16` grants a total target radius of 16 chunks, including native chunks. `extendedhorizons.bypass` uses the configured `view-distance` maximum. These nodes default to false, including for operators.
+
+The configured maximum, client render distance, disabled worlds and Anti-Xray requirements still apply. Permissions control extended delivery and cannot reduce chunks sent by the server's native view distance. Setting the fallback or a permission to 2 disables additional delivery when the native distance is at least 2. The V3 node `extendedhorizons.max.1` is accepted as an alias for 2.
+
+With LuckPerms installed, EH refreshes on user-data recalculation, group changes and context-update events, coalescing notifications on the player's scheduler. It also refreshes on join, teleport, world changes and `/eh reload`. Without the event integration, `distance-permissions.refresh-seconds` controls periodic refresh (5 seconds by default). LuckPerms context events are best-effort hints; custom context calculators must signal updates correctly. Direct permission attachment changes outside LuckPerms may require `/eh reload` while the event integration is active. `/eh stats` reports which mode is in use. LuckPerms is optional and is not bundled.
 
 ### Streaming performance
 
@@ -112,6 +124,10 @@ For pregenerated terrain at a 32-chunk target, start with `cache-mib: 256`, `cac
 Set the server's native view distance below EH's target to offload distant terrain delivery; the benchmark uses 4 native chunks and a 32-chunk EH target. EH keeps native chunks under the server's control.
 
 Leave `consolidate-flushes: true` to use the optimized transport path. Winter adds the key when it is missing during startup or `/eh reload`; an explicit `false` is preserved. EH installs its own handler while extended streaming is active on a TCP connection and removes it when that stream is disabled or detached. The existing server handlers remain in place. Setting this option to `false` restores EH's previous flush behavior without disabling its other features.
+
+Keep `reuse-encoded-chunks: true` to avoid serializing and hashing the same immutable EH snapshot for each viewer when its compressed payload is still cached. Native chunk packets retain their normal encoding path. EH automatically falls back when the connection has an unrecognized encoder or interceptor in the affected pipeline. Set this option to `false` when comparing or troubleshooting the transport path. Winter fills the missing key on startup or `/eh reload` while preserving an explicit `false`.
+
+The `encodedHits` counter in `/eh stats` counts uses of this path, including duplicate deliveries suppressed before encoding. These hits are included in `compressionHits`; they are not additional chunks or a coverage measurement.
 
 For a faster initial load, test `global-mib-per-second: 256` if CPU and network capacity permit. Earlier budget-only tests, before flush consolidation, reduced median arrival time to 95% coverage from **36.3–36.7 seconds to 28.6 seconds** with 50 clients spread across the world. Recheck coverage, RTT and outbound traffic on your host when increasing this budget.
 
