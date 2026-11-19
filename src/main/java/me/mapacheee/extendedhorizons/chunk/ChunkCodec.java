@@ -92,20 +92,34 @@ final class ChunkCodec {
     }
   }
 
-  static ChunkData disk(ServerLevel level, int x, int z, CompoundTag tag, ChunkMask mask, boolean updates) {
+  enum DiskIssue { VERSION, POSITION, INCOMPLETE, LIGHT, SIZE }
+
+  record DiskResult(ChunkData data, DiskIssue issue) {
+    DiskResult(DiskIssue issue) {
+      this(null, issue);
+    }
+  }
+
+  static DiskResult disk(ServerLevel level, int x, int z, CompoundTag tag, ChunkMask mask, boolean updates) {
     int version = tag.getIntOr("DataVersion", -1);
     int currentVersion = SharedConstants.getCurrentVersion().dataVersion().version();
-    if (version < 0 || version > currentVersion
-      || tag.getIntOr("xPos", Integer.MIN_VALUE) != x || tag.getIntOr("zPos", Integer.MIN_VALUE) != z) {
-      return null;
+    if (version < 0 || version > currentVersion) {
+      return new DiskResult(DiskIssue.VERSION);
     }
     if (version != currentVersion) {
       tag = level.getChunkSource().chunkMap.upgradeChunkTag(tag.copy());
     }
+    // Older saves store their coordinates under Level until the data fixer upgrades them.
+    if (tag.getIntOr("xPos", Integer.MIN_VALUE) != x || tag.getIntOr("zPos", Integer.MIN_VALUE) != z) {
+      return new DiskResult(DiskIssue.POSITION);
+    }
     SerializableChunkData data = SerializableChunkData.parse(level, level.palettedContainerFactory(), tag);
     boolean vanillaLight = !tag.contains("starlight.light_version") && tag.getBooleanOr("isLightOn", false);
-    if (data == null || data.chunkStatus() != ChunkStatus.FULL || !data.lightCorrect() && !vanillaLight) {
-      return null;
+    if (data == null || data.chunkStatus() != ChunkStatus.FULL) {
+      return new DiskResult(DiskIssue.INCOMPLETE);
+    }
+    if (!data.lightCorrect() && !vanillaLight) {
+      return new DiskResult(DiskIssue.LIGHT);
     }
     int count = level.getSectionsCount();
     int minSection = level.getMinSectionY();
@@ -135,8 +149,9 @@ final class ChunkCodec {
     if (mask != null) {
       mask.apply(level, sections);
     }
-    return encode(level, x, z, sections, data.heightmaps(), diskBlockEntities(level, data, sections),
+    ChunkData chunk = encode(level, x, z, sections, data.heightmaps(), diskBlockEntities(level, data, sections),
       output -> writeLight(output, skyLight, blockLight), updates);
+    return new DiskResult(chunk, chunk == null ? DiskIssue.SIZE : null);
   }
 
   private static ChunkData encode(ServerLevel level, int x, int z, LevelChunkSection[] sections,

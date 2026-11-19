@@ -133,6 +133,7 @@ For a faster initial load, test `global-mib-per-second: 256` if CPU and network 
 
 Use the counter changes in `/eh stats` over a fixed interval to guide tuning:
 
+- For gaps after a teleport, compare two `/eh stats` readings while standing still. `missingOnDisk` counts reads with no saved chunk and `diskRejected.INCOMPLETE` counts records that have not reached full generation. These counters include repeated reads of the same coordinates. For a complete chunk with unusable saved lighting, EH asks Paper to load the existing chunk with generation disabled. Up to two such requests run at once. Successful captures increment `recoveredLight`.
 - If `diskReads` and `loadedCaptures` keep increasing rapidly while players revisit the same terrain, increase `cache-mib` if heap capacity permits. Increasing the TTL helps reuse snapshots that would otherwise expire; live edits require chunk updates to be enabled.
 - If source preparation is keeping up but delivery is repeatedly `throttled`, the send budget may be limiting initial loading. Increasing `global-mib-per-second` can trade more CPU and network activity for faster delivery. Both bandwidth settings count **uncompressed packet bytes**, so monitor actual outbound traffic as well.
 - Increase `workers` only when cache misses keep source preparation busy and the machine has spare CPU. Additional workers do not increase the send budget or remove the cost of native player tracking.

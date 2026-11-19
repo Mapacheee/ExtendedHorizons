@@ -5,6 +5,7 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
+import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.world.level.ChunkPos;
 
@@ -24,6 +25,7 @@ public final class PacketAccess {
   private static final MethodHandle POS_Z = accessor(ChunkPos.class, int.class, "z");
   private static final MethodHandle REMOVED = accessor(ClientboundRemoveEntitiesPacket.class, IntList.class, "entityIds", "getEntityIds");
   private static final MethodHandle INTERACT = accessor(ServerboundInteractPacket.class, int.class, "entityId", "getEntityId");
+  private static final MethodHandle TELEPORT_ID = accessor(ServerboundAcceptTeleportationPacket.class, int.class, "id", "getId");
 
   private PacketAccess() {}
 
@@ -57,6 +59,10 @@ public final class PacketAccess {
 
   public static int interactionId(ServerboundInteractPacket packet) {
     return integer(INTERACT, packet);
+  }
+
+  public static int teleportId(ServerboundAcceptTeleportationPacket packet) {
+    return integer(TELEPORT_ID, packet);
   }
 
   public static IntList removedIds(ClientboundRemoveEntitiesPacket packet) {

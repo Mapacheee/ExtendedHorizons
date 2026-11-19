@@ -15,6 +15,7 @@ import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.plugin.Plugin;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -37,6 +38,10 @@ public final class ChunkSource implements AutoCloseable {
   private final Plugin plugin;
   private final ThreadPoolExecutor workers;
   private final Semaphore permits;
+  private final Semaphore lightLoads = new Semaphore(2);
+  private final EnumMap<ChunkCodec.DiskIssue, LongAdder> diskIssues = new EnumMap<>(ChunkCodec.DiskIssue.class);
+  private final LongAdder missingOnDisk = new LongAdder();
+  private final LongAdder recoveredLight = new LongAdder();
   private final long maxCacheBytes;
   private final long ttlNanos;
   private final Map<Key, Entry> cache = new LinkedHashMap<>(256, 0.75f, true);
@@ -63,6 +68,9 @@ public final class ChunkSource implements AutoCloseable {
     this.ttlNanos = TimeUnit.MILLISECONDS.toNanos(ttlMillis);
     this.hiddenBlocks = antiXray.enabled() ? antiXray.blocks() : Set.of();
     this.permits = new Semaphore(maxInFlight);
+    for (var issue : ChunkCodec.DiskIssue.values()) {
+      this.diskIssues.put(issue, new LongAdder());
+    }
     this.revisions = updates ? new MapMaker().weakValues().makeMap() : null;
     AtomicInteger sequence = new AtomicInteger();
     this.workers = new ThreadPoolExecutor(workerCount, workerCount, 0, TimeUnit.MILLISECONDS,
@@ -241,11 +249,17 @@ public final class ChunkSource implements AutoCloseable {
     }
     try {
       LevelChunk chunk = level.getChunkSource().getChunkAtIfLoadedImmediately(job.key.x(), job.key.z());
-      if (chunk == null) {
+      if (chunk == null && job.recoveringLight) {
+        this.finish(job, null, null);
+      } else if (chunk == null) {
         this.readDisk(level, job);
       } else {
         this.captures.increment();
-        this.finish(job, ChunkCodec.loaded(level, chunk, this.mask(level), this.revisions != null), null);
+        ChunkData data = ChunkCodec.loaded(level, chunk, this.mask(level), this.revisions != null);
+        if (job.recoveringLight && data != null) {
+          this.recoveredLight.increment();
+        }
+        this.finish(job, data, null);
       }
     } catch (RuntimeException | LinkageError exception) {
       this.finish(job, null, exception);
@@ -261,15 +275,30 @@ public final class ChunkSource implements AutoCloseable {
     job.io = MoonriseRegionFileIO.loadDataAsync(level, job.key.x(), job.key.z(),
       MoonriseRegionFileIO.RegionFileType.CHUNK_DATA, (tag, failure) -> {
         if (failure != null || tag == null || this.closed || job.invalidated) {
+          if (failure == null && tag == null && !this.closed && !job.invalidated) {
+            this.missingOnDisk.increment();
+            job.diskUnavailable = true;
+          }
           this.finish(job, null, failure);
           return;
         }
         try {
           this.workers.execute(() -> {
             try {
-              ChunkData data = this.closed || job.invalidated ? null
-                : ChunkCodec.disk(level, job.key.x(), job.key.z(), tag, this.mask(level), this.revisions != null);
-              this.finish(job, data, null);
+              if (this.closed || job.invalidated) {
+                this.finish(job, null, null);
+                return;
+              }
+              var result = ChunkCodec.disk(level, job.key.x(), job.key.z(), tag, this.mask(level), this.revisions != null);
+              if (result.issue() != null) {
+                this.diskIssues.get(result.issue()).increment();
+                job.diskUnavailable = result.issue() != ChunkCodec.DiskIssue.LIGHT;
+              }
+              if (result.issue() == ChunkCodec.DiskIssue.LIGHT) {
+                this.recoverLight(level, job);
+              } else {
+                this.finish(job, result.data(), null);
+              }
             } catch (RuntimeException | LinkageError exception) {
               this.finish(job, null, exception);
             }
@@ -283,11 +312,47 @@ public final class ChunkSource implements AutoCloseable {
     }
   }
 
+  private void recoverLight(ServerLevel level, Job job) {
+    synchronized (this) {
+      if (!this.closed && !job.invalidated && !job.finished && this.lightLoads.tryAcquire()) {
+        job.recoveringLight = true;
+      }
+    }
+    if (!job.recoveringLight) {
+      this.finish(job, null, null);
+      return;
+    }
+    // Only a verified FULL chunk reaches this point. Let Paper supply its current
+    // lighting without requesting generation or keeping a plugin chunk ticket.
+    World world = level.getWorld();
+    int x = job.key.x();
+    int z = job.key.z();
+    world.getChunkAtAsync(x, z, false, false).whenComplete((chunk, error) -> {
+      if (chunk == null || error != null || this.closed || job.invalidated) {
+        this.finish(job, null, error);
+        return;
+      }
+      try {
+        if (Bukkit.isOwnedByCurrentRegion(world, x, z)) {
+          this.capture(world, level, job);
+        } else {
+          Bukkit.getRegionScheduler().execute(this.plugin, world, x, z, () -> this.capture(world, level, job));
+        }
+      } catch (RuntimeException | LinkageError exception) {
+        this.finish(job, null, exception);
+      }
+    });
+  }
+
   private void finish(Job job, ChunkData data, Throwable failure) {
     boolean retry;
     synchronized (this) {
       if (job.finished) {
         return;
+      }
+      if (job.recoveringLight) {
+        job.recoveringLight = false;
+        this.lightLoads.release();
       }
       if (job.holdingPermit) {
         job.holdingPermit = false;
@@ -302,7 +367,7 @@ public final class ChunkSource implements AutoCloseable {
           if (data != null && job.revision != null) {
             data = new ChunkData(data.packet(), data.bytes(), job.revision, data.signature(), data.lightPacket());
           }
-          this.cache(job.key, data);
+          this.cache(job, data);
         }
       }
     }
@@ -326,10 +391,12 @@ public final class ChunkSource implements AutoCloseable {
     }
   }
 
-  private void cache(Key key, ChunkData data) {
-    long duration = data == null ? TimeUnit.SECONDS.toNanos(1) : this.ttlNanos;
+  private void cache(Job job, ChunkData data) {
+    // Load/unload events invalidate these entries immediately. A bounded expiry
+    // also picks up regions written externally without a Bukkit event.
+    long duration = data != null ? this.ttlNanos : TimeUnit.SECONDS.toNanos(job.diskUnavailable ? 15 : 1);
     Entry entry = new Entry(data, System.nanoTime() + duration);
-    Entry previous = this.cache.put(key, entry);
+    Entry previous = this.cache.put(job.key, entry);
     this.cacheBytes += entry.weight() - (previous == null ? 0 : previous.weight());
     var iterator = this.cache.entrySet().iterator();
     while (this.cacheBytes > this.maxCacheBytes && iterator.hasNext()) {
@@ -345,7 +412,7 @@ public final class ChunkSource implements AutoCloseable {
   private synchronized void invalidate(Key key) {
     this.removeCached(key);
     Job job = this.pending.get(key);
-    if (job != null && job.refreshWorld == null) {
+    if (job != null && job.refreshWorld == null && !job.recoveringLight) {
       job.invalidated = true;
     }
   }
@@ -388,7 +455,7 @@ public final class ChunkSource implements AutoCloseable {
       bytes = this.cacheBytes;
       entries = this.cache.size();
     }
-    return Map.ofEntries(
+    var stats = new HashMap<>(Map.ofEntries(
       Map.entry("cacheBytes", bytes),
       Map.entry("cacheEntries", entries),
       Map.entry("cacheHits", this.hits.sum()),
@@ -398,8 +465,12 @@ public final class ChunkSource implements AutoCloseable {
       Map.entry("unavailable", this.unavailable.sum()),
       Map.entry("failures", this.failures.sum()),
       Map.entry("throttled", this.throttled.sum()),
-      Map.entry("inFlight", (long) this.active.get())
-    );
+      Map.entry("inFlight", (long) this.active.get()),
+      Map.entry("missingOnDisk", this.missingOnDisk.sum()),
+      Map.entry("recoveredLight", this.recoveredLight.sum())
+    ));
+    this.diskIssues.forEach((reason, count) -> stats.put("diskRejected." + reason.name(), count.sum()));
+    return stats;
   }
 
   @Override
@@ -439,6 +510,8 @@ public final class ChunkSource implements AutoCloseable {
     private final CompletableFuture<ChunkData> result = new CompletableFuture<>();
     private boolean finished;
     private boolean holdingPermit;
+    private volatile boolean recoveringLight;
+    private boolean diskUnavailable;
     private int attempts;
     private volatile boolean invalidated;
     private volatile Cancellable io;

@@ -23,6 +23,8 @@ repositories {
 }
 
 dependencies {
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.launcher)
     compileOnly(libs.mapacheeelib)
     compileOnly(libs.luckperms.api)
     compileOnly(libs.winter.configuration)
@@ -41,6 +43,10 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 tasks {
+    test {
+        useJUnitPlatform()
+        workingDir = temporaryDir
+    }
     jar {
         archiveClassifier.set("plain")
     }

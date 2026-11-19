@@ -35,7 +35,7 @@ public final class PlayerView {
   private long nextPermissionCheck;
   private final AtomicReference<List<FarPlayerState.Snapshot>> farCandidates = new AtomicReference<>();
   private final AtomicBoolean closed = new AtomicBoolean();
-  private final AtomicReference<ViewSnapshot> latest = new AtomicReference<>();
+  private volatile AtomicReference<ViewSnapshot> latest = new AtomicReference<>();
   private final Location location = new Location(null, 0, 0, 0);
   private volatile ScheduledTask task;
   private World lastWorld;
@@ -118,25 +118,26 @@ public final class PlayerView {
       return;
     }
     this.lastPublished = next;
-    if (this.latest.getAndSet(next) == null) {
+    var latestForArea = this.latest;
+    if (latestForArea.getAndSet(next) == null) {
       this.channel.eventLoop().execute(() -> {
-        ViewSnapshot snapshot = this.latest.getAndSet(null);
-        var candidates = this.farCandidates.getAndSet(null);
-        if (snapshot != null && !this.closed.get()) {
-          this.stream.tick(snapshot, candidates);
+        ViewSnapshot snapshot = latestForArea.getAndSet(null);
+        if (latestForArea == this.latest && snapshot != null && !this.closed.get()) {
+          this.stream.tick(snapshot, this.farCandidates.getAndSet(null));
         }
       });
     }
   }
 
-  public void teleport() {
+  public void teleport(World world, int x, int z) {
     this.permissionsChanged();
     if (this.farState != null) {
       this.farState.reset();
       this.farCandidates.set(null);
     }
-    this.latest.set(null);
-    this.channel.eventLoop().execute(this.stream::teleport);
+    this.channel.eventLoop().execute(() -> this.stream.teleport(world, x, z));
+    // A tick queued before the teleport must never consume the destination's first snapshot.
+    this.latest = new AtomicReference<>();
   }
 
   void permissionsChanged() {

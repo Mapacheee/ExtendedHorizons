@@ -162,10 +162,10 @@ public final class ViewService {
     }
   }
 
-  public void teleport(UUID playerId) {
+  public void teleport(UUID playerId, World world, int x, int z) {
     PlayerView view = this.views.get(playerId);
     if (view != null) {
-      view.teleport();
+      view.teleport(world, x, z);
     }
   }
 

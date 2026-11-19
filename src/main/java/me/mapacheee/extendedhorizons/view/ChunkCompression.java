@@ -199,6 +199,11 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
     return known != null && known.confirmed && lookup.key().equals(known.key);
   }
 
+  boolean confirmed(long key) {
+    Delivery known = this.delivered.get(key);
+    return known != null && known.confirmed;
+  }
+
   private ChannelPromise track(long key, CompressionCache.Lookup lookup, ChannelPromise promise) {
     Delivery delivery = new Delivery(lookup.key());
     this.delivered.put(key, delivery);

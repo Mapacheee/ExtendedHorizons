@@ -9,7 +9,6 @@ import io.netty.handler.flush.FlushConsolidationHandler;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.mapacheee.extendedhorizons.config.Config;
 import me.mapacheee.extendedhorizons.chunk.ChunkData;
@@ -26,9 +25,12 @@ import net.minecraft.network.protocol.game.ClientboundExplodePacket;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
+import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
@@ -47,6 +49,8 @@ import java.util.concurrent.CompletableFuture;
 final class ChunkStream extends ChannelDuplexHandler {
 
   private static final int RETAIN_MARGIN = 2;
+  private static final long CENTER_GRACE_NANOS = 100_000_000L;
+  private static final long TELEPORT_TIMEOUT_NANOS = 1_000_000_000L;
 
   private final ChunkSource source;
   private final ChunkCompression compression;
@@ -57,10 +61,10 @@ final class ChunkStream extends ChannelDuplexHandler {
   private final SendBudget.Share share;
   private final LongOpenHashSet nativeChunks;
   private final LongOpenHashSet extended = new LongOpenHashSet();
-  private final LongOpenHashSet remasking = new LongOpenHashSet();
+  private final LongOpenHashSet needsFullChunk = new LongOpenHashSet();
   private final LongOpenHashSet pending = new LongOpenHashSet();
   private final Long2LongOpenHashMap retries = new Long2LongOpenHashMap();
-  private final LongArrayFIFOQueue edges = new LongArrayFIFOQueue();
+  private final ChunkPlan plan = new ChunkPlan();
   private final ArrayDeque<ReadyChunk> ready = new ArrayDeque<>();
   private final Long2ObjectLinkedOpenHashMap<ChunkData> updates;
   private final Long2ObjectOpenHashMap<ChunkData.Signature> snapshots;
@@ -68,12 +72,13 @@ final class ChunkStream extends ChannelDuplexHandler {
   private volatile FarPlayerChannel farPlayers;
   private ResourceKey<?> expectedDimension;
   private ViewSnapshot view;
+  private ClientboundSetChunkCacheCenterPacket cacheCenter;
+  private long centerMismatchSince;
+  private Integer awaitingTeleportId;
+  private long teleportDeadline;
+  private boolean replanAfterTeleport;
   private long epoch;
   private int advertised = -1;
-  private int cursor;
-  private long[] order;
-  private int orderRadius = -1;
-  private int orderDirection = -1;
   private long nextRetry = Long.MAX_VALUE;
   private volatile long sleepUntil;
   private boolean needsFlush;
@@ -112,6 +117,12 @@ final class ChunkStream extends ChannelDuplexHandler {
 
   @Override
   public void write(ChannelHandlerContext ctx, Object message, ChannelPromise promise) {
+    if (message instanceof ClientboundLevelChunkWithLightPacket packet) {
+      var center = this.centerForNativeChunk(packet);
+      if (center != null) {
+        ctx.write(center);
+      }
+    }
     boolean transition = message instanceof ClientboundLevelChunkWithLightPacket chunk
       && this.extended.contains(PacketAccess.chunkKey(chunk));
     Object outgoing = message instanceof ClientboundBundlePacket bundle ? this.bundle(bundle) : this.observe(message);
@@ -128,6 +139,12 @@ final class ChunkStream extends ChannelDuplexHandler {
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object message) {
+    if (message instanceof ServerboundAcceptTeleportationPacket ack && this.awaitingTeleportId != null
+      && this.awaitingTeleportId == PacketAccess.teleportId(ack)) {
+      this.awaitingTeleportId = null;
+      this.teleportDeadline = 0;
+      this.sleepUntil = 0;
+    }
     if (message instanceof ServerboundPlayerActionPacket || message instanceof ServerboundUseItemOnPacket
       || message instanceof ServerboundUseItemPacket) {
       this.compression.clear();
@@ -170,10 +187,17 @@ final class ChunkStream extends ChannelDuplexHandler {
   private Object bundle(ClientboundBundlePacket bundle) {
     for (var sub : bundle.subPackets()) {
       if (sub instanceof ClientboundForgetLevelChunkPacket || sub instanceof ClientboundSetChunkCacheRadiusPacket
+        || sub instanceof ClientboundSetChunkCacheCenterPacket || sub instanceof ClientboundPlayerPositionPacket
         || sub instanceof ClientboundLevelChunkWithLightPacket || sub instanceof ClientboundRespawnPacket
         || this.suppressMaskedUpdate(sub)) {
         var packets = new ArrayList<Packet<? super ClientGamePacketListener>>();
         for (var packet : bundle.subPackets()) {
+          if (packet instanceof ClientboundLevelChunkWithLightPacket chunk) {
+            var center = this.centerForNativeChunk(chunk);
+            if (center != null) {
+              packets.add(center);
+            }
+          }
           Object result = this.observe(packet);
           if (result == packet) {
             packets.add(packet);
@@ -190,9 +214,14 @@ final class ChunkStream extends ChannelDuplexHandler {
   private Object observe(Object packet) {
     if (packet instanceof ClientboundLevelChunkWithLightPacket chunk) {
       long key = PacketAccess.chunkKey(chunk);
-      this.nativeChunks.add(key);
+      if (this.outsideClientCache(key)) {
+        // An obsolete native batch may still be draining. The client discards this packet.
+        this.nativeChunks.remove(key);
+      } else {
+        this.nativeChunks.add(key);
+      }
       this.extended.remove(key);
-      this.remasking.remove(key);
+      this.needsFullChunk.remove(key);
       if (this.updates != null) {
         this.updates.remove(key);
         this.snapshots.remove(key);
@@ -203,9 +232,9 @@ final class ChunkStream extends ChannelDuplexHandler {
       if (known && this.source.masking()) {
         if (this.desired(key)) {
           this.extended.add(key);
-          this.remasking.add(key);
+          this.needsFullChunk.add(key);
           this.retries.remove(key);
-          this.edges.enqueue(key);
+          this.plan.add(key);
           this.sleepUntil = 0;
           return null;
         }
@@ -218,7 +247,7 @@ final class ChunkStream extends ChannelDuplexHandler {
         return null;
       }
       this.extended.remove(key);
-      this.remasking.remove(key);
+      this.needsFullChunk.remove(key);
       if (this.updates != null) {
         this.updates.remove(key);
         this.snapshots.remove(key);
@@ -227,6 +256,17 @@ final class ChunkStream extends ChannelDuplexHandler {
       if (this.farPlayers != null) {
         this.farPlayers.forget(key);
       }
+    } else if (packet instanceof ClientboundPlayerPositionPacket position) {
+      if (this.teleportDeadline != 0 || this.replanAfterTeleport) {
+        this.awaitingTeleportId = position.id();
+        this.teleportDeadline = System.nanoTime() + TELEPORT_TIMEOUT_NANOS;
+      }
+    } else if (packet instanceof ClientboundSetChunkCacheCenterPacket center) {
+      if (!this.centeredAt(center.getX(), center.getZ())) {
+        this.cacheCenter = center;
+        this.invalidateOutsideClientCache();
+      }
+      this.sleepUntil = 0;
     } else if (packet instanceof ClientboundSetChunkCacheRadiusPacket radius) {
       this.compression.clear();
       this.advertised = radius.getRadius();
@@ -236,6 +276,7 @@ final class ChunkStream extends ChannelDuplexHandler {
       }
     } else if (packet instanceof ClientboundRespawnPacket respawn) {
       this.reset(false, false);
+      this.cacheCenter = null;
       this.view = null;
       this.expectedDimension = respawn.commonPlayerSpawnInfo().dimension();
       this.advertised = -1;
@@ -277,6 +318,10 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   void tick(ViewSnapshot next, List<FarPlayerState.Snapshot> candidates) {
+    this.tick(next, candidates, System.nanoTime());
+  }
+
+  void tick(ViewSnapshot next, List<FarPlayerState.Snapshot> candidates, long now) {
     if (this.context == null || !this.context.channel().isActive()) {
       return;
     }
@@ -287,8 +332,24 @@ final class ChunkStream extends ChannelDuplexHandler {
     ViewSnapshot previous = this.view;
     if (previous != null && previous.world() != next.world()) {
       this.reset(false, false);
+      this.cacheCenter = null;
       this.advertised = -1;
       previous = null;
+    }
+    if (next.enabled()) {
+      if (this.teleportDeadline != 0 && now < this.teleportDeadline) {
+        this.sleepUntil = this.teleportDeadline;
+        return;
+      }
+      this.teleportDeadline = 0;
+      this.awaitingTeleportId = null;
+      if (!this.alignCenter(next, now)) {
+        this.sleepUntil = 0;
+        return;
+      }
+      if (this.replanAfterTeleport) {
+        next = new ViewSnapshot(next.world(), next.x(), next.z(), next.nativeDistance(), next.distance(), 0, true);
+      }
     }
     this.view = next;
     this.consolidateFlushes(next.enabled());
@@ -302,35 +363,39 @@ final class ChunkStream extends ChannelDuplexHandler {
       return;
     }
     this.setRadius(next.distance());
-    if (previous == null || !previous.enabled() || previous.x() != next.x() || previous.z() != next.z()
+    if (this.replanAfterTeleport || previous == null || !previous.enabled() || previous.x() != next.x() || previous.z() != next.z()
       || previous.distance() != next.distance() || previous.nativeDistance() != next.nativeDistance()) {
-      boolean incremental = previous != null && previous.enabled() && previous.distance() == next.distance()
-        && previous.nativeDistance() == next.nativeDistance() && Math.abs(previous.x() - next.x()) <= 1
-        && Math.abs(previous.z() - next.z()) <= 1;
+      boolean incremental = !this.replanAfterTeleport && previous != null && previous.enabled() && previous.distance() == next.distance()
+        && previous.nativeDistance() == next.nativeDistance() && Math.abs(previous.x() - next.x()) < next.distance()
+        && Math.abs(previous.z() - next.z()) < next.distance();
       if (previous != null && previous.enabled()) {
         this.trim(previous, next);
       }
       if (incremental) {
-        this.queueEdges(previous, next);
+        this.plan.move(previous, next);
       } else {
-        this.edges.clear();
+        this.rebuildPlan();
       }
-      if (!incremental || this.cursor < this.area()) {
-        this.cursor = 0;
-      }
-    } else if (previous.direction() != next.direction() && this.cursor < this.area()) {
-      this.cursor = 0;
+      this.replanAfterTeleport = false;
     }
-    long now = System.nanoTime();
-    if (this.cursor >= this.area() && now >= this.nextRetry) {
+    if (now >= this.nextRetry) {
       this.nextRetry = Long.MAX_VALUE;
-      this.cursor = 0;
+      var iterator = this.retries.long2LongEntrySet().fastIterator();
+      while (iterator.hasNext()) {
+        var retry = iterator.next();
+        if (now >= retry.getLongValue()) {
+          this.plan.add(retry.getLongKey());
+          iterator.remove();
+        } else {
+          this.nextRetry = Math.min(this.nextRetry, retry.getLongValue());
+        }
+      }
     }
     if (this.context.channel().isWritable()) {
       int limit = this.settings.sendsPerTick();
       int sent = this.updates == null ? 0 : this.sendUpdates(Math.max(1, limit / 4), now);
       sent += this.sendReady(limit - sent, now);
-      this.fill(now);
+      this.fill();
       this.sendReady(limit - sent, now);
     } else {
       this.metrics.throttled.increment();
@@ -340,7 +405,10 @@ final class ChunkStream extends ChannelDuplexHandler {
     }
     this.flush();
     boolean updating = this.updates != null && !this.updates.isEmpty();
-    this.sleepUntil = !updating && this.pending.isEmpty() && this.edges.isEmpty() && this.cursor >= this.area() ? this.nextRetry : 0;
+    this.sleepUntil = !updating && this.pending.isEmpty() && this.plan.isEmpty() ? this.nextRetry : 0;
+    if (this.centerMismatchSince != 0) {
+      this.sleepUntil = Math.min(this.sleepUntil, this.centerMismatchSince + CENTER_GRACE_NANOS);
+    }
   }
 
   boolean sleeping() {
@@ -378,74 +446,106 @@ final class ChunkStream extends ChannelDuplexHandler {
     }
   }
 
-  private void fill(long now) {
-    int end = this.area();
-    if ((this.cursor >= end && this.edges.isEmpty()) || this.pending.size() >= this.settings.inFlightPerPlayer()) {
+  private boolean centeredAt(int x, int z) {
+    return this.cacheCenter != null && this.cacheCenter.getX() == x && this.cacheCenter.getZ() == z;
+  }
+
+  private boolean outsideClientCache(long key) {
+    if (this.cacheCenter == null || this.view == null || !this.view.enabled() || this.advertised < 0) {
+      return false;
+    }
+    int radius = this.clientCacheRadius();
+    return Math.abs(ChunkPos.getX(key) - this.cacheCenter.getX()) > radius
+      || Math.abs(ChunkPos.getZ(key) - this.cacheCenter.getZ()) > radius;
+  }
+
+  private int clientCacheRadius() {
+    return Math.max(2, Math.min(this.advertised, this.view.distance())) + 3;
+  }
+
+  private ClientboundSetChunkCacheCenterPacket centerForNativeChunk(ClientboundLevelChunkWithLightPacket packet) {
+    long key = PacketAccess.chunkKey(packet);
+    if (this.outsideClientCache(key) && this.desired(key)) {
+      // Keep the correction and the native chunk in wire order, including inside bundles.
+      this.cacheCenter = new ClientboundSetChunkCacheCenterPacket(this.view.x(), this.view.z());
+      this.sleepUntil = 0;
+      return this.cacheCenter;
+    }
+    return null;
+  }
+
+  private boolean alignCenter(ViewSnapshot next, long now) {
+    if (!this.centeredAt(next.x(), next.z())) {
+      if (this.cacheCenter != null && !this.replanAfterTeleport) {
+        // Paper can publish a movement center just before the player scheduler samples it.
+        // Pause extended sends briefly, then recover even when the player stands still.
+        if (this.centerMismatchSince == 0) {
+          this.centerMismatchSince = now;
+        }
+        if (now - this.centerMismatchSince < CENTER_GRACE_NANOS) {
+          // One chunk of normal movement still fits inside the client's cache margin.
+          return Math.abs(this.cacheCenter.getX() - next.x()) <= 1 && Math.abs(this.cacheCenter.getZ() - next.z()) <= 1;
+        }
+      }
+      this.setCenter(next.x(), next.z());
+    }
+    this.centerMismatchSince = 0;
+    return true;
+  }
+
+  private void invalidateOutsideClientCache() {
+    if (this.view == null || !this.view.enabled() || this.advertised < 0) {
       return;
     }
-    if (this.orderRadius != this.view.distance() || this.orderDirection != this.view.direction()) {
-      this.order = ChunkOrder.offsets(this.view.distance(), this.view.direction());
-      this.orderRadius = this.view.distance();
-      this.orderDirection = this.view.direction();
+    int x = this.cacheCenter.getX();
+    int z = this.cacheCenter.getZ();
+    int radius = this.clientCacheRadius();
+    int retained = this.view.distance() + RETAIN_MARGIN;
+    if (Math.abs(x - this.view.x()) + retained <= radius && Math.abs(z - this.view.z()) + retained <= radius) {
+      return;
     }
-    long[] offsets = this.order;
-    int nativeDistanceSq = this.view.nativeDistance() * this.view.nativeDistance();
-    int scanEnd = Math.min(end, this.cursor + 1024);
+    // The client can reuse these slots before another center packet moves them back into view.
+    for (var it = this.extended.iterator(); it.hasNext();) {
+      long key = it.nextLong();
+      if (Math.abs(ChunkPos.getX(key) - x) > radius || Math.abs(ChunkPos.getZ(key) - z) > radius) {
+        this.compression.forget(key);
+        this.needsFullChunk.add(key);
+        if (this.desired(key)) {
+          this.plan.add(key);
+        }
+      }
+    }
+  }
+
+  private void setCenter(int x, int z) {
+    this.cacheCenter = new ClientboundSetChunkCacheCenterPacket(x, z);
+    this.context.write(this.cacheCenter);
+    this.needsFlush = true;
+  }
+
+  private void fill() {
+    int limit = this.settings.inFlightPerPlayer();
     int starts = 0;
-    int edgeStarts = 0;
-    while ((this.cursor < scanEnd || !this.edges.isEmpty()) && starts < this.settings.inFlightPerPlayer()
-      && this.pending.size() < this.settings.inFlightPerPlayer()) {
-      boolean edge = !this.edges.isEmpty() && (this.cursor >= scanEnd || edgeStarts < Math.max(1, this.settings.inFlightPerPlayer() / 4));
-      long key;
-      int x;
-      int z;
-      if (edge) {
-        key = this.edges.dequeueLong();
-        if (!this.desired(key)) {
-          continue;
-        }
-        x = ChunkPos.getX(key);
-        z = ChunkPos.getZ(key);
-        int dx = x - this.view.x();
-        int dz = z - this.view.z();
-        if (dx * dx + dz * dz <= nativeDistanceSq && !this.remasking.contains(key)) {
-          continue;
-        }
-      } else {
-        long offset = offsets[this.cursor++];
-        int ox = ChunkPos.getX(offset);
-        int oz = ChunkPos.getZ(offset);
-        x = this.view.x() + ox;
-        z = this.view.z() + oz;
-        key = PacketAccess.chunkKey(x, z);
-        if (ox * ox + oz * oz <= nativeDistanceSq && !this.remasking.contains(key)) {
-          continue;
-        }
-        if (!this.desired(key)) {
-          continue;
-        }
-      }
-      if (this.nativeChunks.contains(key) || (this.extended.contains(key) && !this.remasking.contains(key)) || this.pending.contains(key)) {
-        continue;
-      }
-      long retry = this.retries.get(key);
-      if (retry > now) {
-        this.nextRetry = Math.min(this.nextRetry, retry);
+    int scanned = 0;
+    while (!this.plan.isEmpty() && starts < limit && this.pending.size() < limit && scanned++ < 1024) {
+      long key = this.plan.first();
+      int x = ChunkPos.getX(key);
+      int z = ChunkPos.getZ(key);
+      int dx = x - this.view.x();
+      int dz = z - this.view.z();
+      int nativeDistance = this.view.nativeDistance();
+      boolean nativeRange = dx * dx + dz * dz <= nativeDistance * nativeDistance;
+      if (!this.desired(key) || this.nativeChunks.contains(key) || this.pending.contains(key)
+        || (!this.needsFullChunk.contains(key) && (this.extended.contains(key) || nativeRange))
+        || this.retries.containsKey(key)) {
+        this.plan.advance();
         continue;
       }
       CompletableFuture<ChunkData> future = this.source.tryRead(this.view.world(), x, z);
       if (future == null) {
-        if (edge) {
-          this.edges.enqueueFirst(key);
-        } else {
-          this.cursor--;
-        }
         break;
       }
-      if (edge) {
-        edgeStarts++;
-      }
-      this.retries.remove(key);
+      this.plan.advance();
       this.pending.add(key);
       starts++;
       long version = this.epoch;
@@ -489,7 +589,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     while (sent < limit && !this.ready.isEmpty() && this.context.channel().isWritable()) {
       ReadyChunk item = this.ready.getFirst();
       if (!this.desired(item.key()) || this.nativeChunks.contains(item.key())
-        || (this.extended.contains(item.key()) && !this.remasking.contains(item.key()))) {
+        || (this.extended.contains(item.key()) && !this.needsFullChunk.contains(item.key()))) {
         this.pending.remove(item.key());
         this.ready.removeFirst();
         this.metrics.obsolete.increment();
@@ -514,7 +614,7 @@ final class ChunkStream extends ChannelDuplexHandler {
 
   private void retryObsolete(long key) {
     this.pending.remove(key);
-    this.edges.enqueue(key);
+    this.plan.add(key);
     this.sleepUntil = 0;
     this.metrics.obsolete.increment();
   }
@@ -531,7 +631,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private boolean canUpdate(long key) {
-    return this.extended.contains(key) && !this.nativeChunks.contains(key) && this.retained(key);
+    return this.extended.contains(key) && !this.needsFullChunk.contains(key) && !this.nativeChunks.contains(key) && this.retained(key);
   }
 
   private int sendUpdates(int limit, long now) {
@@ -576,7 +676,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     this.needsFlush = true;
     ChannelPromise promise = this.context.newPromise();
     var packet = data.packet();
-    boolean handoff = this.remasking.remove(key);
+    boolean resend = this.needsFullChunk.remove(key);
     var previous = this.snapshots == null ? null : this.snapshots.get(key);
     boolean lightOnly = update && previous != null && data.signature() != null && previous.sameTerrain(data.signature());
     int bytes = lightOnly ? data.signature().lightBytes() + 10 : data.bytes();
@@ -602,7 +702,7 @@ final class ChunkStream extends ChannelDuplexHandler {
         }
         if (!update) {
           this.extended.remove(key);
-          this.cursor = 0;
+          this.plan.add(key);
           this.sleepUntil = 0;
         }
         this.metrics.failures.increment();
@@ -612,7 +712,7 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.compression.invalidate(data.lightPacket());
       this.context.write(data.lightPacket(), promise);
     } else {
-      this.compression.writeChunk(this.context, data, promise, update || handoff);
+      this.compression.writeChunk(this.context, data, promise, update || resend);
       packet.getExtraPackets().forEach(extra -> {
         this.invalidate(extra);
         this.context.write(extra);
@@ -674,45 +774,9 @@ final class ChunkStream extends ChannelDuplexHandler {
       && Math.abs(z - view.z()) <= view.distance() + RETAIN_MARGIN;
   }
 
-  private int area() {
-    int width = this.view.distance() * 2 + 1;
-    return width * width;
-  }
-
-  private void queueEdges(ViewSnapshot old, ViewSnapshot next) {
-    int radius = next.distance();
-    if (this.edges.size() > 8 * radius + 4) {
-      this.edges.clear();
-      this.cursor = 0;
-    }
-    for (int index = 0; index <= 2 * radius; index++) {
-      int offset = (index & 1) == 0 ? index / 2 : -(index + 1) / 2;
-      int z = next.z() + offset;
-      int extent = rowExtent(radius, offset);
-      int previousExtent = rowExtent(radius, z - old.z());
-      int first = next.x() - extent;
-      int last = next.x() + extent;
-      if (previousExtent < 0) {
-        this.enqueue(first, last, z);
-      } else {
-        this.enqueue(first, Math.min(last, old.x() - previousExtent - 1), z);
-        this.enqueue(Math.max(first, old.x() + previousExtent + 1), last, z);
-      }
-    }
-  }
-
-  private static int rowExtent(int radius, int z) {
-    if (Math.abs(z) > radius) {
-      return -1;
-    }
-    int inner = Math.max(0, Math.abs(z) - 1);
-    return Math.min(radius, 1 + (int) Math.sqrt(radius * radius - 1 - inner * inner));
-  }
-
-  private void enqueue(int first, int last, int z) {
-    for (int x = first; x <= last; x++) {
-      this.edges.enqueue(PacketAccess.chunkKey(x, z));
-    }
+  private void rebuildPlan() {
+    this.plan.rebuild(this.view);
+    this.needsFullChunk.forEach(this.plan::add);
   }
 
   private void trim(ViewSnapshot old, ViewSnapshot next) {
@@ -742,6 +806,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private void leave(long key) {
+    this.plan.remove(key);
     this.retries.remove(key);
     if (this.extended.remove(key)) {
       this.forget(key);
@@ -749,7 +814,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private void forget(long key) {
-    this.remasking.remove(key);
+    this.needsFullChunk.remove(key);
     if (this.updates != null) {
       this.updates.remove(key);
       this.snapshots.remove(key);
@@ -762,8 +827,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     this.needsFlush = true;
   }
 
-  void teleport() {
-    this.compression.clear();
+  void teleport(World world, int x, int z) {
     if (this.snapshots != null) {
       this.snapshots.clear();
     }
@@ -772,14 +836,39 @@ final class ChunkStream extends ChannelDuplexHandler {
     }
     this.sleepUntil = 0;
     if (this.context != null) {
+      boolean interrupted = !this.plan.isEmpty() || !this.pending.isEmpty() || !this.retries.isEmpty();
       this.epoch++;
       this.pending.clear();
-      this.edges.clear();
+      this.plan.clear();
       this.ready.clear();
       this.retries.clear();
       this.nextRetry = Long.MAX_VALUE;
-      this.cursor = 0;
+      this.replanAfterTeleport = true;
+      this.awaitingTeleportId = null;
+      this.teleportDeadline = System.nanoTime() + TELEPORT_TIMEOUT_NANOS;
+      var old = this.view;
+      this.centerMismatchSince = 0;
+      if (old != null && old.enabled() && old.world() == world) {
+        // Trim each hop, even when several teleports happen between player ticks.
+        this.view = new ViewSnapshot(world, x, z, old.nativeDistance(), old.distance(), 0, true);
+        this.trim(old, this.view);
+        if (interrupted && (old.x() != x || old.z() != z)) {
+          // Confirmed chunks inside both cache windows keep their slots. Preserve
+          // earlier invalidations and retry writes whose delivery is still uncertain.
+          for (var it = this.extended.iterator(); it.hasNext();) {
+            long key = it.nextLong();
+            if (this.outsideClientCache(key) || !this.compression.confirmed(key)) {
+              this.needsFullChunk.add(key);
+            }
+          }
+        }
+        if (!this.centeredAt(x, z)) {
+          this.setCenter(x, z);
+        }
+        this.flush();
+      }
     }
+    this.compression.clear();
   }
 
   void restore() {
@@ -791,6 +880,9 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private void reset(boolean unload, boolean keepNative) {
+    this.awaitingTeleportId = null;
+    this.teleportDeadline = 0;
+    this.centerMismatchSince = 0;
     this.compression.clear();
     if (this.farPlayers != null) {
       this.farPlayers.clear();
@@ -800,19 +892,18 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.extended.forEach(this::forget);
     }
     this.extended.clear();
-    this.remasking.clear();
+    this.needsFullChunk.clear();
     if (this.updates != null) {
       this.updates.clear();
       this.snapshots.clear();
     }
-    this.edges.clear();
+    this.plan.clear();
     this.pending.clear();
     this.ready.clear();
     this.retries.clear();
     if (!keepNative) {
       this.nativeChunks.clear();
     }
-    this.cursor = 0;
     this.nextRetry = Long.MAX_VALUE;
   }
 

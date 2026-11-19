@@ -7,6 +7,8 @@ shadow = "9.2.2"
 paperweight = "2.0.0-beta.21"
 
 [libraries]
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version = "5.11.4" }
+junit-launcher = { module = "org.junit.platform:junit-platform-launcher", version = "1.11.4" }
 mapacheeelib = { module = "me.mapacheee:MapacheeeLib", version.ref = "mapacheeelib" }
 fawe-core = { module = "com.fastasyncworldedit:FastAsyncWorldEdit-Core", version.ref = "fawe" }
 fawe-bukkit = { module = "com.fastasyncworldedit:FastAsyncWorldEdit-Bukkit", version.ref = "fawe" }

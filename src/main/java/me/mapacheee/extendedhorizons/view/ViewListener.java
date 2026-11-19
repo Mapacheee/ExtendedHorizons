@@ -91,7 +91,8 @@ public final class ViewListener implements Listener {
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
   public void onTeleport(PlayerTeleportEvent event) {
-    this.views.teleport(event.getPlayer().getUniqueId());
+    var to = event.getTo();
+    this.views.teleport(event.getPlayer().getUniqueId(), to.getWorld(), to.getBlockX() >> 4, to.getBlockZ() >> 4);
   }
 
   @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
