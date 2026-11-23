@@ -617,7 +617,7 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.ready.removeFirst();
       this.pending.remove(item.key());
       this.extended.add(item.key());
-      this.writeChunk(item.key(), item.data(), false);
+      this.writeChunk(item.key(), item.data(), false, false, item.data().bytes(), now);
       sent++;
     }
     return sent;
@@ -661,24 +661,24 @@ final class ChunkStream extends ChannelDuplexHandler {
         this.metrics.suppressed.increment();
         continue;
       }
-      if (!this.takeBudget(lightOnly ? data.signature().lightBytes() + 10 : data.bytes(), now)) {
+      int bytes = lightOnly ? data.signature().lightBytes() + 10 : data.bytes();
+      if (!this.takeBudget(bytes, now)) {
         break;
       }
       this.updates.removeFirst();
-      this.writeChunk(key, data, true);
+      this.writeChunk(key, data, true, lightOnly, bytes, now);
       sent++;
     }
     return sent;
   }
 
   private boolean takeBudget(int bytes, long now) {
-    if (!this.pacer.allows(bytes, now)) {
+    if (!this.pacer.allows(now)) {
       this.metrics.paced.increment();
       return false;
     }
     if (this.playerBudget.take(bytes, now)) {
       if (this.globalBudget.take(bytes, now, this.share)) {
-        this.pacer.sent(bytes, now);
         return true;
       }
       this.playerBudget.refund(bytes);
@@ -687,15 +687,11 @@ final class ChunkStream extends ChannelDuplexHandler {
     return false;
   }
 
-  private void writeChunk(long key, ChunkData data, boolean update) {
+  private void writeChunk(long key, ChunkData data, boolean update, boolean lightOnly, int bytes, long now) {
     long version = this.epoch;
     this.needsFlush = true;
     ChannelPromise promise = this.context.newPromise();
-    var packet = data.packet();
     boolean resend = this.needsFullChunk.remove(key);
-    var previous = this.snapshots == null ? null : this.snapshots.get(key);
-    boolean lightOnly = update && previous != null && data.signature() != null && previous.sameTerrain(data.signature());
-    int bytes = lightOnly ? data.signature().lightBytes() + 10 : data.bytes();
     if (this.snapshots != null) {
       if (data.signature() == null) {
         this.snapshots.remove(key);
@@ -724,12 +720,10 @@ final class ChunkStream extends ChannelDuplexHandler {
         this.metrics.failures.increment();
       }
     });
-    if (lightOnly) {
-      this.compression.invalidate(data.lightPacket());
-      this.context.write(data.lightPacket(), promise);
-    } else {
-      this.compression.writeChunk(this.context, data, promise, update || resend);
-      packet.getExtraPackets().forEach(extra -> {
+    int wireBytes = this.compression.writeTerrain(this.context, data, promise, lightOnly, update || resend, bytes);
+    this.pacer.sent(wireBytes, now);
+    if (!lightOnly) {
+      data.packet().getExtraPackets().forEach(extra -> {
         this.invalidate(extra);
         this.context.write(extra);
       });

@@ -13,6 +13,7 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.PacketBundleUnpacker;
 import net.minecraft.network.PacketEncoder;
+import net.minecraft.network.VarInt;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
@@ -39,13 +40,20 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
     public void write(ChannelHandlerContext ctx, Object message, ChannelPromise promise) {
       CompressionCache.Lookup lookup = pending;
       pending = null;
-      if (lookup != null && message instanceof ByteBuf compressed) {
-        cache.store(lookup, compressed);
+      if (message instanceof ByteBuf compressed) {
+        if (promise == measuredWrite) {
+          measuredBytes = framedSize(compressed.readableBytes());
+        }
+        if (lookup != null) {
+          cache.store(lookup, compressed);
+        }
       }
       ctx.write(message, promise);
     }
   };
   private CompressionCache.Lookup pending;
+  private ChannelPromise measuredWrite;
+  private int measuredBytes;
   private boolean chunk;
   private boolean deduplicate;
   private long position;
@@ -67,8 +75,34 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
     this.writeChunk(ctx, packet, promise, deduplicate, false);
   }
 
-  void writeChunk(ChannelHandlerContext ctx, ChunkData data, ChannelPromise promise, boolean deduplicate) {
-    this.writeChunk(ctx, data.packet(), promise, deduplicate, true);
+  int writeTerrain(ChannelHandlerContext ctx, ChunkData data, ChannelPromise promise, boolean lightOnly,
+    boolean deduplicate, int uncompressedBytes) {
+    ChannelPromise previousWrite = this.measuredWrite;
+    int previousBytes = this.measuredBytes;
+    this.measuredWrite = promise;
+    this.measuredBytes = -1;
+    try {
+      if (lightOnly) {
+        this.invalidate(data.lightPacket());
+        ctx.write(data.lightPacket(), promise);
+      } else {
+        this.writeChunk(ctx, data.packet(), promise, deduplicate, true);
+      }
+      if (promise.isDone() && !promise.isSuccess()) {
+        return 0;
+      }
+      if (this.measuredBytes >= 0) {
+        this.metrics.measuredTerrainBytes.add(this.measuredBytes);
+        return this.measuredBytes;
+      }
+      // The packet ID and length prefix may not be included in the source size.
+      int estimate = framedSize(uncompressedBytes + 5);
+      this.metrics.estimatedTerrainBytes.add(estimate);
+      return estimate;
+    } finally {
+      this.measuredWrite = previousWrite;
+      this.measuredBytes = previousBytes;
+    }
   }
 
   private void writeChunk(ChannelHandlerContext ctx, ClientboundLevelChunkWithLightPacket packet, ChannelPromise promise,
@@ -100,8 +134,7 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
       var lookup = this.cache.lookup(packet, ((CompressionEncoder) compressor.handler()).getThreshold(), this.packetId);
       if (lookup != null) {
         if (deduplicate && this.duplicate(key, lookup)) {
-          this.metrics.suppressed.increment();
-          promise.trySuccess();
+          this.suppress(promise);
         } else {
           JvmProfiler.INSTANCE.onPacketSent(ConnectionProtocol.PLAY, packet.type(), ctx.channel().remoteAddress(), lookup.key().size());
           this.writeCached(compressor, lookup.data(), this.track(key, lookup, promise));
@@ -175,8 +208,7 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
     }
     if (this.deduplicate && this.duplicate(this.position, lookup)) {
       source.release();
-      this.metrics.suppressed.increment();
-      promise.trySuccess();
+      this.suppress(promise);
       return;
     }
     promise = this.track(this.position, lookup, promise);
@@ -197,6 +229,18 @@ final class ChunkCompression extends ChannelOutboundHandlerAdapter {
   private boolean duplicate(long key, CompressionCache.Lookup lookup) {
     Delivery known = this.delivered.get(key);
     return known != null && known.confirmed && lookup.key().equals(known.key);
+  }
+
+  private void suppress(ChannelPromise promise) {
+    if (promise == this.measuredWrite) {
+      this.measuredBytes = 0;
+    }
+    this.metrics.suppressed.increment();
+    promise.trySuccess();
+  }
+
+  private static int framedSize(int bytes) {
+    return bytes + VarInt.getByteSize(bytes);
   }
 
   boolean confirmed(long key) {

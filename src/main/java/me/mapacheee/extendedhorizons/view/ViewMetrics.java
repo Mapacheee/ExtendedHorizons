@@ -12,6 +12,8 @@ public final class ViewMetrics {
   public final LongAdder failures = new LongAdder();
   public final LongAdder throttled = new LongAdder();
   public final LongAdder paced = new LongAdder();
+  public final LongAdder measuredTerrainBytes = new LongAdder();
+  public final LongAdder estimatedTerrainBytes = new LongAdder();
   public final LongAdder suppressed = new LongAdder();
   public final LongAdder refreshes = new LongAdder();
   public final LongAdder updated = new LongAdder();
@@ -22,6 +24,8 @@ public final class ViewMetrics {
       Map.entry("obsolete", this.obsolete.sum()), Map.entry("unavailable", this.unavailable.sum()),
       Map.entry("failures", this.failures.sum()), Map.entry("throttled", this.throttled.sum()),
       Map.entry("paced", this.paced.sum()), Map.entry("suppressedChunks", this.suppressed.sum()),
+      Map.entry("measuredTerrainBytes", this.measuredTerrainBytes.sum()),
+      Map.entry("estimatedTerrainBytes", this.estimatedTerrainBytes.sum()),
       Map.entry("refreshes", this.refreshes.sum()), Map.entry("updated", this.updated.sum()),
       Map.entry("updateBytes", this.updateBytes.sum()));
   }

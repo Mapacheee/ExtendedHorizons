@@ -62,8 +62,6 @@ A separate 50-client run enabled far players with a limit of 64 per viewer, equi
 - **[MapacheeeLib](https://github.com/Mapacheee/MapacheeeLib/releases)** (Required dependency, install alongside EH)
 - **[WorldEdit](https://enginehub.org/worldedit)** or **[FastAsyncWorldEdit (FAWE)](https://github.com/IntellectualSites/FastAsyncWorldEdit/releases)** *(Optional, for real-time terrain invalidation on bulk edits)*
 
-**Folia dependency limitation:** Streaming and packet integrity passed on Folia 26.3, but Winter Paper 3.0.0 throws `UnsupportedOperationException` during shutdown when cancelling Bukkit scheduler tasks. This also occurs with the previous EH build and requires a dependency fix for a clean shutdown.
-
 > [!IMPORTANT]
 > - **Pregenerated world recommended:** ExtendedHorizons serves available terrain; it does **not** generate new chunks on the fly to protect TPS.
 > - **Client view distance:** A player's in-game render distance setting caps what the client renders.
@@ -136,7 +134,7 @@ Use the counter changes in `/eh stats` over a fixed interval to guide tuning:
 - For gaps after a teleport, compare two `/eh stats` readings while standing still. `missingOnDisk` counts reads with no saved chunk and `diskRejected.INCOMPLETE` counts records that have not reached full generation. These counters include repeated reads of the same coordinates. For a complete chunk with unusable saved lighting, EH asks Paper to load the existing chunk with generation disabled. Up to two such requests run at once. Successful captures increment `recoveredLight`.
 - If `diskReads` and `loadedCaptures` keep increasing rapidly while players revisit the same terrain, increase `cache-mib` if heap capacity permits. Increasing the TTL helps reuse snapshots that would otherwise expire; live edits require chunk updates to be enabled.
 - If source preparation is keeping up but delivery is repeatedly `throttled`, the send budget may be limiting initial loading. Increasing `global-mib-per-second` can trade more CPU and network activity for faster delivery. Both bandwidth settings count **uncompressed packet bytes**, so monitor actual outbound traffic as well.
-- The `paced` delivery counter in `/eh stats` records when EH holds back terrain to limit data queued ahead of gameplay packets. A slower connection may take longer to fill the same render distance.
+- The `paced` delivery counter in `/eh stats` records when EH holds back terrain to limit data queued ahead of gameplay packets. Pacing uses the encoded terrain size after compression when available. `measuredTerrainBytes` and `estimatedTerrainBytes` report which sizes EH used for pacing.
 - Increase `workers` only when cache misses keep source preparation busy and the machine has spare CPU. Additional workers do not increase the send budget or remove the cost of native player tracking.
 - If the network event loop is backed up, increasing the send budget can make latency worse even while TPS remains healthy. Check RTT, actual movement and delivery coverage together.
 
