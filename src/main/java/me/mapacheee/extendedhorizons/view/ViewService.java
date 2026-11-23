@@ -11,29 +11,37 @@ import com.thewinterframework.service.annotation.lifecycle.OnReload;
 import io.netty.channel.Channel;
 import io.papermc.paper.connection.PlayerConfigurationConnection;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import me.mapacheee.extendedhorizons.api.ExtendedHorizonsApi;
 import me.mapacheee.extendedhorizons.chunk.ChunkSource;
 import me.mapacheee.extendedhorizons.config.Config;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.ServicePriority;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.level.ChunkPos;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 @SyncLoading
-public final class ViewService {
+public final class ViewService implements ExtendedHorizonsApi {
 
   private final Plugin plugin;
   private final Container<Config> config;
   private final Map<UUID, PlayerView> views = new ConcurrentHashMap<>();
+  private final Map<UUID, Map<Plugin, Integer>> distanceLimits = new ConcurrentHashMap<>();
+  private final Set<Plugin> disabledLimitOwners = Collections.newSetFromMap(new WeakHashMap<>());
   private final ViewMetrics metrics = new ViewMetrics();
   private final BulkChunkUpdates bulkUpdates;
   private final FarPlayerIndex farPlayers = new FarPlayerIndex();
@@ -44,6 +52,7 @@ public final class ViewService {
   private SendBudget budget;
   private volatile CompressionCache compression;
   private volatile DistancePermissions permissions;
+  private boolean apiRegistered;
 
   @Inject
   public ViewService(Plugin plugin, Container<Config> config) {
@@ -76,6 +85,10 @@ public final class ViewService {
     }
     for (Player player : this.plugin.getServer().getOnlinePlayers()) {
       this.join(player);
+    }
+    if (!this.apiRegistered) {
+      this.apiRegistered = true;
+      this.plugin.getServer().getServicesManager().register(ExtendedHorizonsApi.class, this, this.plugin, ServicePriority.Normal);
     }
     this.plugin.getSLF4JLogger().info("Extended view distance: {} chunks", this.settings.distance());
   }
@@ -117,14 +130,80 @@ public final class ViewService {
   }
 
   private synchronized void attach(Player player) {
-    if (this.source == null || !player.isOnline() || this.views.containsKey(player.getUniqueId())) {
+    UUID playerId = player.getUniqueId();
+    if (this.source == null || !player.isOnline() || this.views.containsKey(playerId)) {
       return;
     }
     var stream = new ChunkStream(this.source, this.settings, this.metrics, this.budget, this.compression,
       new LongOpenHashSet(player.getSentChunkKeys()));
-    PlayerView view = new PlayerView(this.plugin, this.source, this.settings, player, stream, this.farPlayers, this.permissions);
+    PlayerView view = new PlayerView(this.plugin, this.source, this.settings, player, stream, this.farPlayers,
+      this.permissions, () -> this.distanceLimit(playerId));
     view.start();
-    this.views.put(player.getUniqueId(), view);
+    this.views.put(playerId, view);
+  }
+
+  @Override
+  public Optional<ViewDistance> getViewDistance(UUID playerId) {
+    PlayerView view = this.views.get(Objects.requireNonNull(playerId, "playerId"));
+    return view == null ? Optional.empty() : Optional.ofNullable(view.viewDistance());
+  }
+
+  @Override
+  public synchronized boolean setViewDistanceLimit(Plugin owner, UUID playerId, int chunks) {
+    Objects.requireNonNull(owner, "owner");
+    Objects.requireNonNull(playerId, "playerId");
+    if (chunks < 2 || chunks > 128) {
+      throw new IllegalArgumentException("chunks must be between 2 and 128");
+    }
+    if (!owner.isEnabled() || this.disabledLimitOwners.contains(owner) || !this.views.containsKey(playerId)) {
+      return false;
+    }
+    this.distanceLimits.compute(playerId, (id, previous) -> {
+      Map<Plugin, Integer> limits = previous == null ? new HashMap<>() : new HashMap<>(previous);
+      limits.put(owner, chunks);
+      return Map.copyOf(limits);
+    });
+    return true;
+  }
+
+  @Override
+  public synchronized boolean clearViewDistanceLimit(Plugin owner, UUID playerId) {
+    Objects.requireNonNull(owner, "owner");
+    Map<Plugin, Integer> previous = this.distanceLimits.get(Objects.requireNonNull(playerId, "playerId"));
+    if (previous == null || !previous.containsKey(owner)) {
+      return false;
+    }
+    Map<Plugin, Integer> limits = new HashMap<>(previous);
+    limits.remove(owner);
+    if (limits.isEmpty()) {
+      this.distanceLimits.remove(playerId);
+    } else {
+      this.distanceLimits.put(playerId, Map.copyOf(limits));
+    }
+    return true;
+  }
+
+  synchronized void distanceLimitOwnerEnabled(Plugin owner) {
+    this.disabledLimitOwners.remove(owner);
+  }
+
+  synchronized void distanceLimitOwnerDisabled(Plugin owner) {
+    // Paper fires PluginDisableEvent before changing Plugin.isEnabled().
+    this.disabledLimitOwners.add(owner);
+    for (UUID playerId : this.distanceLimits.keySet()) {
+      this.clearViewDistanceLimit(owner, playerId);
+    }
+  }
+
+  private int distanceLimit(UUID playerId) {
+    int limit = 128;
+    Map<Plugin, Integer> limits = this.distanceLimits.get(playerId);
+    if (limits != null) {
+      for (int chunks : limits.values()) {
+        limit = Math.min(limit, chunks);
+      }
+    }
+    return limit;
   }
 
   void swing(UUID playerId, InteractionHand hand) {
@@ -155,7 +234,8 @@ public final class ViewService {
     }
   }
 
-  public void detach(UUID playerId) {
+  public synchronized void detach(UUID playerId) {
+    this.distanceLimits.remove(playerId);
     PlayerView view = this.views.remove(playerId);
     if (view != null) {
       view.close();
@@ -286,6 +366,12 @@ public final class ViewService {
   @OnDisable
   public synchronized void stop() {
     this.stopViews();
+    this.distanceLimits.clear();
+    this.disabledLimitOwners.clear();
+    if (this.apiRegistered) {
+      this.apiRegistered = false;
+      this.plugin.getServer().getServicesManager().unregister(ExtendedHorizonsApi.class, this);
+    }
     for (Channel channel : this.farConnections) {
       channel.eventLoop().execute(() -> {
         if (channel.pipeline().get(FarPlayerChannel.NAME) != null) {

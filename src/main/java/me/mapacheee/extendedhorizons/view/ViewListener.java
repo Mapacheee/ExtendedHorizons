@@ -42,6 +42,7 @@ public final class ViewListener implements Listener {
 
   @EventHandler(priority = EventPriority.MONITOR)
   public void onPluginEnable(PluginEnableEvent event) {
+    this.views.distanceLimitOwnerEnabled(event.getPlugin());
     if (event.getPlugin().getName().equals("LuckPerms")) {
       this.views.permissionProviderChanged(true);
     }
@@ -49,6 +50,7 @@ public final class ViewListener implements Listener {
 
   @EventHandler(priority = EventPriority.MONITOR)
   public void onPluginDisable(PluginDisableEvent event) {
+    this.views.distanceLimitOwnerDisabled(event.getPlugin());
     if (event.getPlugin().getName().equals("LuckPerms")) {
       this.views.permissionProviderChanged(false);
     }

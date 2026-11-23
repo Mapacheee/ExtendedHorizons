@@ -3,6 +3,7 @@ package me.mapacheee.extendedhorizons.view;
 import me.mapacheee.extendedhorizons.compat.PacketAccess;
 import io.netty.channel.Channel;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import me.mapacheee.extendedhorizons.api.ExtendedHorizonsApi.ViewDistance;
 import me.mapacheee.extendedhorizons.config.Config;
 import me.mapacheee.extendedhorizons.chunk.ChunkData;
 import me.mapacheee.extendedhorizons.chunk.ChunkSource;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntSupplier;
 
 public final class PlayerView {
 
@@ -30,6 +32,7 @@ public final class PlayerView {
   private final FarPlayerIndex farIndex;
   private final FarPlayerState farState;
   private final DistancePermissions permissions;
+  private final IntSupplier distanceLimit;
   private final AtomicBoolean permissionsDirty = new AtomicBoolean(true);
   private int permissionDistance = -1;
   private long nextPermissionCheck;
@@ -45,13 +48,14 @@ public final class PlayerView {
   private int farTicks;
 
   PlayerView(Plugin plugin, ChunkSource source, Config settings, Player player, ChunkStream stream, FarPlayerIndex farIndex,
-    DistancePermissions permissions) {
+    DistancePermissions permissions, IntSupplier distanceLimit) {
     this.plugin = plugin;
     this.source = source;
     this.settings = settings;
     this.player = player;
     this.farIndex = farIndex;
     this.permissions = permissions;
+    this.distanceLimit = distanceLimit;
     this.farState = settings.farPlayers().enabled() ? new FarPlayerState(player, farIndex, settings.farPlayers()) : null;
     this.channel = ((CraftPlayer) player).getHandle().connection.connection.channel;
     this.stream = stream;
@@ -101,6 +105,7 @@ public final class PlayerView {
     int client = Math.max(2, this.player.getClientViewDistance());
     nativeDistance = Math.min(nativeDistance, client);
     int distance = Math.min(this.permissions.enabled() ? this.permissionDistance : this.settings.distance(), client);
+    distance = Math.min(distance, this.distanceLimit.getAsInt());
     boolean worldEnabled = (this.farState != null || distance > nativeDistance)
       && !this.settings.disabledWorlds().contains(world.getName()) && !this.source.protectedWorld(world);
     boolean enabled = distance > nativeDistance && worldEnabled;
@@ -127,6 +132,12 @@ public final class PlayerView {
         }
       });
     }
+  }
+
+  ViewDistance viewDistance() {
+    ViewSnapshot snapshot = this.lastPublished;
+    return snapshot == null || this.closed.get() ? null : new ViewDistance(snapshot.nativeDistance(),
+      snapshot.enabled() ? snapshot.distance() : snapshot.nativeDistance());
   }
 
   public void teleport(World world, int x, int z) {

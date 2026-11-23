@@ -11,15 +11,18 @@ public final class ViewMetrics {
   public final LongAdder unavailable = new LongAdder();
   public final LongAdder failures = new LongAdder();
   public final LongAdder throttled = new LongAdder();
+  public final LongAdder paced = new LongAdder();
   public final LongAdder suppressed = new LongAdder();
   public final LongAdder refreshes = new LongAdder();
   public final LongAdder updated = new LongAdder();
   public final LongAdder updateBytes = new LongAdder();
 
   public Map<String, Long> snapshot() {
-    return Map.of("sent", this.sent.sum(), "bytes", this.bytes.sum(), "obsolete", this.obsolete.sum(),
-      "unavailable", this.unavailable.sum(), "failures", this.failures.sum(), "throttled", this.throttled.sum(),
-      "suppressedChunks", this.suppressed.sum(), "refreshes", this.refreshes.sum(), "updated", this.updated.sum(),
-      "updateBytes", this.updateBytes.sum());
+    return Map.ofEntries(Map.entry("sent", this.sent.sum()), Map.entry("bytes", this.bytes.sum()),
+      Map.entry("obsolete", this.obsolete.sum()), Map.entry("unavailable", this.unavailable.sum()),
+      Map.entry("failures", this.failures.sum()), Map.entry("throttled", this.throttled.sum()),
+      Map.entry("paced", this.paced.sum()), Map.entry("suppressedChunks", this.suppressed.sum()),
+      Map.entry("refreshes", this.refreshes.sum()), Map.entry("updated", this.updated.sum()),
+      Map.entry("updateBytes", this.updateBytes.sum()));
   }
 }

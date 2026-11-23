@@ -42,6 +42,12 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-parameters")
 }
 
+val apiJar = tasks.register<Jar>("apiJar") {
+    archiveClassifier.set("api")
+    from(sourceSets.main.get().output.classesDirs)
+    include("me/mapacheee/extendedhorizons/api/**")
+}
+
 tasks {
     test {
         useJUnitPlatform()
@@ -78,7 +84,7 @@ tasks {
         isReproducibleFileOrder = true
     }
     build {
-        dependsOn(shadowJar)
+        dependsOn(shadowJar, apiJar)
     }
 }
 

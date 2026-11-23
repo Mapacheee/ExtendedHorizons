@@ -15,6 +15,8 @@ import me.mapacheee.extendedhorizons.chunk.ChunkData;
 import me.mapacheee.extendedhorizons.chunk.ChunkSource;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.common.ClientboundPingPacket;
+import net.minecraft.network.protocol.common.ServerboundPongPacket;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
@@ -59,6 +61,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   private final SendBudget globalBudget;
   private final SendBudget playerBudget;
   private final SendBudget.Share share;
+  private final ChunkPacer pacer = new ChunkPacer();
   private final LongOpenHashSet nativeChunks;
   private final LongOpenHashSet extended = new LongOpenHashSet();
   private final LongOpenHashSet needsFullChunk = new LongOpenHashSet();
@@ -139,6 +142,9 @@ final class ChunkStream extends ChannelDuplexHandler {
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object message) {
+    if (message instanceof ServerboundPongPacket pong && this.pacer.acknowledge(pong.getId(), System.nanoTime())) {
+      return;
+    }
     if (message instanceof ServerboundAcceptTeleportationPacket ack && this.awaitingTeleportId != null
       && this.awaitingTeleportId == PacketAccess.teleportId(ack)) {
       this.awaitingTeleportId = null;
@@ -392,11 +398,16 @@ final class ChunkStream extends ChannelDuplexHandler {
       }
     }
     if (this.context.channel().isWritable()) {
+      this.pacer.tick(now);
       int limit = this.settings.sendsPerTick();
       int sent = this.updates == null ? 0 : this.sendUpdates(Math.max(1, limit / 4), now);
       sent += this.sendReady(limit - sent, now);
       this.fill();
       this.sendReady(limit - sent, now);
+      if (this.pacer.shouldProbe(now)) {
+        this.context.write(new ClientboundPingPacket(this.pacer.startProbe(System.nanoTime())));
+        this.needsFlush = true;
+      }
     } else {
       this.metrics.throttled.increment();
     }
@@ -661,8 +672,13 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private boolean takeBudget(int bytes, long now) {
+    if (!this.pacer.allows(bytes, now)) {
+      this.metrics.paced.increment();
+      return false;
+    }
     if (this.playerBudget.take(bytes, now)) {
       if (this.globalBudget.take(bytes, now, this.share)) {
+        this.pacer.sent(bytes, now);
         return true;
       }
       this.playerBudget.refund(bytes);

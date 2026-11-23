@@ -93,7 +93,7 @@ A snippet of key settings in `config.yml`:
 | `distance-permissions.enabled` | `true` | Assigns target distances through `extendedhorizons.max.<distance>` permissions. |
 | `distance-permissions.default-distance` | `-1` | Uses `view-distance` for players without a matching permission. An explicit value from 2 to 128 sets a separate fallback. |
 | `distance-permissions.refresh-seconds` | `5` | Permission refresh interval when LuckPerms event integration is unavailable. |
-| `player-mib-per-second` | `8` | Maximum uncompressed chunk packet bandwidth per player per second. |
+| `player-mib-per-second` | `8` | Maximum uncompressed chunk packet bandwidth per player per second. EH paces each connection according to client response times. |
 | `global-mib-per-second` | `192` | Global server-wide bandwidth budget for chunk streaming. |
 | `consolidate-flushes` | `true` | Batches TCP flushes on active EH connections to reduce transport overhead. |
 | `reuse-encoded-chunks` | `true` | Reuses cached wire payloads for unchanged EH snapshots on supported native TCP pipelines. |
@@ -136,6 +136,7 @@ Use the counter changes in `/eh stats` over a fixed interval to guide tuning:
 - For gaps after a teleport, compare two `/eh stats` readings while standing still. `missingOnDisk` counts reads with no saved chunk and `diskRejected.INCOMPLETE` counts records that have not reached full generation. These counters include repeated reads of the same coordinates. For a complete chunk with unusable saved lighting, EH asks Paper to load the existing chunk with generation disabled. Up to two such requests run at once. Successful captures increment `recoveredLight`.
 - If `diskReads` and `loadedCaptures` keep increasing rapidly while players revisit the same terrain, increase `cache-mib` if heap capacity permits. Increasing the TTL helps reuse snapshots that would otherwise expire; live edits require chunk updates to be enabled.
 - If source preparation is keeping up but delivery is repeatedly `throttled`, the send budget may be limiting initial loading. Increasing `global-mib-per-second` can trade more CPU and network activity for faster delivery. Both bandwidth settings count **uncompressed packet bytes**, so monitor actual outbound traffic as well.
+- The `paced` delivery counter in `/eh stats` records when EH holds back terrain to limit data queued ahead of gameplay packets. A slower connection may take longer to fill the same render distance.
 - Increase `workers` only when cache misses keep source preparation busy and the machine has spare CPU. Additional workers do not increase the send budget or remove the cost of native player tracking.
 - If the network event loop is backed up, increasing the send budget can make latency worse even while TPS remains healthy. Check RTT, actual movement and delivery coverage together.
 
@@ -157,6 +158,37 @@ All commands require the `extendedhorizons.admin` permission (granted to OPs by 
 
 ---
 
+## Plugin API
+
+Add `ExtendedHorizons-<version>-api.jar` to your plugin's compile classpath. With Gradle, use `compileOnly(files("libs/ExtendedHorizons-<version>-api.jar"))`. Install the regular ExtendedHorizons JAR on the server. It provides the API classes and the Bukkit service at runtime.
+
+For a Bukkit plugin, declare `depend: [ExtendedHorizons]` in `plugin.yml`. For a Paper plugin, declare the server dependency in `paper-plugin.yml`.
+
+```yaml
+dependencies:
+  server:
+    ExtendedHorizons:
+      load: BEFORE
+      required: true
+      join-classpath: true
+```
+
+```java
+import me.mapacheee.extendedhorizons.api.ExtendedHorizonsApi;
+
+// In your plugin, after enabling and once the player has an EH session.
+var api = getServer().getServicesManager().load(ExtendedHorizonsApi.class);
+if (api != null) {
+    var id = player.getUniqueId();
+    api.getViewDistance(id).ifPresent(view ->
+        getLogger().info("Native " + view.nativeDistance() + ", target " + view.targetDistance()));
+    api.setViewDistanceLimit(this, id, 16);
+    // Call api.clearViewDistanceLimit(this, id) when the cap is no longer needed.
+}
+```
+
+Caps apply on the next player tick. EH uses the lowest cap across plugins, subject to the client's render distance, the server's native distance and EH permissions. `getViewDistance` reports the last calculation. `setViewDistanceLimit` returns `false` before EH attaches the session or if the caller plugin is disabled. Limits follow the current connection and survive an EH configuration reload. EH removes them when the player disconnects or the owning plugin is disabled.
+
 ## Building from Source
 
 ExtendedHorizons is built with [TheWinterFramework](https://github.com/thewinterframework/winter) and Gradle:
@@ -166,13 +198,13 @@ ExtendedHorizons is built with [TheWinterFramework](https://github.com/thewinter
 git clone https://github.com/Mapacheee/ExtendedHorizons.git
 cd ExtendedHorizons
 
-# Build fat JAR with Shadow
-./gradlew shadowJar
+# Build the server plugin and the API JAR
+./gradlew shadowJar apiJar
 ```
 
-*(On Windows PowerShell / CMD, use `.\gradlew.bat shadowJar`)*
+*(On Windows PowerShell / CMD, use `.\gradlew.bat shadowJar apiJar`)*
 
-The output JAR will be available in `build/libs/ExtendedHorizons-<version>.jar`.
+The server plugin is built at `build/libs/ExtendedHorizons-<version>.jar`. The compile-time API JAR is built alongside it with the `-api` suffix.
 
 ---
 
