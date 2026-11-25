@@ -9,6 +9,7 @@ import io.netty.buffer.PooledByteBufAllocator;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.ByteTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -40,6 +41,7 @@ import java.security.NoSuchAlgorithmException;
 final class ChunkCodec {
 
   private static final int MAX_PACKET_BYTES = 8 * 1024 * 1024;
+  private static final String STARLIGHT_VERSION_TAG = "starlight.light_version";
   private static final ThreadLocal<MessageDigest> DIGEST = ThreadLocal.withInitial(() -> {
     try {
       return MessageDigest.getInstance("SHA-256");
@@ -114,11 +116,11 @@ final class ChunkCodec {
       return new DiskResult(DiskIssue.POSITION);
     }
     SerializableChunkData data = SerializableChunkData.parse(level, level.palettedContainerFactory(), tag);
-    boolean vanillaLight = !tag.contains("starlight.light_version") && tag.getBooleanOr("isLightOn", false);
     if (data == null || data.chunkStatus() != ChunkStatus.FULL) {
       return new DiskResult(DiskIssue.INCOMPLETE);
     }
-    if (!data.lightCorrect() && !vanillaLight) {
+    boolean vanillaLight = !tag.contains(STARLIGHT_VERSION_TAG) && tag.getBooleanOr("isLightOn", false);
+    if (!data.lightCorrect() && !vanillaLight && !hasCompatibleStarlight(tag)) {
       return new DiskResult(DiskIssue.LIGHT);
     }
     int count = level.getSectionsCount();
@@ -152,6 +154,13 @@ final class ChunkCodec {
     ChunkData chunk = encode(level, x, z, sections, data.heightmaps(), diskBlockEntities(level, data, sections),
       output -> writeLight(output, skyLight, blockLight), updates);
     return new DiskResult(chunk, chunk == null ? DiskIssue.SIZE : null);
+  }
+
+  static boolean hasCompatibleStarlight(CompoundTag tag) {
+    // Versions 10 and 11 share the section light arrays and states used by the client snapshot.
+    // isLightOn=false when its own version tag marks the saved light as valid.
+    int version = tag.getIntOr(STARLIGHT_VERSION_TAG, -1);
+    return (version == 10 || version == 11) && tag.get("isLightOn") instanceof ByteTag;
   }
 
   private static ChunkData encode(ServerLevel level, int x, int z, LevelChunkSection[] sections,
