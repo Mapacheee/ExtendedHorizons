@@ -18,6 +18,8 @@ public final class ViewMetrics {
   public final LongAdder refreshes = new LongAdder();
   public final LongAdder updated = new LongAdder();
   public final LongAdder updateBytes = new LongAdder();
+  public final LongAdder bedrockDeltas = new LongAdder();
+  public final LongAdder bedrockFullUpdates = new LongAdder();
 
   public Map<String, Long> snapshot() {
     return Map.ofEntries(Map.entry("sent", this.sent.sum()), Map.entry("bytes", this.bytes.sum()),
@@ -27,6 +29,7 @@ public final class ViewMetrics {
       Map.entry("measuredTerrainBytes", this.measuredTerrainBytes.sum()),
       Map.entry("estimatedTerrainBytes", this.estimatedTerrainBytes.sum()),
       Map.entry("refreshes", this.refreshes.sum()), Map.entry("updated", this.updated.sum()),
-      Map.entry("updateBytes", this.updateBytes.sum()));
+      Map.entry("updateBytes", this.updateBytes.sum()), Map.entry("bedrockDeltas", this.bedrockDeltas.sum()),
+      Map.entry("bedrockFullUpdates", this.bedrockFullUpdates.sum()));
   }
 }

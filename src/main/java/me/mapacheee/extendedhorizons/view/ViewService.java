@@ -14,6 +14,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.mapacheee.extendedhorizons.api.ExtendedHorizonsApi;
 import me.mapacheee.extendedhorizons.chunk.ChunkSource;
 import me.mapacheee.extendedhorizons.config.Config;
+import me.mapacheee.extendedhorizons.hooks.BedrockPlayers;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
@@ -74,14 +75,8 @@ public final class ViewService implements ExtendedHorizonsApi {
     this.source = new ChunkSource(this.plugin, this.settings.workers(), this.settings.cacheBytes(),
       this.settings.cacheTtlMillis(), this.settings.globalInFlight(), this.settings.chunkUpdates().enabled(),
       this.settings.antiXray());
-    if (this.settings.antiXray().enabled() && !this.source.masking()) {
-      this.plugin.getSLF4JLogger().warn("ExtendedHorizons Anti-Xray has no effect because anti-xray.hidden-blocks is empty.");
-    }
-    for (World world : this.plugin.getServer().getWorlds()) {
-      if (!this.settings.disabledWorlds().contains(world.getName()) && this.source.protectedWorld(world)) {
-        this.plugin.getSLF4JLogger().info("Skipping extended chunks in {} because Paper Anti-Xray is enabled and EH masking is disabled.",
-          world.getName());
-      }
+    if (this.settings.antiXray().enabled() && this.settings.antiXray().hiddenBlocks().isEmpty()) {
+      this.plugin.getSLF4JLogger().warn("ExtendedHorizons Anti-Xray has no additional hidden blocks configured.");
     }
     for (Player player : this.plugin.getServer().getOnlinePlayers()) {
       this.join(player);
@@ -135,7 +130,7 @@ public final class ViewService implements ExtendedHorizonsApi {
       return;
     }
     var stream = new ChunkStream(this.source, this.settings, this.metrics, this.budget, this.compression,
-      new LongOpenHashSet(player.getSentChunkKeys()));
+      new LongOpenHashSet(player.getSentChunkKeys()), this.settings.chunkUpdates().enabled() && BedrockPlayers.contains(player));
     PlayerView view = new PlayerView(this.plugin, this.source, this.settings, player, stream, this.farPlayers,
       this.permissions, () -> this.distanceLimit(playerId));
     view.start();
@@ -304,7 +299,7 @@ public final class ViewService implements ExtendedHorizonsApi {
     Config config = this.settings;
     ChunkSource current = this.source;
     return current != null && config != null && config.chunkUpdates().enabled() && config.chunkUpdates().worldedit()
-      && !config.disabledWorlds().contains(world.getName()) && !current.protectedWorld(world);
+      && !config.disabledWorlds().contains(world.getName());
   }
 
   public void editedChunk(World world, long key) {

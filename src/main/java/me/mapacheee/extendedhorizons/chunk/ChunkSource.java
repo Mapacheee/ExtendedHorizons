@@ -3,6 +3,8 @@ package me.mapacheee.extendedhorizons.chunk;
 import ca.spottedleaf.concurrentutil.executor.Cancellable;
 import ca.spottedleaf.concurrentutil.util.Priority;
 import ca.spottedleaf.moonrise.patches.chunk_system.io.MoonriseRegionFileIO;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.MapMaker;
 import me.mapacheee.extendedhorizons.config.Config;
 import me.mapacheee.extendedhorizons.compat.LightPacketAccess;
@@ -47,6 +49,7 @@ public final class ChunkSource implements AutoCloseable {
   private final Map<Key, Entry> cache = new LinkedHashMap<>(256, 0.75f, true);
   private final Map<Key, Job> pending = new HashMap<>();
   private final Map<Key, ChunkData.Revision> revisions;
+  private final Cache<ChunkData.Signature, ChunkData> updateBaselines;
   private final Set<Block> hiddenBlocks;
   private final Map<ServerLevel, ChunkMask> masks = new ConcurrentHashMap<>();
   private final LongAdder hits = new LongAdder();
@@ -72,6 +75,8 @@ public final class ChunkSource implements AutoCloseable {
       this.diskIssues.put(issue, new LongAdder());
     }
     this.revisions = updates ? new MapMaker().weakValues().makeMap() : null;
+    this.updateBaselines = updates ? CacheBuilder.newBuilder().concurrencyLevel(1).maximumWeight(maxCacheBytes)
+      .weigher((ChunkData.Signature signature, ChunkData data) -> data.bytes() + 1024).build() : null;
     AtomicInteger sequence = new AtomicInteger();
     this.workers = new ThreadPoolExecutor(workerCount, workerCount, 0, TimeUnit.MILLISECONDS,
       new ArrayBlockingQueue<>(maxInFlight), task -> {
@@ -82,20 +87,20 @@ public final class ChunkSource implements AutoCloseable {
       });
   }
 
-  public boolean masking() {
-    return !this.hiddenBlocks.isEmpty();
-  }
-
-  public boolean protectedWorld(World world) {
-    return !this.masking() && ((CraftWorld) world).getHandle().paperConfig().anticheat.antiXray.enabled;
+  public boolean masking(World world) {
+    return this.mask(((CraftWorld) world).getHandle()) != null;
   }
 
   private ChunkMask mask(ServerLevel level) {
-    return this.masking() ? this.masks.computeIfAbsent(level, key -> new ChunkMask(key, this.hiddenBlocks)) : null;
+    if (this.hiddenBlocks.isEmpty() && !level.paperConfig().anticheat.antiXray.enabled) {
+      return null;
+    }
+    ChunkMask mask = this.masks.computeIfAbsent(level, key -> new ChunkMask(key, this.hiddenBlocks));
+    return mask.empty() ? null : mask;
   }
 
   public CompletableFuture<ChunkData> tryRead(World world, int x, int z) {
-    if (this.closed || this.protectedWorld(world)) {
+    if (this.closed) {
       return CompletableFuture.completedFuture(null);
     }
     Key key = new Key(world.getUID(), x, z);
@@ -157,7 +162,7 @@ public final class ChunkSource implements AutoCloseable {
   }
 
   public CompletableFuture<ChunkData> refresh(World world, int x, int z) {
-    if (this.revisions == null || this.closed || this.protectedWorld(world)) {
+    if (this.revisions == null || this.closed) {
       return null;
     }
     Key key = new Key(world.getUID(), x, z);
@@ -176,6 +181,26 @@ public final class ChunkSource implements AutoCloseable {
     }
     this.scheduleRefresh(job, 2L);
     return job.result.copy();
+  }
+
+  public void rememberUpdateBaseline(ChunkData data) {
+    if (!this.closed && this.updateBaselines != null && data.signature() != null) {
+      this.updateBaselines.put(data.signature().withoutLight(), data);
+    }
+  }
+
+  public CompletableFuture<ChunkDelta> compareUpdate(World world, ChunkData.Signature signature, ChunkData next) {
+    ChunkData previous = this.updateBaselines.getIfPresent(signature.withoutLight());
+    if (previous == null || next.signature() == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+    ServerLevel level = ((CraftWorld) world).getHandle();
+    try {
+      return CompletableFuture.supplyAsync(() -> ChunkDelta.between(level, previous, signature, next), this.workers)
+        .exceptionally(error -> null);
+    } catch (RejectedExecutionException ignored) {
+      return CompletableFuture.completedFuture(null);
+    }
   }
 
   public void invalidateEdited(World world, int x, int z) {
@@ -491,6 +516,9 @@ public final class ChunkSource implements AutoCloseable {
       this.finish(job, null, null);
     }
     this.workers.shutdownNow();
+    if (this.updateBaselines != null) {
+      this.updateBaselines.invalidateAll();
+    }
   }
 
   private record Key(UUID world, int x, int z) {

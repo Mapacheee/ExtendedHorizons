@@ -39,7 +39,7 @@ Get **10% off server hosting** with code **`EXTENDEDHORIZONS`**. [View Realistic
 
 Set `view-distance` for the default target radius. Use `extendedhorizons.max.<distance>` for per-player distances or `extendedhorizons.bypass` to grant the configured maximum. [Configuration and permissions reference](docs/configuration.md)
 
-If Paper Anti-Xray is enabled for a world, configure EH's `anti-xray.enabled` and `anti-xray.hidden-blocks` to allow extended streaming there.
+Extended chunks automatically respect each world's Paper or Leaf Anti-Xray block lists and height limit. Enable EH's `anti-xray.enabled` to hide additional blocks listed under `anti-xray.hidden-blocks`.
 
 Commands require `extendedhorizons.admin`, which operators have by default.
 

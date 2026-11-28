@@ -63,7 +63,7 @@ final class ChunkCodec {
       mask.apply(level, sections);
       var entities = chunk.getBlockEntities().values().stream().filter(entity -> {
         var state = chunk.getBlockState(entity.getBlockPos());
-        return !mask.test(state) && entity.isValidBlockState(state);
+        return !mask.test(state, entity.getBlockPos().getY()) && entity.isValidBlockState(state);
       }).toList();
       Map<Heightmap.Types, long[]> heights = new EnumMap<>(Heightmap.Types.class);
       for (var entry : chunk.getHeightmaps()) {

@@ -107,7 +107,7 @@ public final class PlayerView {
     int distance = Math.min(this.permissions.enabled() ? this.permissionDistance : this.settings.distance(), client);
     distance = Math.min(distance, this.distanceLimit.getAsInt());
     boolean worldEnabled = (this.farState != null || distance > nativeDistance)
-      && !this.settings.disabledWorlds().contains(world.getName()) && !this.source.protectedWorld(world);
+      && !this.settings.disabledWorlds().contains(world.getName());
     boolean enabled = distance > nativeDistance && worldEnabled;
     ViewSnapshot next = new ViewSnapshot(world, this.location.getBlockX() >> 4, this.location.getBlockZ() >> 4,
       nativeDistance, distance, direction, enabled);

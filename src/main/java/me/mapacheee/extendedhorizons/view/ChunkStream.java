@@ -6,12 +6,14 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.flush.FlushConsolidationHandler;
+import io.netty.util.concurrent.PromiseCombiner;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.mapacheee.extendedhorizons.config.Config;
 import me.mapacheee.extendedhorizons.chunk.ChunkData;
+import me.mapacheee.extendedhorizons.chunk.ChunkDelta;
 import me.mapacheee.extendedhorizons.chunk.ChunkSource;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.Packet;
@@ -71,6 +73,8 @@ final class ChunkStream extends ChannelDuplexHandler {
   private final ArrayDeque<ReadyChunk> ready = new ArrayDeque<>();
   private final Long2ObjectLinkedOpenHashMap<ChunkData> updates;
   private final Long2ObjectOpenHashMap<ChunkData.Signature> snapshots;
+  private final boolean incrementalUpdates;
+  private PendingDelta pendingDelta;
   private ChannelHandlerContext context;
   private volatile FarPlayerChannel farPlayers;
   private ResourceKey<?> expectedDimension;
@@ -88,7 +92,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   private FlushConsolidationHandler flushConsolidation;
 
   ChunkStream(ChunkSource source, Config settings, ViewMetrics metrics, SendBudget global,
-    CompressionCache compression, LongOpenHashSet nativeChunks) {
+    CompressionCache compression, LongOpenHashSet nativeChunks, boolean incrementalUpdates) {
     this.source = source;
     this.compression = new ChunkCompression(compression, metrics, settings.reuseEncodedChunks());
     this.settings = settings;
@@ -97,6 +101,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     this.share = global.share();
     this.playerBudget = new SendBudget(settings.playerBytesPerSecond());
     this.nativeChunks = nativeChunks;
+    this.incrementalUpdates = incrementalUpdates;
     this.updates = settings.chunkUpdates().enabled() ? new Long2ObjectLinkedOpenHashMap<>() : null;
     this.snapshots = this.updates == null ? null : new Long2ObjectOpenHashMap<>();
   }
@@ -155,7 +160,15 @@ final class ChunkStream extends ChannelDuplexHandler {
       || message instanceof ServerboundUseItemPacket) {
       this.compression.clear();
       if (this.snapshots != null) {
-        this.snapshots.clear();
+        if (!this.incrementalUpdates) {
+          this.snapshots.clear();
+        } else if (message instanceof ServerboundPlayerActionPacket action) {
+          this.invalidateSnapshot(action.getPos());
+        } else if (message instanceof ServerboundUseItemOnPacket use) {
+          var hit = PacketAccess.hitResult(use);
+          this.invalidateSnapshot(hit.getBlockPos());
+          this.invalidateSnapshot(hit.getBlockPos().relative(hit.getDirection()));
+        }
       }
     }
     ctx.fireChannelRead(message);
@@ -166,14 +179,18 @@ final class ChunkStream extends ChannelDuplexHandler {
     this.invalidateSnapshot(packet);
   }
 
+  private void invalidateSnapshot(BlockPos pos) {
+    this.snapshots.remove(PacketAccess.chunkKey(pos.getX() >> 4, pos.getZ() >> 4));
+  }
+
   private void invalidateSnapshot(Object packet) {
     if (this.snapshots == null || this.snapshots.isEmpty()) {
       return;
     }
     if (packet instanceof ClientboundBlockUpdatePacket update) {
-      this.snapshots.remove(PacketAccess.chunkKey(update.getPos().getX() >> 4, update.getPos().getZ() >> 4));
+      this.invalidateSnapshot(update.getPos());
     } else if (packet instanceof ClientboundBlockEntityDataPacket update) {
-      this.snapshots.remove(PacketAccess.chunkKey(update.getPos().getX() >> 4, update.getPos().getZ() >> 4));
+      this.invalidateSnapshot(update.getPos());
     } else if (packet instanceof ClientboundLightUpdatePacket update) {
       long key = PacketAccess.chunkKey(update);
       var previous = this.snapshots.get(key);
@@ -181,7 +198,7 @@ final class ChunkStream extends ChannelDuplexHandler {
         this.snapshots.put(key, previous.withoutLight());
       }
     } else if (packet instanceof ClientboundSectionBlocksUpdatePacket update) {
-      update.runUpdates((pos, state) -> this.snapshots.remove(PacketAccess.chunkKey(pos.getX() >> 4, pos.getZ() >> 4)));
+      update.runUpdates((pos, state) -> this.invalidateSnapshot(pos));
     } else if (packet instanceof ClientboundChunksBiomesPacket || packet instanceof ClientboundExplodePacket
       || packet instanceof ClientboundBlockEventPacket) {
       this.snapshots.clear();
@@ -235,7 +252,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     } else if (packet instanceof ClientboundForgetLevelChunkPacket(ChunkPos pos)) {
       long key = PacketAccess.chunkKey(PacketAccess.x(pos), PacketAccess.z(pos));
       boolean known = this.nativeChunks.remove(key);
-      if (known && this.source.masking()) {
+      if (known && this.view != null && this.source.masking(this.view.world())) {
         if (this.desired(key)) {
           this.extended.add(key);
           this.needsFullChunk.add(key);
@@ -294,7 +311,7 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private boolean suppressMaskedUpdate(Object packet) {
-    if (!this.source.masking() || this.extended.isEmpty()) {
+    if (this.extended.isEmpty() || this.view == null || !this.source.masking(this.view.world())) {
       return false;
     }
     if (packet instanceof ClientboundBlockUpdatePacket update) {
@@ -617,7 +634,7 @@ final class ChunkStream extends ChannelDuplexHandler {
       this.ready.removeFirst();
       this.pending.remove(item.key());
       this.extended.add(item.key());
-      this.writeChunk(item.key(), item.data(), false, false, item.data().bytes(), now);
+      this.writeChunk(item.key(), item.data(), false, false, null, item.data().bytes(), now);
       sent++;
     }
     return sent;
@@ -661,13 +678,38 @@ final class ChunkStream extends ChannelDuplexHandler {
         this.metrics.suppressed.increment();
         continue;
       }
+      ChunkDelta delta = null;
+      if (this.incrementalUpdates && !lightOnly && previous != null) {
+        if (this.pendingDelta == null || this.pendingDelta.next() != data || this.pendingDelta.previous() != previous) {
+          this.pendingDelta = new PendingDelta(data, previous, this.source.compareUpdate(this.view.world(), previous, data));
+        }
+        if (!this.pendingDelta.result().isDone()) {
+          break;
+        }
+        delta = this.pendingDelta.result().getNow(null);
+      }
+      if (delta != null && delta.packets().isEmpty()) {
+        this.updates.removeFirst();
+        this.pendingDelta = null;
+        this.snapshots.put(key, data.signature());
+        this.source.rememberUpdateBaseline(data);
+        this.metrics.suppressed.increment();
+        continue;
+      }
       int bytes = lightOnly ? data.signature().lightBytes() + 10 : data.bytes();
+      if (delta != null) {
+        bytes = delta.bytes();
+      }
       if (!this.takeBudget(bytes, now)) {
         break;
       }
       this.updates.removeFirst();
-      this.writeChunk(key, data, true, lightOnly, bytes, now);
+      this.pendingDelta = null;
+      this.writeChunk(key, data, true, lightOnly, delta, bytes, now);
       sent++;
+    }
+    if (this.updates.isEmpty()) {
+      this.pendingDelta = null;
     }
     return sent;
   }
@@ -687,7 +729,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     return false;
   }
 
-  private void writeChunk(long key, ChunkData data, boolean update, boolean lightOnly, int bytes, long now) {
+  private void writeChunk(long key, ChunkData data, boolean update, boolean lightOnly, ChunkDelta delta, int bytes, long now) {
     long version = this.epoch;
     this.needsFlush = true;
     ChannelPromise promise = this.context.newPromise();
@@ -697,6 +739,9 @@ final class ChunkStream extends ChannelDuplexHandler {
         this.snapshots.remove(key);
       } else {
         this.snapshots.put(key, data.signature());
+        if (this.incrementalUpdates) {
+          this.source.rememberUpdateBaseline(data);
+        }
       }
     }
     promise.addListener(result -> {
@@ -704,6 +749,9 @@ final class ChunkStream extends ChannelDuplexHandler {
         if (update) {
           this.metrics.updated.increment();
           this.metrics.updateBytes.add(bytes);
+          if (this.incrementalUpdates && !lightOnly) {
+            (delta == null ? this.metrics.bedrockFullUpdates : this.metrics.bedrockDeltas).increment();
+          }
         } else {
           this.metrics.sent.increment();
           this.metrics.bytes.add(data.bytes());
@@ -716,10 +764,22 @@ final class ChunkStream extends ChannelDuplexHandler {
           this.extended.remove(key);
           this.plan.add(key);
           this.sleepUntil = 0;
+        } else if (delta != null && this.context.channel().isActive() && data.current() && this.canUpdate(key)) {
+          this.updates.putIfAbsent(key, data);
+          this.sleepUntil = 0;
         }
         this.metrics.failures.increment();
       }
     });
+    if (delta != null) {
+      var combiner = new PromiseCombiner(this.context.executor());
+      for (var packet : delta.packets()) {
+        combiner.add(this.context.write(packet));
+      }
+      combiner.finish(promise);
+      this.pacer.sent(bytes, now);
+      return;
+    }
     int wireBytes = this.compression.writeTerrain(this.context, data, promise, lightOnly, update || resend, bytes);
     this.pacer.sent(wireBytes, now);
     if (!lightOnly) {
@@ -906,6 +966,7 @@ final class ChunkStream extends ChannelDuplexHandler {
     if (this.updates != null) {
       this.updates.clear();
       this.snapshots.clear();
+      this.pendingDelta = null;
     }
     this.plan.clear();
     this.pending.clear();
@@ -918,5 +979,8 @@ final class ChunkStream extends ChannelDuplexHandler {
   }
 
   private record ReadyChunk(long key, ChunkData data) {
+  }
+
+  private record PendingDelta(ChunkData next, ChunkData.Signature previous, CompletableFuture<ChunkDelta> result) {
   }
 }

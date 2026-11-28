@@ -27,7 +27,7 @@ class ChunkStreamTeleportTest {
       null, null, null, null, null);
     long destination = PacketAccess.chunkKey(120, -80);
     var stream = new ChunkStream(null, settings, new ViewMetrics(), new SendBudget(settings.globalBytesPerSecond()),
-      new CompressionCache(1024), LongOpenHashSet.of(destination));
+      new CompressionCache(1024), LongOpenHashSet.of(destination), false);
     var channel = new EmbeddedChannel(stream);
     try {
       // Exercise packet ordering independently of disk reads and bandwidth.
